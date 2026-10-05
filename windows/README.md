@@ -185,8 +185,9 @@ that read only what is already on this PC. No keys, no new accounts.
   message reads like an Android notification: sender and channel on top, the
   text below on one line; long or multi-line text gets a chevron that expands
   and collapses it (the state survives the card's refreshes). A new
-  message opens the island on the Messages pill and closes after the auto-close
-  delay; it never takes the island from an approval, a question, the chat or a
+  message opens the island on the Messages pill for a 3-second glance (the
+  countdown bar shows it) and then collapses; hovering keeps it open to read.
+  It never takes the island from an approval, a question, the chat or a
   pointer already in it (`island/messageAlert.ts`). Clicking a message (or an
   app's heading) opens the app and takes those messages off the card; **Clear
   all** empties it. A cleared message never comes back: the listener has already

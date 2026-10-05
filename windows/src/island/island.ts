@@ -20,7 +20,7 @@ import { buildHeader, buildViews, type ViewActions, type ViewHost } from "../vie
 import { h } from "../views/dom";
 import { IslandStateMachine } from "./fsm";
 import { stepFocus } from "../views/carousel";
-import { messageAlertAction } from "./messageAlert";
+import { MESSAGE_GLANCE_S, messageAlertAction } from "./messageAlert";
 
 const BOT_OVERHANG = 40;
 /** Same margin as the Rust hit test (src-tauri/src/island.rs). */
@@ -79,6 +79,8 @@ export class Island {
   private quietOpen = false;
   /** The pointer is on the wake strip (hidden island). */
   private stripHovered = false;
+  /** Seconds the countdown bar spans for the current close; null = the usual. */
+  private countdownWindowS: number | null = null;
 
   // Bot hover → love (IslandWindowController.botHoverIn)
   private botHovering = false;
@@ -325,6 +327,7 @@ export class Island {
     else this.animateGeometry(false);
     State.lastActivity = performance.now();
     this.homeCollapseAt = null;
+    this.countdownWindowS = null;
     State.notify();
   }
 
@@ -408,7 +411,10 @@ export class Island {
       } finally {
         this.quietOpen = false;
       }
-      this.homeCollapseAt = performance.now() + State.settings.autoCloseInterval * 1000;
+      // A glance, not the full auto-close: the bar counts the whole 3 s down.
+      this.fsm.collapseAfter(MESSAGE_GLANCE_S);
+      this.homeCollapseAt = performance.now() + MESSAGE_GLANCE_S * 1000;
+      this.countdownWindowS = MESSAGE_GLANCE_S;
     }
   }
 
@@ -707,6 +713,7 @@ export class Island {
       this.fsm.mouseLeft(State.view !== "prompt");
       if (this.fsm.state === "home" && !State.isPinned) {
         this.homeCollapseAt = performance.now() + State.settings.autoCloseInterval * 1000;
+        this.countdownWindowS = null;
       }
     }
 
@@ -939,7 +946,7 @@ export class Island {
       return;
     }
     const autoClose = State.settings.autoCloseInterval;
-    const windowS = Math.min(10, autoClose * 0.6);
+    const windowS = this.countdownWindowS ?? Math.min(10, autoClose * 0.6);
     const remaining = (this.homeCollapseAt - nowMs) / 1000;
     this.countdown.style.width =
       remaining < windowS ? `${Math.max(0, clamp(remaining / windowS, 0, 1) * 160)}px` : "0px";

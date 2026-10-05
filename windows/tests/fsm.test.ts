@@ -92,6 +92,31 @@ test("only a hidden or compact island is shown by a hover", () => {
   assert.equal(fsm.hoverWouldShow, false, "without hover-to-open the compact island waits for a click");
 });
 
+test("a glance closes after its own delay, unless the pointer comes in", () => {
+  const { fsm } = fsmIn("home");
+  fsm.collapseAfter(3);
+  mock.timers.tick(2999);
+  assert.equal(fsm.state, "home");
+  mock.timers.tick(1);
+  assert.equal(fsm.state, "petit");
+
+  const hovered = fsmIn("home").fsm;
+  hovered.collapseAfter(3);
+  hovered.mouseEntered();
+  mock.timers.tick(10_000);
+  assert.equal(hovered.state, "home", "reading it keeps it open");
+
+  const pinned = fsmIn("home").fsm;
+  pinned.pinned = true;
+  pinned.collapseAfter(3);
+  mock.timers.tick(10_000);
+  assert.equal(pinned.state, "home", "an alert that pinned it wins");
+
+  const closed = fsmIn("petit").fsm;
+  closed.collapseAfter(3);
+  assert.equal(closed.state, "petit", "only an open island has anything to close");
+});
+
 test("hoverOpens=false keeps the old hover-then-click behaviour", () => {
   const { fsm } = fsmIn("hidden");
   fsm.hoverOpens = false;

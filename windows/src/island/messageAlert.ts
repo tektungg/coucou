@@ -23,6 +23,9 @@ export interface MessageAlertContext {
  */
 export type MessageAlertAction = "open" | "focus" | "none";
 
+/** How long the island stays open on a new message, seconds: a glance, then back. */
+export const MESSAGE_GLANCE_S = 3;
+
 export function messageAlertAction(c: MessageAlertContext): MessageAlertAction {
   if (c.fullscreen || c.pinned || c.waiting || c.pointerInIsland) return "none";
   if (c.mode !== "expanded") return "open";

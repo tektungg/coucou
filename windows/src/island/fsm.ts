@@ -116,6 +116,20 @@ export class IslandStateMachine {
     this.transition("home");
   }
 
+  /**
+   * Open now, but only for a glance: back to compact after `seconds` unless
+   * the pointer comes in (mouseEntered cancels it) or an alert pins it.
+   */
+  collapseAfter(seconds: number) {
+    if (this.state !== "home") return;
+    this.clear("homeCollapse");
+    if (this.pinned) return;
+    this.homeCollapse = window.setTimeout(() => {
+      this.homeCollapse = null;
+      if (this.state === "home") this.transition("petit");
+    }, seconds * 1000);
+  }
+
   /// Explicit close (OK button, Escape, an alert being answered).
   forcePetit() {
     this.cancelTimers();
