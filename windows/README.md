@@ -74,6 +74,34 @@ It works from any terminal — Windows Terminal, PowerShell, VS Code, Git Bash.
 Credential Manager**, never on disk and never in the interface — the island can
 only ask whether a key exists. Same for every integration key.
 
+### Chat with your Claude Code login instead of a key
+
+**Settings… → Claude → Chat via → Claude Code login** runs each chat turn
+through the Claude Code CLI (`claude -p`), signed in with your own Claude Code
+account, so no API key is needed and the chat uses your subscription.
+
+- Coucou never reads or reuses the Claude Code OAuth token. Claude Code talks to
+  Anthropic; Coucou only hands it the prompt on stdin and reads the JSON reply.
+- **Config dir** is the `CLAUDE_CONFIG_DIR` handed to the CLI. Leave it empty for
+  the default `%USERPROFILE%\.claude`; set it (e.g. `C:\Users\you\.claude-work`)
+  if the account you want lives in another profile.
+- Runs use `--setting-sources ""`, so your `settings.json` (and Coucou's own
+  hooks in it) stays out: chat turns never show up in the island as Claude Code
+  sessions.
+- Tools are limited to `WebSearch`, `WebFetch` and `Read` (for a dropped file).
+  Nothing that edits files or runs commands.
+- Turns continue with `--resume <session id>`. As with the API chat, the
+  conversation lasts until a file is dropped or Coucou restarts. Sessions are kept under the profile's `projects`
+  folder for `%LOCALAPPDATA%\Coucou\chat`, out of your projects' `/resume` lists.
+- Each turn starts the CLI, so expect a few seconds more than the API path.
+  `coucou.log` gets `chat via claude-cli ok (<ms> ms)` or the error.
+- `claude` is found on `PATH`, else in `%USERPROFILE%\.local\bin`.
+
+Tests: `cargo test --lib` covers argument building and output parsing. The
+live eval runs two real turns and checks the second remembers the first:
+`cargo test --lib claude_cli_live -- --ignored --nocapture` (set
+`COUCOU_CLAUDE_CONFIG_DIR` to test another profile).
+
 No telemetry. The only network requests Coucou makes are to the services you
 configure yourself.
 

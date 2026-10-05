@@ -22,7 +22,7 @@ const MAX_INLINE_TEXT: u64 = 200_000;
 
 pub const DEFAULT_MODEL: &str = "claude-opus-5";
 
-const SYSTEM_PROMPT: &str = "You are Mochi, a personal AI assistant living at the top of the user's screen. \
+pub(crate) const SYSTEM_PROMPT: &str = "You are Mochi, a personal AI assistant living at the top of the user's screen. \
 You have web search access and can help with absolutely anything — research, coding, finding places, recommendations, tasks, questions. \
 Respond in the user's language. Be thorough and complete — use as much detail as the task requires. \
 No markdown formatting (no **, no ##, no bullet dashes). Use plain text with line breaks.";
@@ -31,11 +31,23 @@ No markdown formatting (no **, no ##, no bullet dashes). Use plain text with lin
 pub struct Chat {
     /// Full multi-turn history, including tool_use / tool_result blocks.
     messages: Mutex<Vec<Value>>,
+    /// Claude Code session the chat continues with `--resume` when it runs
+    /// through the CLI instead of the API (see claude_cli.rs).
+    session: Mutex<Option<String>>,
 }
 
 impl Chat {
     pub fn reset(&self) {
         self.messages.lock().unwrap().clear();
+        *self.session.lock().unwrap() = None;
+    }
+
+    pub(crate) fn session(&self) -> Option<String> {
+        self.session.lock().unwrap().clone()
+    }
+
+    pub(crate) fn set_session(&self, id: String) {
+        *self.session.lock().unwrap() = Some(id);
     }
 
     fn is_empty(&self) -> bool {

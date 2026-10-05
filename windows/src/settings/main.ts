@@ -179,9 +179,52 @@ const MODELS: [string, string][] = [
   ["claude-haiku-4-5", "Claude Haiku 4.5"],
 ];
 
-function apiSection(hasKey: boolean): HTMLElement {
+function apiSection(hasKey: boolean, cli: { found: boolean; path: string }): HTMLElement {
   const dot = statusDot(hasKey);
   const state = h("span", { class: "hint", text: hasKey ? "Key saved in the Windows Credential Manager." : "No key yet — the chat needs one." });
+  let keyPresent = hasKey;
+
+  // The chat can also run through the Claude Code CLI on the user's own login.
+  const provider = h("select", {}) as HTMLSelectElement;
+  provider.append(
+    h("option", { value: "api", text: "API key" }),
+    h("option", { value: "cli", text: "Claude Code login" }),
+  );
+  provider.value = settings.chatProvider;
+  const configDir = h("input", {
+    type: "text",
+    placeholder: "C:\\Users\\you\\.claude  (empty = default)",
+    style: "flex:1 1 auto;min-width:0",
+    spellcheck: "false",
+  }) as HTMLInputElement;
+  configDir.value = settings.claudeConfigDir;
+  const configRow = h("div", { class: "row" }, h("label", { text: "Config dir" }), configDir);
+
+  function showMode() {
+    const viaCli = settings.chatProvider === "cli";
+    configRow.style.display = viaCli ? "" : "none";
+    if (viaCli) {
+      dot.style.background = cli.found ? "#22c55e" : "#f4505e";
+      state.textContent = cli.found
+        ? `Chat runs through Claude Code at ${cli.path} — no API key needed.`
+        : "Claude Code not found. Install it, or chat with an API key.";
+    } else {
+      dot.style.background = keyPresent ? "#22c55e" : "#f4505e";
+      state.textContent = keyPresent
+        ? "Key saved in the Windows Credential Manager."
+        : "No key yet — the chat needs one.";
+    }
+  }
+
+  provider.addEventListener("change", () => {
+    settings.chatProvider = provider.value === "cli" ? "cli" : "api";
+    showMode();
+    void save();
+  });
+  configDir.addEventListener("change", () => {
+    settings.claudeConfigDir = configDir.value.trim();
+    void save();
+  });
 
   const field = h("input", {
     type: "password",
@@ -197,10 +240,8 @@ function apiSection(hasKey: boolean): HTMLElement {
 
   async function refresh() {
     const present = (await Bridge.secretPresent("anthropic-api-key")) ?? false;
-    dot.style.background = present ? "#22c55e" : "#f4505e";
-    state.textContent = present
-      ? "Key saved in the Windows Credential Manager."
-      : "No key yet — the chat needs one.";
+    keyPresent = present;
+    showMode();
     field.placeholder = present ? "••••••••••••  (stored)" : "sk-ant-...";
     clearBtn.style.display = present ? "" : "none";
   }
@@ -242,12 +283,15 @@ function apiSection(hasKey: boolean): HTMLElement {
   });
 
   clearBtn.style.display = hasKey ? "" : "none";
+  showMode();
 
   return h(
     "section",
     {},
     h("h2", {}, dot, h("span", { text: "Claude" })),
     state,
+    h("div", { class: "row" }, h("label", { text: "Chat via" }), provider),
+    configRow,
     h("div", { class: "row" }, h("label", { text: "API key" }), field, saveBtn, clearBtn),
     h("div", { class: "row" }, h("label", { text: "Model" }), model),
     feedback,
@@ -430,6 +474,7 @@ async function main() {
   };
 
   const hasKey = (await Bridge.secretPresent("anthropic-api-key")) ?? false;
+  const cli = (await Bridge.claudeCliStatus()) ?? { found: false, path: "" };
 
   const keys = [
     "stripe-api-key", "github-token", "vercel-token",
@@ -442,7 +487,7 @@ async function main() {
   root.append(
     h("h1", {}, h("span", { text: "Coucou" }), h("span", { class: "version", text: version })),
     claudeSection(status),
-    apiSection(hasKey),
+    apiSection(hasKey, cli),
     integrationsSection(present),
     generalSection(),
     h("div", {

@@ -20,10 +20,21 @@ pub struct Settings {
     /// Defaulted explicitly so a settings.json written by an older build still loads.
     #[serde(default = "default_model")]
     pub model: String,
+    /// "api" = Anthropic API key, "cli" = the Claude Code CLI with the user's
+    /// own login (claude_cli.rs).
+    #[serde(default = "default_chat_provider")]
+    pub chat_provider: String,
+    /// CLAUDE_CONFIG_DIR handed to the CLI. Empty = Claude Code's default profile.
+    #[serde(default)]
+    pub claude_config_dir: String,
 }
 
 fn default_model() -> String {
     crate::claude::DEFAULT_MODEL.to_string()
+}
+
+fn default_chat_provider() -> String {
+    "api".into()
 }
 
 impl Default for Settings {
@@ -43,6 +54,8 @@ impl Default for Settings {
             autostart: false,
             hooks_installed: false,
             model: default_model(),
+            chat_provider: default_chat_provider(),
+            claude_config_dir: String::new(),
         }
     }
 }
@@ -70,4 +83,22 @@ pub fn save(settings: &Settings) -> std::io::Result<()> {
     let json = serde_json::to_vec_pretty(settings)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
     std::fs::write(settings_path(), json)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A settings.json written before the CLI chat existed must still load,
+    /// and keep chatting through the API key it was set up with.
+    #[test]
+    fn older_settings_default_to_the_api_chat() {
+        let old = r#"{"soundEnabled":true,"soundVolume":0.1,"autoCloseInterval":15,
+            "absenceInterval":180,"activeIntegrations":[],"screen":"primary",
+            "autostart":false,"hooksInstalled":true,"model":"claude-sonnet-5"}"#;
+        let s: Settings = serde_json::from_str(old).unwrap();
+        assert_eq!(s.chat_provider, "api");
+        assert_eq!(s.claude_config_dir, "");
+        assert_eq!(s.model, "claude-sonnet-5");
+    }
 }

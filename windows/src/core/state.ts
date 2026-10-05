@@ -92,6 +92,10 @@ export interface Settings {
   hooksInstalled: boolean;
   /** Claude model used by the chat. */
   model: string;
+  /** "api" = Anthropic API key, "cli" = Claude Code CLI with the user's login. */
+  chatProvider: "api" | "cli";
+  /** CLAUDE_CONFIG_DIR for the CLI chat. Empty = Claude Code's default profile. */
+  claudeConfigDir: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -106,6 +110,8 @@ export const DEFAULT_SETTINGS: Settings = {
   autostart: false,
   hooksInstalled: false,
   model: "claude-opus-5",
+  chatProvider: "api",
+  claudeConfigDir: "",
 };
 
 type Listener = () => void;
