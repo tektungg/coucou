@@ -1428,7 +1428,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 /* Messages card: grouped by app, newest app first, scrolling inside the card.
-   A heading is 16px and a message row 20px; 78px shows about three and a half. */
+   Each message reads like an Android notification: sender, then the text. */
 .int-rows.msg-list {
   padding-top: 2px;
   gap: 1px;
@@ -1472,35 +1472,110 @@ input[type="range"]::-webkit-slider-thumb {
   margin-top: 4px;
 }
 
-.msg-row {
+.msg-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
   flex: none;
-  height: 20px;
-  box-sizing: border-box;
-  padding-left: 18px;
+  min-width: 0;
+  padding: 3px 8px 3px 18px;
+  border-radius: 5px;
   cursor: pointer;
 }
 
-.msg-row:hover {
+.msg-item:hover {
   background: rgba(255, 255, 255, 0.04);
 }
 
-.msg-row .int-name {
-  flex: 0 0 auto;
-  max-width: 32%;
+.msg-top {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
 }
 
-.msg-row.newest .int-name {
+.msg-sender {
+  flex: 0 1 auto;
+  min-width: 0;
+  font: 600 11px var(--font);
+  color: #c5c8cd;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.msg-item.newest .msg-sender {
   color: #e6e7ea;
 }
 
-.msg-row .int-sub {
-  flex: 1 1 auto;
-  color: #6b7079;
+.msg-place {
+  flex: 0 1 auto;
+  min-width: 0;
+  font: 400 10px var(--font);
+  color: var(--dim-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.msg-row .int-ago {
+.msg-top .int-ago {
   margin-left: auto;
   padding-left: 6px;
+}
+
+.msg-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.msg-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: 400 10.5px var(--font);
+  line-height: 14px;
+  color: #8d929b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.msg-item.expanded .msg-text {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.msg-toggle {
+  display: none;
+  place-items: center;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--dim-3);
+  cursor: default;
+}
+
+.msg-toggle.shown {
+  display: grid;
+}
+
+.msg-toggle:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #c5c8cd;
+}
+
+/* The chevron points down to expand and up to collapse. */
+.msg-toggle svg {
+  transform: rotate(90deg);
+  transition: transform 0.15s ease;
+}
+
+.msg-item.expanded .msg-toggle svg {
+  transform: rotate(-90deg);
 }
 
 .gauge-row {

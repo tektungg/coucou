@@ -50,3 +50,22 @@ test("a fullscreen game or film is never interrupted", () => {
   assert.equal(messageAlertAction({ ...closed, mode: "compact", fullscreen: true }), "none");
   assert.equal(messageAlertAction({ ...closed, mode: "expanded", fullscreen: true }), "none");
 });
+
+test("expanded messages toggle and forget the ones that left the card", async () => {
+  const { ExpandedMessages } = await import("../src/views/messageGroups.ts");
+  const e = new ExpandedMessages();
+  assert.equal(e.toggle(1), true);
+  assert.equal(e.toggle(2), true);
+  assert.equal(e.has(1), true);
+  assert.equal(e.toggle(1), false, "a second click collapses");
+  assert.equal(e.has(1), false);
+  e.keepOnly([3, 4]);
+  assert.equal(e.size, 0, "message 2 was cleared, so its state goes too");
+});
+
+test("the chevron shows for long or multi-line messages only", async () => {
+  const { needsExpander } = await import("../src/views/messageGroups.ts");
+  assert.equal(needsExpander("oke", false), false);
+  assert.equal(needsExpander("a long line cut by the card", true), true);
+  assert.equal(needsExpander("line one\nline two", false), true);
+});

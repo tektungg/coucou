@@ -181,7 +181,10 @@ that read only what is already on this PC. No keys, no new accounts.
   (Windows asks once for notification access). Shows sender, message,
   server/workspace and channel; clicking a row opens the app. The card groups
   messages by app (the app with the newest message first, `views/messageGroups.ts`)
-  in a list that scrolls, and goes back to the top when news comes in. A new
+  in a list that scrolls, and goes back to the top when news comes in. Each
+  message reads like an Android notification: sender and channel on top, the
+  text below on one line; long or multi-line text gets a chevron that expands
+  and collapses it (the state survives the card's refreshes). A new
   message opens the island on the Messages pill and closes after the auto-close
   delay; it never takes the island from an approval, a question, the chat or a
   pointer already in it (`island/messageAlert.ts`). Clicking a message (or an

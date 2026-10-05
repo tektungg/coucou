@@ -7,7 +7,7 @@ import { State, type AgentTask } from "../core/state";
 import { Bridge } from "../core/bridge";
 import { arr, get, header, listRow, timeAgo } from "./integrations";
 import { sortSpaceItems } from "./spaceTasks";
-import { groupByApp, type MessageGroup } from "./messageGroups";
+import { ExpandedMessages, groupByApp, needsExpander, type MessageGroup } from "./messageGroups";
 
 export const PERSONAL_IDS = new Set([
   "integration_quota", "integration_space", "integration_media", "integration_messages",
@@ -201,36 +201,55 @@ export function messagePlace(m: { place?: unknown; channel?: unknown }): string 
   return [str(m.place), str(m.channel)].filter(Boolean).join(" › ");
 }
 
-function messageRow(m: Record<string, unknown>, first: boolean, full: boolean): HTMLElement {
-  const app = str(m.app);
-  const place = messagePlace(m);
-  const cells: Node[] = [
-    h("span", { class: "int-name", text: str(m.sender) || APP_NAMES[app] || "Message" }),
-    h("span", { class: "int-ago", text: timeAgo(num(m.at) ?? Date.now()) }),
-  ];
-  const line = `${place ? `${place}: ` : ""}${str(m.text)}`;
-  if (first || full) cells.push(h("span", { class: full ? "int-sub wrap" : "int-sub", text: line }));
-  const row = listRow(APP_COLORS[app] ?? "#8e939c", first, ...cells);
-  row.title = `${APP_NAMES[app] ?? app}${place ? ` · ${place}` : ""}`;
-  row.addEventListener("click", () => openMessages(app, [m]));
-  return row;
-}
+/** Which messages show their full text; outlives the card's rebuilds. */
+const expanded = new ExpandedMessages();
 
-/** One line per message under its app's heading: sender, text, age. */
-function groupedMessageRow(m: Record<string, unknown>, newest: boolean): HTMLElement {
+/**
+ * One message, laid out like an Android notification under its app's heading:
+ * the sender (and where it was sent) on top, the message below. Long or
+ * multi-line text is cut to one line, and the chevron expands it.
+ */
+function messageItem(m: Record<string, unknown>, newest: boolean): HTMLElement {
   const app = str(m.app);
   const place = messagePlace(m);
-  const row = h(
+  const id = num(m.id);
+  const text = str(m.text);
+  const body = h("span", { class: "msg-text", text });
+  const toggle = h("button", { class: "msg-toggle", title: "Show more" }, svg(ICONS.chevronRight, 8, { stroke: 2.4 }));
+  const item = h(
     "div",
-    { class: newest ? "int-row msg-row newest" : "int-row msg-row" },
-    h("span", { class: "int-name", text: str(m.sender) || APP_NAMES[app] || "Message" }),
-    h("span", { class: "int-sub", text: `${place ? `${place}: ` : ""}${str(m.text)}` }),
-    h("span", { class: "int-ago", text: timeAgo(num(m.at) ?? Date.now()) }),
+    { class: "msg-item" },
+    h(
+      "div",
+      { class: "msg-top" },
+      h("span", { class: "msg-sender", text: str(m.sender) || APP_NAMES[app] || "Message" }),
+      place ? h("span", { class: "msg-place", text: place }) : null,
+      h("span", { class: "int-ago", text: timeAgo(num(m.at) ?? Date.now()) }),
+    ),
+    h("div", { class: "msg-body" }, body, toggle),
   );
-  if (newest) row.style.background = `${APP_COLORS[app] ?? "#8e939c"}1f`;
-  row.title = `${APP_NAMES[app] ?? app}${place ? ` · ${place}` : ""}`;
-  row.addEventListener("click", () => openMessages(app, [m]));
-  return row;
+  if (newest) {
+    item.classList.add("newest");
+    item.style.background = `${APP_COLORS[app] ?? "#8e939c"}1f`;
+  }
+  const isOpen = id != null && expanded.has(id);
+  const show = (open: boolean) => {
+    item.classList.toggle("expanded", open);
+    toggle.title = open ? "Show less" : "Show more";
+  };
+  show(isOpen);
+  // Whether the text is cut off is only known once it is laid out.
+  requestAnimationFrame(() => {
+    const cut = body.scrollWidth > body.clientWidth + 1;
+    toggle.classList.toggle("shown", isOpen || needsExpander(text, cut));
+  });
+  toggle.addEventListener("click", (e) => {
+    e.stopPropagation(); // expanding is not opening
+    if (id != null) show(expanded.toggle(id));
+  });
+  item.title = `${APP_NAMES[app] ?? app}${place ? ` · ${place}` : ""}`;
+  item.addEventListener("click", () => openMessages(app, [m]));
+  return item;
 }
 
 function groupHead(group: MessageGroup<Record<string, unknown>>): HTMLElement {
@@ -268,9 +287,10 @@ function messagesCard(onDetail: () => void): HTMLElement {
   });
   const right = h("span", { class: "int-head-right" }, clearAll, more);
   const list = h("div", { class: "int-rows msg-list" });
+  expanded.keepOnly(messages.map((m) => num(m.id)).filter((id): id is number => id != null));
   for (const g of groupByApp(messages)) {
     list.append(groupHead(g));
-    for (const m of g.items) list.append(groupedMessageRow(m, m === messages[0]));
+    for (const m of g.items) list.append(messageItem(m, m === messages[0]));
   }
   const newestId = messages[0]?.id ?? null;
   if (newestId !== msgNewestId) {
@@ -292,7 +312,7 @@ function messagesDetail(onBack: () => void): HTMLElement {
   const list = h("div", { class: "int-rows scroll msg-detail" });
   for (const g of groupByApp(messages)) {
     list.append(groupHead(g));
-    g.items.forEach((m) => list.append(messageRow(m, m === messages[0], true)));
+    g.items.forEach((m) => list.append(messageItem(m, m === messages[0])));
   }
   return detailFrame("#5865F2", "Messages", onBack, list);
 }

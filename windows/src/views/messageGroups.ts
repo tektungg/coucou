@@ -23,3 +23,37 @@ export function groupByApp<T extends { app?: unknown }>(messages: readonly T[]):
   }
   return [...groups.values()];
 }
+
+/**
+ * Which messages are expanded to their full text. The card is rebuilt on every
+ * poll, so this outlives it; ids of messages no longer on the card are dropped.
+ */
+export class ExpandedMessages {
+  private ids = new Set<number>();
+
+  has(id: number): boolean {
+    return this.ids.has(id);
+  }
+
+  /** Flips one message; returns whether it is now expanded. */
+  toggle(id: number): boolean {
+    if (this.ids.delete(id)) return false;
+    this.ids.add(id);
+    return true;
+  }
+
+  /** Forgets messages that left the card (opened, cleared, pushed out). */
+  keepOnly(liveIds: Iterable<number>) {
+    const live = new Set(liveIds);
+    for (const id of this.ids) if (!live.has(id)) this.ids.delete(id);
+  }
+
+  get size(): number {
+    return this.ids.size;
+  }
+}
+
+/** A message needs the expand chevron when it has several lines or is cut off. */
+export function needsExpander(text: string, overflowing: boolean): boolean {
+  return overflowing || text.includes("\n");
+}
