@@ -6,6 +6,7 @@ import { ICONS } from "./icons";
 import { State, type AgentTask } from "../core/state";
 import { Bridge } from "../core/bridge";
 import { arr, get, header, listRow, timeAgo } from "./integrations";
+import { sortSpaceItems } from "./spaceTasks";
 
 export const PERSONAL_IDS = new Set([
   "integration_quota", "integration_space", "integration_media", "integration_messages",
@@ -95,17 +96,25 @@ function spaceAccent(item: Record<string, unknown>): string {
 
 function spaceRow(item: Record<string, unknown>, first: boolean): HTMLElement {
   const kind = str(item.kind) === "timebox" ? "TB" : "SP";
-  return listRow(
+  const row = listRow(
     spaceAccent(item),
     first,
     h("span", { class: "int-name", text: str(item.name) || "Untitled" }),
     h("span", { class: "int-ago", text: `${kind} · ${num(item.point) ?? 0} pt` }),
   );
+  if (item.done === true) {
+    row.classList.add("done");
+    row.append(h("span", { class: "space-check", title: "Done" }, svg(ICONS.check, 11, { stroke: 2.6 })));
+  }
+  return row;
 }
+
+/** The card is rebuilt on every Space refresh: keep the list where the user left it. */
+let spaceScrollTop = 0;
 
 function spaceCard(onDetail: () => void): HTMLElement {
   const d = get("integration_space");
-  const items = arr("integration_space", "items");
+  const items = sortSpaceItems(arr("integration_space", "items"));
   const total = num(d.totalPoint) ?? 0;
   const done = num(d.totalDone) ?? 0;
   const extra = h(
@@ -115,8 +124,18 @@ function spaceCard(onDetail: () => void): HTMLElement {
   );
   const rows = h("div", { class: "int-rows" });
   const warnings = Array.isArray(d.warnings) ? (d.warnings as unknown[]).map(str).filter(Boolean) : [];
-  const visible = warnings.length ? 2 : 3;
-  items.slice(0, visible).forEach((it, i) => rows.append(spaceRow(it, i === 0)));
+  if (items.length) {
+    const list = h("div", { class: warnings.length ? "int-rows space-list short" : "int-rows space-list" });
+    items.forEach((it, i) => list.append(spaceRow(it, i === 0)));
+    list.addEventListener("scroll", () => {
+      spaceScrollTop = list.scrollTop;
+    }, { passive: true });
+    // Not in the DOM yet: restore once it is laid out.
+    requestAnimationFrame(() => {
+      list.scrollTop = spaceScrollTop;
+    });
+    rows.append(list);
+  }
   if (warnings.length) {
     rows.append(h("div", { class: "int-status", style: "color:#F5A524", text: warnings[0] }));
   }
@@ -127,8 +146,8 @@ function spaceCard(onDetail: () => void): HTMLElement {
 }
 
 function spaceDetail(onBack: () => void): HTMLElement {
-  const items = arr("integration_space", "items");
-  const list = h("div", { class: "int-rows scroll" });
+  const items = sortSpaceItems(arr("integration_space", "items"));
+  const list = h("div", { class: "int-rows scroll space-detail" });
   items.forEach((it, i) => list.append(spaceRow(it, i === 0)));
   return detailFrame("#4F8EF7", "Space · today", onBack, list);
 }

@@ -169,6 +169,9 @@ that read only what is already on this PC. No keys, no new accounts.
 - **Space.** Runs `uv --directory <space-timebox> run space-timebox serve` and
   calls `list_timebox` for today: points done/total, sprint (SP) vs timebox (TB)
   items, and the `/point` rules as warnings (total ≠ 8, open items at 0 pt).
+  The card lists every task in a list that scrolls (3½ rows visible, 2½ when a
+  warning shows), open tasks first and done ones after with a green ✓ on the
+  right (`views/spaceTasks.ts`); the scroll position survives the 5-minute refresh.
   Login stays with space-timebox (`space-timebox login`); its errors are shown as is.
   The folder is set in **Settings → Integrations → Space** (empty = default).
 - **Music.** Prefers a playing session, then Spotify. ⏮ ⏯ ⏭ act on the same

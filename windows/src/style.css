@@ -1394,6 +1394,38 @@ input[type="range"]::-webkit-slider-thumb {
   flex-wrap: wrap;
   cursor: default;
 }
+
+/* Space card: every task, in a list that scrolls inside the fixed-height card.
+   Rows are 20px + 3px gap: the window shows 3 rows and half of the 4th (2 and
+   a half when the point warning takes the last line), so it reads as more. */
+.int-rows.space-list {
+  padding-top: 0;
+  overflow-y: auto;
+  max-height: 78px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.int-rows.space-list.short {
+  max-height: 56px;
+}
+
+.space-list .int-row,
+.space-detail .int-row {
+  flex: none;
+  flex-wrap: nowrap;
+  height: 20px;
+  box-sizing: border-box;
+}
+
+.space-check {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+  padding-left: 6px;
+  flex: none;
+  color: var(--green);
+}
 .gauge-row {
   display: flex;
   align-items: center;
