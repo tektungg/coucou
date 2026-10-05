@@ -184,6 +184,31 @@ fn messages_event(new: &[notify::Message]) -> Option<IntegrationEvent> {
     Some(IntegrationEvent { success: true, label, detail: Some(first.text.clone()) })
 }
 
+/// Takes messages off the card: the ones the user opened, or all of them
+/// (`ids` = None). Returns whether anything went.
+fn drop_messages(history: &mut VecDeque<notify::Message>, ids: Option<&[u32]>) -> bool {
+    let before = history.len();
+    match ids {
+        None => history.clear(),
+        Some(ids) => history.retain(|m| !ids.contains(&m.id)),
+    }
+    history.len() != before
+}
+
+/// The Messages card's row click (opened) and Clear all. The listener already
+/// remembers these toasts as seen, so a cleared message never comes back.
+pub fn dismiss_messages(app: &AppHandle, ids: Option<Vec<u32>>) {
+    let history: Vec<notify::Message> = {
+        let mut inbox = INBOX.lock().unwrap();
+        if !drop_messages(&mut inbox.history, ids.as_deref()) {
+            return;
+        }
+        inbox.history.iter().cloned().collect()
+    };
+    log::line(format!("messages: cleared, {} left", history.len()));
+    emit(app, update("integration_messages", json!({ "messages": history }), None, None));
+}
+
 async fn poll_messages(app: AppHandle) {
     let apps = pref(&app, |s| s.message_apps.clone()).unwrap_or_default();
     let workspace = pref(&app, |s| s.slack_workspace.clone()).unwrap_or_default();
@@ -236,8 +261,12 @@ mod tests {
     use super::*;
 
     fn msg(sender: &str, place: Option<&str>, channel: Option<&str>, text: &str) -> notify::Message {
+        msg_id(1, sender, place, channel, text)
+    }
+
+    fn msg_id(id: u32, sender: &str, place: Option<&str>, channel: Option<&str>, text: &str) -> notify::Message {
         notify::Message {
-            id: 1,
+            id,
             app: "slack".into(),
             sender: sender.into(),
             place: place.map(Into::into),
@@ -272,5 +301,16 @@ mod tests {
         assert_eq!(e.label, "2 new messages");
         assert_eq!(e.detail.as_deref(), Some("A · 1"));
         assert!(messages_event(&[]).is_none());
+    }
+
+    #[test]
+    fn opened_messages_leave_the_card_and_clear_all_empties_it() {
+        let mut h: VecDeque<_> = (1..=4).map(|i| msg_id(i, "A", None, None, "x")).collect();
+        assert!(drop_messages(&mut h, Some(&[2, 4])));
+        assert_eq!(h.iter().map(|m| m.id).collect::<Vec<_>>(), vec![1, 3]);
+        assert!(!drop_messages(&mut h, Some(&[9])), "an unknown id changes nothing");
+        assert!(drop_messages(&mut h, None));
+        assert!(h.is_empty());
+        assert!(!drop_messages(&mut h, None), "clearing an empty card is a no-op");
     }
 }

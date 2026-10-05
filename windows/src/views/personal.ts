@@ -212,9 +212,7 @@ function messageRow(m: Record<string, unknown>, first: boolean, full: boolean): 
   if (first || full) cells.push(h("span", { class: full ? "int-sub wrap" : "int-sub", text: line }));
   const row = listRow(APP_COLORS[app] ?? "#8e939c", first, ...cells);
   row.title = `${APP_NAMES[app] ?? app}${place ? ` · ${place}` : ""}`;
-  row.addEventListener("click", () => {
-    void Bridge.openApp(app);
-  });
+  row.addEventListener("click", () => openMessages(app, [m]));
   return row;
 }
 
@@ -231,9 +229,7 @@ function groupedMessageRow(m: Record<string, unknown>, newest: boolean): HTMLEle
   );
   if (newest) row.style.background = `${APP_COLORS[app] ?? "#8e939c"}1f`;
   row.title = `${APP_NAMES[app] ?? app}${place ? ` · ${place}` : ""}`;
-  row.addEventListener("click", () => {
-    void Bridge.openApp(app);
-  });
+  row.addEventListener("click", () => openMessages(app, [m]));
   return row;
 }
 
@@ -246,10 +242,15 @@ function groupHead(group: MessageGroup<Record<string, unknown>>): HTMLElement {
     h("b", { text: name }),
     h("span", { class: "int-ago", text: String(group.items.length) }),
   );
-  head.addEventListener("click", () => {
-    void Bridge.openApp(group.app);
-  });
+  head.addEventListener("click", () => openMessages(group.app, group.items));
   return head;
+}
+
+/** Opening a message reads it: the app comes forward and the message leaves the card. */
+function openMessages(app: string, messages: Record<string, unknown>[]) {
+  void Bridge.openApp(app);
+  const ids = messages.map((m) => num(m.id)).filter((id): id is number => id != null);
+  if (ids.length) void Bridge.dismissMessages(ids);
 }
 
 /** The card is rebuilt on every poll: keep the list where the user left it, back to the top for news. */
@@ -259,6 +260,13 @@ let msgNewestId: unknown = null;
 function messagesCard(onDetail: () => void): HTMLElement {
   const messages = arr("integration_messages", "messages");
   const more = h("button", { class: "int-more", title: "All messages", onclick: onDetail }, svg(ICONS.ellipsis, 8));
+  const clearAll = h("button", {
+    class: "int-clear",
+    title: "Take every message off the card",
+    text: "Clear all",
+    onclick: () => void Bridge.dismissMessages(null),
+  });
+  const right = h("span", { class: "int-head-right" }, clearAll, more);
   const list = h("div", { class: "int-rows msg-list" });
   for (const g of groupByApp(messages)) {
     list.append(groupHead(g));
@@ -276,7 +284,7 @@ function messagesCard(onDetail: () => void): HTMLElement {
   requestAnimationFrame(() => {
     list.scrollTop = msgScrollTop;
   });
-  return h("div", { class: "int-card" }, header("#5865F2", "Messages", `${messages.length} recent`, more), list);
+  return h("div", { class: "int-card" }, header("#5865F2", "Messages", `${messages.length} recent`, right), list);
 }
 
 function messagesDetail(onBack: () => void): HTMLElement {

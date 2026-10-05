@@ -312,6 +312,12 @@ async fn media_control(app: AppHandle, action: String) -> Result<(), String> {
     personal::media_control(app, action).await
 }
 
+/// Takes opened messages off the Messages card; `ids: null` is Clear all.
+#[tauri::command]
+fn dismiss_messages(app: AppHandle, ids: Option<Vec<u32>>) {
+    personal::dismiss_messages(&app, ids);
+}
+
 /// Opens a messaging app from the Messages card. Only these four names are
 /// accepted, so the island can never make Windows launch an arbitrary URL.
 #[tauri::command]
@@ -441,6 +447,7 @@ pub fn run() {
             refresh_integration,
             media_control,
             open_app,
+            dismiss_messages,
             open_n8n,
             open_settings_window,
             set_paused,

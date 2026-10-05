@@ -183,7 +183,10 @@ that read only what is already on this PC. No keys, no new accounts.
   in a list that scrolls, and goes back to the top when news comes in. A new
   message opens the island on the Messages pill and closes after the auto-close
   delay; it never takes the island from an approval, a question, the chat or a
-  pointer already in it (`island/messageAlert.ts`). Slack toasts never
+  pointer already in it (`island/messageAlert.ts`). Clicking a message (or an
+  app's heading) opens the app and takes those messages off the card; **Clear
+  all** empties it. A cleared message never comes back: the listener has already
+  seen its toast. Slack toasts never
   name the workspace, so it comes from **Settings → Slack workspace**. Messages
   stay in memory (the last 15), and the log records counts only. A toast an app
   clears before the next poll (3 s) is not seen. Discord's toast format is
