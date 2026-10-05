@@ -14,9 +14,16 @@ use ::windows::Win32::System::Ole::RevokeDragDrop;
 use ::windows::Win32::System::SystemInformation::GetLocalTime;
 use ::windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 use ::windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
+use ::windows::Win32::Foundation::RECT;
+use ::windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+use ::windows::Win32::System::Threading::GetCurrentProcessId;
+use ::windows::Win32::UI::Shell::{
+    SHQueryUserNotificationState, QUNS_BUSY, QUNS_PRESENTATION_MODE, QUNS_RUNNING_D3D_FULL_SCREEN,
+};
 use ::windows::Win32::UI::WindowsAndMessaging::{
-    EnumChildWindows, GetClassNameW, GetCursorPos, GetWindowLongPtrW, SetWindowLongPtrW,
-    GWL_EXSTYLE, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    EnumChildWindows, GetClassNameW, GetCursorPos, GetDesktopWindow, GetForegroundWindow,
+    GetShellWindow, GetWindowLongPtrW, GetWindowRect, GetWindowThreadProcessId, IsZoomed,
+    SetWindowLongPtrW, GWL_EXSTYLE, GWL_STYLE, WS_CAPTION, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
 };
 
 use super::LocalTime;
@@ -161,6 +168,55 @@ pub fn cursor_physical() -> Option<(f64, f64)> {
 /// drag might be in flight before it reaches the window.
 pub fn left_button_down() -> bool {
     unsafe { (GetAsyncKeyState(VK_LBUTTON.0 as i32) as u16 & 0x8000) != 0 }
+}
+
+// ── Fullscreen ────────────────────────────────────────────────────────────────
+
+/// True while a game, a video or a presentation fills the screen: hovering the
+/// island must not open it over them. Windows' own verdict (the one Focus
+/// Assist uses) first, then the foreground window's shape for borderless
+/// fullscreen apps it does not flag.
+pub fn fullscreen_app_active() -> bool {
+    if let Ok(state) = unsafe { SHQueryUserNotificationState() } {
+        if state == QUNS_BUSY || state == QUNS_RUNNING_D3D_FULL_SCREEN || state == QUNS_PRESENTATION_MODE {
+            return true;
+        }
+    }
+    unsafe {
+        let fg = GetForegroundWindow();
+        if fg.0.is_null() || fg == GetDesktopWindow() || fg == GetShellWindow() {
+            return false;
+        }
+        // The desktop itself (wallpaper) covers the monitor too.
+        let mut name = [0u16; 32];
+        let len = GetClassNameW(fg, &mut name) as usize;
+        let class = String::from_utf16_lossy(&name[..len.min(name.len())]);
+        if class == "Progman" || class == "WorkerW" {
+            return false;
+        }
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(fg, Some(&mut pid));
+        if pid == GetCurrentProcessId() {
+            return false;
+        }
+        let mut wr = RECT::default();
+        if GetWindowRect(fg, &mut wr).is_err() {
+            return false;
+        }
+        let mut info = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+        let monitor = MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST);
+        if !GetMonitorInfoW(monitor, &mut info).as_bool() {
+            return false;
+        }
+        let m = info.rcMonitor;
+        let captioned = (GetWindowLongPtrW(fg, GWL_STYLE) as u32 & WS_CAPTION.0) == WS_CAPTION.0;
+        super::is_fullscreen_window(
+            (wr.left, wr.top, wr.right, wr.bottom),
+            (m.left, m.top, m.right, m.bottom),
+            IsZoomed(fg).as_bool(),
+            captioned,
+        )
+    }
 }
 
 // ── Island window ─────────────────────────────────────────────────────────────

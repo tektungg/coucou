@@ -25,6 +25,14 @@ export class IslandStateMachine {
   private homeCollapse: number | null = null;
   private greetCollapse: number | null = null;
 
+  /**
+   * Whether a hover now would show the island (open it, or bring up the
+   * compact one). The island checks for a fullscreen app before letting it.
+   */
+  get hoverWouldShow(): boolean {
+    return this.state === "hidden" || (this.state === "petit" && this.hoverOpens);
+  }
+
   // ── Inputs ──────────────────────────────────────────────────────────────────
 
   launch() {

@@ -24,7 +24,7 @@ test("a message without an app gets its own group, nothing is dropped", () => {
 });
 
 const closed: MessageAlertContext = {
-  mode: "hidden", view: "overview", pinned: false, waiting: false, pointerInIsland: false,
+  mode: "hidden", view: "overview", pinned: false, waiting: false, pointerInIsland: false, fullscreen: false,
 };
 
 test("a closed or compact island opens on the message", () => {
@@ -43,4 +43,10 @@ test("never steals the island from an approval, the chat or the user's pointer",
   assert.equal(messageAlertAction({ ...closed, mode: "compact", pointerInIsland: true }), "none");
   assert.equal(messageAlertAction({ ...closed, mode: "expanded", view: "prompt" }), "none");
   assert.equal(messageAlertAction({ ...closed, mode: "expanded", view: "approval" }), "none");
+});
+
+test("a fullscreen game or film is never interrupted", () => {
+  assert.equal(messageAlertAction({ ...closed, fullscreen: true }), "none");
+  assert.equal(messageAlertAction({ ...closed, mode: "compact", fullscreen: true }), "none");
+  assert.equal(messageAlertAction({ ...closed, mode: "expanded", fullscreen: true }), "none");
 });

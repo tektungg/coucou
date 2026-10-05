@@ -312,6 +312,13 @@ async fn media_control(app: AppHandle, action: String) -> Result<(), String> {
     personal::media_control(app, action).await
 }
 
+/// Whether a fullscreen app (game, video, presentation) is in front: hovering
+/// the island then leaves it shut.
+#[tauri::command]
+fn fullscreen_active() -> bool {
+    platform::fullscreen_app_active()
+}
+
 /// Takes opened messages off the Messages card; `ids: null` is Clear all.
 #[tauri::command]
 fn dismiss_messages(app: AppHandle, ids: Option<Vec<u32>>) {
@@ -448,6 +455,7 @@ pub fn run() {
             media_control,
             open_app,
             dismiss_messages,
+            fullscreen_active,
             open_n8n,
             open_settings_window,
             set_paused,

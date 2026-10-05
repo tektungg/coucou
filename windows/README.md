@@ -40,6 +40,7 @@ installs for the current user only — no admin prompt.
 | What you do | What happens |
 |---|---|
 | Move the mouse to the very top-centre of the screen | The island opens, no click needed |
+| Move the mouse there while a fullscreen game, video or presentation is in front | Nothing: hovering never opens Mochi over it (click the top-centre to open on purpose). New messages wait as a badge too |
 | Move the pointer off the island | It closes at once. The chat and anything that opened on its own (a finished session) wait for **Auto-close** instead; a permission request stays until answered |
 | Click Mochi | It gets annoyed. Three times in a row and it goes dizzy |
 | Rest the pointer on Mochi for two seconds | Hearts |

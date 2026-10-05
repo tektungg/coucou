@@ -160,6 +160,11 @@ pub fn left_button_down() -> bool {
     false
 }
 
+/// No reliable fullscreen signal across compositors: never hold the island back.
+pub fn fullscreen_app_active() -> bool {
+    false
+}
+
 // ── Island window ─────────────────────────────────────────────────────────────
 
 /// The few gtk-layer-shell calls we need, straight from the C library.

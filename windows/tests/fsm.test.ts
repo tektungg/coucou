@@ -83,6 +83,15 @@ test("after an immediate close the compact island hides on its usual delay", () 
   assert.equal(fsm.state, "hidden");
 });
 
+test("only a hidden or compact island is shown by a hover", () => {
+  assert.equal(fsmIn("hidden").fsm.hoverWouldShow, true);
+  assert.equal(fsmIn("petit").fsm.hoverWouldShow, true);
+  assert.equal(fsmIn("home").fsm.hoverWouldShow, false);
+  const { fsm } = fsmIn("petit");
+  fsm.hoverOpens = false;
+  assert.equal(fsm.hoverWouldShow, false, "without hover-to-open the compact island waits for a click");
+});
+
 test("hoverOpens=false keeps the old hover-then-click behaviour", () => {
   const { fsm } = fsmIn("hidden");
   fsm.hoverOpens = false;

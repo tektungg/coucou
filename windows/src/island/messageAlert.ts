@@ -11,18 +11,20 @@ export interface MessageAlertContext {
   waiting: boolean;
   /** The pointer is over the island: the user is busy with it. */
   pointerInIsland: boolean;
+  /** A fullscreen game, video or presentation is in front. */
+  fullscreen: boolean;
 }
 
 /**
  * "open": open the island on the Messages pill, it closes itself after the
  * auto-close delay. "focus": the overview is already open, just switch to the
- * Messages pill. "none": something more important owns the island; the pill
- * badge and the sound are enough.
+ * Messages pill. "none": something more important owns the island, or a
+ * fullscreen app owns the screen; the pill badge and the sound are enough.
  */
 export type MessageAlertAction = "open" | "focus" | "none";
 
 export function messageAlertAction(c: MessageAlertContext): MessageAlertAction {
-  if (c.pinned || c.waiting || c.pointerInIsland) return "none";
+  if (c.fullscreen || c.pinned || c.waiting || c.pointerInIsland) return "none";
   if (c.mode !== "expanded") return "open";
   return c.view === "overview" ? "focus" : "none";
 }

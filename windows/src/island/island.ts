@@ -77,6 +77,8 @@ export class Island {
   private homeCollapseAt: number | null = null;
   /** Set while a new message opens the island: its own sound already played. */
   private quietOpen = false;
+  /** The pointer is on the wake strip (hidden island). */
+  private stripHovered = false;
 
   // Bot hover → love (IslandWindowController.botHoverIn)
   private botHovering = false;
@@ -382,8 +384,10 @@ export class Island {
    * The island opens like a hover would and closes after the auto-close delay;
    * an approval, the chat or a pointer already in the island keeps it.
    */
-  showMessage(taskId: string) {
+  async showMessage(taskId: string) {
+    const fullscreen = (await Bridge.fullscreenActive()) === true;
     const action = messageAlertAction({
+      fullscreen,
       mode: State.mode,
       view: State.view,
       pinned: State.isPinned || this.fsm.pinned,
@@ -391,7 +395,8 @@ export class Island {
       pointerInIsland: this.wasInIsland,
     });
     if (action === "none") {
-      this.fsm.reveal();
+      // Not even the compact island over a game or a film: the badge waits.
+      if (!fullscreen) this.fsm.reveal();
       return;
     }
     State.setFocus(taskId);
@@ -601,6 +606,14 @@ export class Island {
     // The wake strip is the only thing the OS can hit while the island is hidden.
     this.wakeStrip.addEventListener("mouseenter", () => {
       Sound.resume();
+      this.stripHovered = true;
+      if (State.mode === "hidden") void this.hoverShow(() => this.stripHovered && State.mode === "hidden");
+    });
+    this.wakeStrip.addEventListener("mouseleave", () => {
+      this.stripHovered = false;
+    });
+    // Over a fullscreen app a hover does nothing; a click still opens.
+    this.wakeStrip.addEventListener("mousedown", () => {
       if (State.mode === "hidden") this.fsm.mouseEntered();
     });
 
@@ -648,6 +661,18 @@ export class Island {
     });
   }
 
+  /**
+   * A hover that would show the island, unless a fullscreen game, video or
+   * presentation is in front: the cursor brushing the top of the screen must
+   * not open Mochi over it. `still` re-checks the pointer once Rust answers.
+   */
+  private async hoverShow(still: () => boolean) {
+    if ((await Bridge.fullscreenActive()) === true) return;
+    if (!still()) return;
+    this.fsm.mouseEntered();
+    this.homeCollapseAt = null;
+  }
+
   /** Cursor in window-logical coordinates. */
   onCursor(x: number, y: number) {
     State.mouse = { x, y };
@@ -670,7 +695,11 @@ export class Island {
     this.wasInIsland = inIsland;
     if (inIsland && !wasIn) {
       if (this.fsm.state === "coucou") this.greeting.hover();
-      this.fsm.mouseEntered();
+      if (this.fsm.hoverWouldShow) {
+        void this.hoverShow(() => this.wasInIsland);
+      } else {
+        this.fsm.mouseEntered();
+      }
       this.homeCollapseAt = null;
     }
     if (!inIsland && wasIn) {

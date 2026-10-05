@@ -90,6 +90,8 @@ export const Bridge = {
   mediaControl: (action: string) => call<void>("media_control", { action }),
   /** Brings a messaging app forward; Rust maps the name to its URL scheme. */
   openApp: (app: string) => call<void>("open_app", { app }),
+  /** True while a fullscreen game, video or presentation is in front. */
+  fullscreenActive: () => call<boolean>("fullscreen_active"),
   /** Takes these messages off the Messages card; null clears them all. */
   dismissMessages: (ids: number[] | null) => call<void>("dismiss_messages", { ids }),
   /** Where the Claude Code CLI is, for the chat that runs on the user's login. */
