@@ -2,6 +2,8 @@
 
 import type { BotEmoteName, BotStateName, IslandMode, IslandViewName } from "./layout";
 import type { EyeShape } from "../mochi/engine";
+import type { AskAnswer, AskItem } from "../island/askQuestion";
+import { compareSessions, isSessionPill, sessionColor, staleSessions } from "../island/sessions";
 
 export type AgentSource = "claudeCode" | "n8n" | "agent";
 export type PillBadge = "approval" | "finished" | "error";
@@ -19,6 +21,13 @@ export interface AgentTask {
   miniEye?: EyeShape | null;
   pillBadge?: PillBadge | null;
   sessionCwd?: string | null;
+  /** Claude Code session behind a `cc_` pill (see island/sessions.ts). */
+  sessionId?: string;
+  /** performance.now() of the last hook event, for ordering and sweeping. */
+  lastEventAt?: number;
+  /** Context use and cost of that session, from the statusline's status file. */
+  ctxPct?: number;
+  costUsd?: number;
 }
 
 export interface ApprovalInfo {
@@ -26,6 +35,23 @@ export interface ApprovalInfo {
   sessionId: string;
   tool: string;
   command: string;
+  /** The pill (session) the request belongs to. */
+  taskId: string;
+  /** "plan" = ExitPlanMode: the plan card instead of Deny / Allow. */
+  kind: "tool" | "plan";
+  plan?: string;
+  planFilePath?: string;
+}
+
+/** An AskUserQuestion waiting for the island's answers. */
+export interface QuestionInfo {
+  requestId: string;
+  /** The pill (session) asking. */
+  taskId: string;
+  items: AskItem[];
+  /** The question on screen. */
+  index: number;
+  answers: (AskAnswer | undefined)[];
 }
 
 export interface ChatMessage {
@@ -66,12 +92,30 @@ export const INTEGRATION_AGENTS: AgentTask[] = [
   task("integration_notion", "Notion", "#8C8C8C", "n8n"),
   task("integration_calcom", "Cal.com", "#C9956A", "n8n"),
   task("integration_stripe", "Stripe", "#0570DE", "n8n"),
+  // This build's own pills: local data only, no third-party API keys.
+  task("integration_quota", "Claude", "#E07B53", "agent"),
+  task("integration_space", "Space", "#4F8EF7", "agent"),
+  task("integration_media", "Music", "#1DB954", "agent"),
+  task("integration_messages", "Messages", "#5865F2", "agent"),
 ];
 
-export const TOGGLEABLE_INTEGRATION_IDS = [
+/**
+ * The stock integrations this build hides: Claude Code already covers them.
+ * Their code stays, so updates from upstream still merge cleanly.
+ */
+export const HIDDEN_INTEGRATIONS: ReadonlySet<string> = new Set([
   "integration_resend", "integration_n8n", "integration_vercel", "integration_github",
   "integration_notion", "integration_calcom", "integration_stripe",
+]);
+
+export const PERSONAL_INTEGRATIONS = [
+  "integration_quota", "integration_space", "integration_media", "integration_messages",
 ];
+
+export const TOGGLEABLE_INTEGRATION_IDS = PERSONAL_INTEGRATIONS;
+
+/** Apps the Messages pill reads from Windows notifications. */
+export const MESSAGE_APPS = ["discord", "slack", "telegram", "whatsapp"] as const;
 
 /** What an integration poller last reported. */
 export interface IntegrationInfo {
@@ -96,6 +140,12 @@ export interface Settings {
   chatProvider: "api" | "cli";
   /** CLAUDE_CONFIG_DIR for the CLI chat. Empty = Claude Code's default profile. */
   claudeConfigDir: string;
+  /** Slack toasts never name the workspace, so the Messages pill shows this one. */
+  slackWorkspace: string;
+  /** Folder of the local space-timebox MCP server. Empty = the default location. */
+  spaceTimeboxDir: string;
+  /** Which apps the Messages pill listens to (MESSAGE_APPS). */
+  messageApps: string[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -103,15 +153,16 @@ export const DEFAULT_SETTINGS: Settings = {
   soundVolume: 0.12,
   autoCloseInterval: 15,
   absenceInterval: 180,
-  activeIntegrations: [
-    "integration_resend", "integration_n8n", "integration_vercel", "integration_github",
-  ],
+  activeIntegrations: [...PERSONAL_INTEGRATIONS],
   screen: "primary",
   autostart: false,
   hooksInstalled: false,
   model: "claude-opus-5",
   chatProvider: "api",
   claudeConfigDir: "",
+  slackWorkspace: "",
+  spaceTimeboxDir: "",
+  messageApps: [...MESSAGE_APPS],
 };
 
 type Listener = () => void;
@@ -143,6 +194,7 @@ class AppState {
   searchResult: SearchResult | null = null;
   chatHistory: ChatMessage[] = [];
   pendingApproval: ApprovalInfo | null = null;
+  pendingQuestion: QuestionInfo | null = null;
 
   integrations: Record<string, IntegrationInfo> = {};
 
@@ -162,8 +214,18 @@ class AppState {
     for (const fn of this.listeners) fn();
   }
 
+  /**
+   * The pills that can be shown. The catch-all Claude Code pill steps aside
+   * while per-session pills exist: it would only repeat what they say.
+   */
+  get visibleTasks(): AgentTask[] {
+    const hasSessions = this.tasks.some((t) => isSessionPill(t.id));
+    return hasSessions ? this.tasks.filter((t) => t.id !== "integration_claude") : this.tasks;
+  }
+
   get focusTask(): AgentTask | null {
-    return this.tasks.find((t) => t.id === this.focusId) ?? this.tasks[0] ?? null;
+    const visible = this.visibleTasks;
+    return visible.find((t) => t.id === this.focusId) ?? visible[0] ?? null;
   }
 
   get effectiveState(): BotStateName {
@@ -171,7 +233,8 @@ class AppState {
   }
 
   get otherTasks(): AgentTask[] {
-    return this.tasks.filter((t) => t.id !== this.focusId);
+    const focus = this.focusTask?.id;
+    return this.visibleTasks.filter((t) => t.id !== focus);
   }
 
   setFocus(id: string) {
@@ -209,37 +272,71 @@ class AppState {
   loadIntegrationTasks() {
     for (const proto of INTEGRATION_AGENTS) {
       const shouldLoad =
-        proto.id === "integration_claude" || this.settings.activeIntegrations.includes(proto.id);
+        proto.id === "integration_claude" ||
+        (this.settings.activeIntegrations.includes(proto.id) && !HIDDEN_INTEGRATIONS.has(proto.id));
       const idx = this.tasks.findIndex((t) => t.id === proto.id);
       if (shouldLoad && idx < 0) this.tasks.push({ ...proto, steps: [] });
       if (!shouldLoad && idx >= 0) this.tasks.splice(idx, 1);
     }
-    // Order: integration_claude first, then agent_* pills (visible in slice(0,4)),
-    // then other integrations in declaration order.
-    const order = INTEGRATION_AGENTS.map((t) => t.id);
-    this.tasks.sort((a, b) => {
-      const isAgentA = a.id.startsWith("agent_");
-      const isAgentB = b.id.startsWith("agent_");
-      // integration_claude always first
-      if (a.id === "integration_claude") return -1;
-      if (b.id === "integration_claude") return 1;
-      // agent_* before other integrations; preserve insertion order among themselves
-      if (isAgentA && !isAgentB) return -1;
-      if (isAgentB && !isAgentA) return 1;
-      if (isAgentA && isAgentB) return 0;
-      // both known integrations → declaration order
-      return order.indexOf(a.id) - order.indexOf(b.id);
-    });
+    this.sortTasks();
     if (!this.focusId) this.focusId = "integration_claude";
     this.notify();
+  }
+
+  /**
+   * Order: session pills (most recent first), the Claude Code catch-all,
+   * agent_* pills (insertion order), then integrations in declaration order.
+   */
+  private sortTasks() {
+    const order = INTEGRATION_AGENTS.map((t) => t.id);
+    const rank = (t: AgentTask) =>
+      isSessionPill(t.id) ? 0 : t.id === "integration_claude" ? 1 : t.id.startsWith("agent_") ? 2 : 3;
+    const stable = new Map(this.tasks.map((t, i) => [t.id, i]));
+    this.tasks.sort((a, b) => {
+      const r = rank(a) - rank(b);
+      if (r !== 0) return r;
+      if (rank(a) === 0) return compareSessions(a, b);
+      if (rank(a) === 3) return order.indexOf(a.id) - order.indexOf(b.id);
+      return (stable.get(a.id) ?? 0) - (stable.get(b.id) ?? 0);
+    });
   }
 
   removeTask(id: string) {
     const idx = this.tasks.findIndex((t) => t.id === id);
     if (idx < 0) return;
     this.tasks.splice(idx, 1);
-    if (this.focusId === id) this.focusId = this.tasks[0]?.id ?? "integration_claude";
+    if (this.focusId === id) this.focusId = this.visibleTasks[0]?.id ?? "integration_claude";
     this.notify();
+  }
+
+  /**
+   * The pill for one Claude Code session: created on its first event, renamed
+   * when the project changes, re-ordered by activity. The first session takes
+   * the focus from the catch-all pill, which it replaces.
+   */
+  upsertSession(id: string, sessionId: string, name: string, cwd: string) {
+    let t = this.tasks.find((x) => x.id === id);
+    if (!t) {
+      const inUse = this.tasks.filter((x) => isSessionPill(x.id)).map((x) => x.color);
+      t = {
+        id, name, color: sessionColor(sessionId, inUse),
+        state: "idle", stepIndex: 0, steps: [],
+        source: "claudeCode", isIntegration: false, sessionId,
+      };
+      this.tasks.push(t);
+      if (!this.focusId || this.focusId === "integration_claude") this.focusId = id;
+    }
+    t.name = name;
+    if (cwd) t.sessionCwd = cwd;
+    t.lastEventAt = performance.now();
+    this.sortTasks();
+    this.notify();
+  }
+
+  /** Drops session pills that have been quiet too long (sessions.ts rules). */
+  sweepSessions() {
+    const keep = this.pendingApproval?.taskId ?? this.pendingQuestion?.taskId ?? null;
+    for (const id of staleSessions(this.tasks, performance.now(), keep)) this.removeTask(id);
   }
 
   /** Creates a dynamic agent_ pill on first event; no-ops if it already exists.
@@ -270,7 +367,7 @@ class AppState {
   }
 
   defaultView(): IslandViewName {
-    return this.tasks.length === 0 ? "empty" : "overview";
+    return this.visibleTasks.length === 0 ? "empty" : "overview";
   }
 }
 

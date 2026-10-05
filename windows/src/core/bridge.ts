@@ -73,7 +73,8 @@ export const Bridge = {
   hooksApply: (install: boolean, fingerprint: string) =>
     callOrThrow<string>("hooks_apply", { install, fingerprint }),
 
-  approvalDecision: (requestId: string, decision: "allow" | "deny") =>
+  /** "allow" / "deny", or a JSON line: {"plan":mode}, {"feedback":…}, {"answers":…}. */
+  approvalDecision: (requestId: string, decision: string) =>
     call<void>("approval_decision", { requestId, decision }),
   /** "The card is up" — until this lands the relay only waits a moment. */
   approvalAck: (requestId: string) => call<void>("approval_ack", { requestId }),
@@ -85,6 +86,10 @@ export const Bridge = {
   chatSend: (query: string, context: ChatContext | null) =>
     callOrThrow<{ text: string }>("chat_send", { query, context }),
   chatReset: () => call<void>("chat_reset"),
+  /** Play/pause, next or previous on the media session the Music pill shows. */
+  mediaControl: (action: string) => call<void>("media_control", { action }),
+  /** Brings a messaging app forward; Rust maps the name to its URL scheme. */
+  openApp: (app: string) => call<void>("open_app", { app }),
   /** Where the Claude Code CLI is, for the chat that runs on the user's login. */
   claudeCliStatus: () => call<{ found: boolean; path: string }>("claude_cli_status"),
   /** Copies a dropped file into the inbox. */

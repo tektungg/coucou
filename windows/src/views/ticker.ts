@@ -19,6 +19,8 @@ const DURATION = 380;
 const MAX_QUEUE = 4;
 const COMPLETED_SCALE = 11.5 / 13; // 0.885 — the completed font size
 const EASE = cubicBezier(0.4, 0, 0.2, 1);
+/** States in which nothing is running any more. */
+const DONE_STATES: ReadonlySet<string> = new Set(["idle", "finished", "error", "sleeping"]);
 
 interface Row {
   el: HTMLElement;
@@ -36,9 +38,12 @@ function makeRow(): Row {
   check.style.position = "absolute";
   chevron.style.position = "absolute";
   const shimmer = h("span", { class: "tick-text shimmer" });
+  // `top: 0` pins it over the shimmer copy. Without it the absolute span took
+  // its static position below the shimmer text, so every completed step was
+  // drawn ~16 px low, on top of the row beneath it.
   const dim = h("span", {
     class: "tick-text",
-    style: "position:absolute;left:0;right:0;color:#6b7079",
+    style: "position:absolute;left:0;right:0;top:0;color:#6b7079",
   });
   const el = h(
     "div",
@@ -78,6 +83,8 @@ export class Ticker {
   private queue: string[] = [];
   private startMs: number | null = null;
   private displayIndex = -1;
+  /** The session is no longer working: the last step shows as completed. */
+  private done = false;
 
   constructor() {
     this.el = h("div", { class: "ticker" }, this.a.el, this.b.el, this.c.el);
@@ -87,7 +94,9 @@ export class Ticker {
   /** The state between transitions: completed on top, current below. */
   private rest() {
     place(this.a, 0, 1, 1);
-    place(this.b, ROW_H, 0, 1);
+    // A finished session's last step is completed too: tick, dim, no shimmer —
+    // a shimmering "current" row read as Claude still working.
+    place(this.b, ROW_H, this.done ? 1 : 0, 1);
     place(this.c, ROW_H * 2, 0, 0);
   }
 
@@ -98,6 +107,13 @@ export class Ticker {
   sync(task: AgentTask | null) {
     const steps = task && task.steps.length > 0 ? task.steps : ["…"];
     const idx = task ? Math.min(task.stepIndex, steps.length - 1) : -1;
+
+    const done = task != null && DONE_STATES.has(task.state);
+    if (done !== this.done) {
+      this.done = done;
+      // Mid-scroll, the commit at the end of the transition applies it.
+      if (!this.animating) this.rest();
+    }
 
     // First render: drop straight into place, no animation.
     if (this.displayIndex < 0) {

@@ -195,7 +195,10 @@ async fn handle(app: AppHandle, mut pipe: impl Relay) {
         .unwrap_or_default()
         .to_string();
 
-    if event != "PermissionRequest" {
+    // AskUserQuestion comes in through the relay's `--ask` PreToolUse hook and
+    // waits for the island's answers, exactly like a permission request.
+    let is_ask = payload.get("coucou_kind").and_then(Value::as_str) == Some(ASK_KIND);
+    if event != "PermissionRequest" && !is_ask {
         log::line(format!("hook {event}"));
         let _ = app.emit_to(WINDOW_LABEL, "hook", payload);
         pipe.finish();
@@ -209,10 +212,21 @@ async fn handle(app: AppHandle, mut pipe: impl Relay) {
         pending.0.lock().unwrap().insert(id.clone(), tx);
     }
     payload["request_id"] = json!(id);
-    log::line(format!("hook PermissionRequest id={id}"));
+    log::line(format!("hook {} id={id}", if is_ask { "AskUserQuestion" } else { "PermissionRequest" }));
     let _ = app.emit_to(WINDOW_LABEL, "hook", payload);
 
-    let decision = wait_for_decision(&id, &mut rx).await;
+    // The terminal shows its own dialog at the same time, and whichever is
+    // answered first wins. When it is the terminal, Claude Code aborts the hook:
+    // the relay dies and its end of the pipe closes. Watching for that is how
+    // the island learns to take its card down instead of waiting it out.
+    let decision = tokio::select! {
+        d = wait_for_decision(&id, &mut rx) => d,
+        () = relay_gone(&mut pipe) => {
+            log::line(format!("hook id={id} answered in the terminal"));
+            let _ = app.emit_to(WINDOW_LABEL, "hook-gone", json!({ "request_id": id }));
+            None
+        }
+    };
     app.state::<Pending>().0.lock().unwrap().remove(&id);
 
     // No decision: say nothing at all. coucou-hook then writes nothing to stdout
@@ -222,6 +236,19 @@ async fn handle(app: AppHandle, mut pipe: impl Relay) {
         let _ = pipe.flush().await;
     }
     pipe.finish();
+}
+
+/// Resolves when the relay hangs up. It sends nothing after its one line, so
+/// any read that returns is the end: EOF, a broken pipe, or a stray byte from
+/// a relay that is about to exit anyway.
+async fn relay_gone(pipe: &mut impl Relay) {
+    let mut byte = [0u8; 1];
+    loop {
+        match pipe.read(&mut byte).await {
+            Ok(0) | Err(_) => return,
+            Ok(_) => continue,
+        }
+    }
 }
 
 /// Two waits: a short one for "the card is up", then the long one for a human.
@@ -285,13 +312,128 @@ pub fn decline(app: &AppHandle, request_id: &str) {
     send(app, request_id, Reply::Decline, false);
 }
 
-/// Called by the island's Allow / Deny buttons. Only ever a bare word: turning
-/// it into Claude Code's JSON is coucou-hook's job.
+/// Called by the island's cards. Turning the answer into Claude Code's JSON is
+/// coucou-hook's job; this only lets through the line shapes it understands.
 pub fn answer(app: &AppHandle, request_id: &str, decision: &str) {
-    let word = match decision {
-        "allow" | "always" => "allow",
-        _ => "deny",
-    };
-    log::line(format!("decision id={request_id} {word}"));
-    send(app, request_id, Reply::Decision(word.to_string()), false);
+    match answer_line(decision) {
+        Some(line) => {
+            log::line(format!("decision id={request_id} {}", describe(&line)));
+            send(app, request_id, Reply::Decision(line), false);
+        }
+        // Something we do not understand is not a decision: let the terminal ask.
+        None => {
+            log::line(format!("decision id={request_id} unrecognised — terminal takes over"));
+            send(app, request_id, Reply::Decline, false);
+        }
+    }
+}
+
+/// Tag the relay puts on an AskUserQuestion that waits for the island.
+const ASK_KIND: &str = "ask_user_question";
+/// Plan approvals may only switch to one of these.
+const PLAN_MODES: &[&str] = &["bypassPermissions", "acceptEdits", "default"];
+const MAX_FEEDBACK: usize = 4_000;
+
+/// The single line written back to the relay, or None when `decision` is not a
+/// shape coucou-hook understands. Words: allow / always / deny. JSON objects:
+/// `{"plan":"<mode>"}`, `{"feedback":"…"}`, `{"answers":{"<q>":"<a>"|["<a>"…]}}`.
+/// JSON is re-serialised, so a stray newline can never split the line.
+fn answer_line(decision: &str) -> Option<String> {
+    match decision.trim() {
+        "allow" | "always" => return Some("allow".into()),
+        "deny" => return Some("deny".into()),
+        _ => {}
+    }
+    let v = serde_json::from_str::<Value>(decision).ok()?;
+    let obj = v.as_object()?;
+    if obj.len() != 1 {
+        return None;
+    }
+    if let Some(mode) = obj.get("plan").and_then(Value::as_str) {
+        return PLAN_MODES.contains(&mode).then(|| json!({ "plan": mode }).to_string());
+    }
+    if let Some(text) = obj.get("feedback").and_then(Value::as_str) {
+        let text = text.trim();
+        if text.is_empty() {
+            return None;
+        }
+        let text: String = text.chars().take(MAX_FEEDBACK).collect();
+        return Some(json!({ "feedback": text }).to_string());
+    }
+    if let Some(answers) = obj.get("answers").and_then(Value::as_object) {
+        let ok = !answers.is_empty()
+            && answers.values().all(|a| match a {
+                Value::String(_) => true,
+                Value::Array(items) => !items.is_empty() && items.iter().all(Value::is_string),
+                _ => false,
+            });
+        return ok.then(|| json!({ "answers": answers }).to_string());
+    }
+    None
+}
+
+/// Short form for the log: never the feedback or the answers themselves.
+fn describe(line: &str) -> String {
+    match serde_json::from_str::<Value>(line) {
+        Ok(v) if v.get("plan").is_some() => format!("plan:{}", v["plan"].as_str().unwrap_or("")),
+        Ok(v) if v.get("feedback").is_some() => "feedback".into(),
+        Ok(v) if v.get("answers").is_some() => "answers".into(),
+        _ => line.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn plain_words_pass_through() {
+        assert_eq!(answer_line("allow").as_deref(), Some("allow"));
+        assert_eq!(answer_line("always").as_deref(), Some("allow"));
+        assert_eq!(answer_line(" deny ").as_deref(), Some("deny"));
+    }
+
+    #[test]
+    fn plan_modes_are_whitelisted() {
+        assert_eq!(answer_line(r#"{"plan":"acceptEdits"}"#).as_deref(), Some(r#"{"plan":"acceptEdits"}"#));
+        assert!(answer_line(r#"{"plan":"bypassPermissions"}"#).is_some());
+        assert!(answer_line(r#"{"plan":"default"}"#).is_some());
+        assert!(answer_line(r#"{"plan":"dontAsk"}"#).is_none());
+        assert!(answer_line(r#"{"plan":"acceptEdits","feedback":"x"}"#).is_none());
+    }
+
+    #[test]
+    fn feedback_is_trimmed_capped_and_kept_on_one_line() {
+        let line = answer_line("{\"feedback\":\"  line one\\nline two  \"}").unwrap();
+        assert!(!line.contains('\n'));
+        assert_eq!(serde_json::from_str::<Value>(&line).unwrap()["feedback"], "line one\nline two");
+        let long = format!(r#"{{"feedback":"{}"}}"#, "é".repeat(5_000));
+        let v: Value = serde_json::from_str(&answer_line(&long).unwrap()).unwrap();
+        assert_eq!(v["feedback"].as_str().unwrap().chars().count(), MAX_FEEDBACK);
+        assert!(answer_line(r#"{"feedback":"  "}"#).is_none());
+    }
+
+    #[test]
+    fn answers_must_be_strings_or_string_lists() {
+        assert!(answer_line(r#"{"answers":{"Q?":"A","M?":["x","y"]}}"#).is_some());
+        assert!(answer_line(r#"{"answers":{}}"#).is_none());
+        assert!(answer_line(r#"{"answers":{"Q?":1}}"#).is_none());
+        assert!(answer_line(r#"{"answers":{"Q?":[]}}"#).is_none());
+    }
+
+    #[test]
+    fn anything_else_is_not_a_decision() {
+        assert!(answer_line("").is_none());
+        assert!(answer_line("yes").is_none());
+        assert!(answer_line("[1]").is_none());
+        assert!(answer_line(r#"{"permissionDecision":"allow"}"#).is_none());
+    }
+
+    #[test]
+    fn the_log_never_carries_what_was_typed() {
+        assert_eq!(describe(r#"{"feedback":"secret plan notes"}"#), "feedback");
+        assert_eq!(describe(r#"{"answers":{"Q":"A"}}"#), "answers");
+        assert_eq!(describe(r#"{"plan":"acceptEdits"}"#), "plan:acceptEdits");
+        assert_eq!(describe("allow"), "allow");
+    }
 }

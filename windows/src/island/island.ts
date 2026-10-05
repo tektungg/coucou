@@ -19,6 +19,7 @@ import { USC, UploadSeq } from "../upload/sequence";
 import { buildHeader, buildViews, type ViewActions, type ViewHost } from "../views/views";
 import { h } from "../views/dom";
 import { IslandStateMachine } from "./fsm";
+import { stepFocus } from "../views/carousel";
 
 const BOT_OVERHANG = 40;
 /** Same margin as the Rust hit test (src-tauri/src/island.rs). */
@@ -140,13 +141,37 @@ export class Island {
         if (!req) return;
         Sound.play(d === "deny" ? "blip" : "approve");
         void Bridge.approvalDecision(req.requestId, d);
-        State.pendingApproval = null;
-        State.isPinned = false;
-        this.fsm.pinned = false;
-        State.updateTask("integration_claude", "working");
-        State.setPillBadge("integration_claude", null);
-        this.setView(State.defaultView());
+        this.finishCard();
       },
+      // The plan card: approve into a mode, or send it back with a note. The
+      // relay turns either line into Claude Code's JSON (coucou-hook).
+      decidePlan: (choice) => {
+        const req = State.pendingApproval;
+        void Bridge.log(`plan ${"mode" in choice ? choice.mode : "feedback"} req=${req?.requestId ?? "none"}`);
+        if (!req) return;
+        const line = "mode" in choice ? { plan: choice.mode } : { feedback: choice.feedback };
+        Sound.play("mode" in choice ? "approve" : "blip");
+        void Bridge.approvalDecision(req.requestId, JSON.stringify(line));
+        this.finishCard();
+      },
+      // The question card: answers go back through the --ask hook; null hands
+      // the question to the terminal instead.
+      answerQuestion: (answers) => {
+        const q = State.pendingQuestion;
+        void Bridge.log(`answer ${answers ? "sent" : "terminal"} req=${q?.requestId ?? "none"}`);
+        if (!q) return;
+        if (answers) {
+          Sound.play("approve");
+          void Bridge.approvalDecision(q.requestId, JSON.stringify({ answers }));
+        } else {
+          Sound.play("blip");
+          void Bridge.approvalDecline(q.requestId);
+        }
+        this.finishCard();
+      },
+      // Only the island's own text fields need keystrokes; everything else
+      // leaves the focus where the user was typing.
+      wantKeyboard: (on) => void Bridge.focusWindow(on),
       toggleSound: () => {
         State.settings.soundEnabled = !State.settings.soundEnabled;
         Sound.setEnabled(State.settings.soundEnabled);
@@ -312,6 +337,21 @@ export class Island {
     State.lastActivity = performance.now();
     this.animateGeometry(!grew);
     State.notify();
+  }
+
+  /** A card that held Claude Code (approval, plan, question) has been answered. */
+  private finishCard() {
+    // The session that asked, not a fixed pill: each session has its own.
+    const taskId =
+      State.pendingApproval?.taskId ?? State.pendingQuestion?.taskId ?? "integration_claude";
+    State.pendingApproval = null;
+    State.pendingQuestion = null;
+    State.isPinned = false;
+    this.fsm.pinned = false;
+    State.updateTask(taskId, "working");
+    State.setPillBadge(taskId, null);
+    void Bridge.focusWindow(false);
+    this.setView(State.defaultView());
   }
 
   collapse() {
@@ -546,6 +586,12 @@ export class Island {
 
     window.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && State.mode === "expanded" && !State.isPinned) this.collapse();
+      // ← → page through the pills, like a swipe (views/carousel.ts).
+      if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && State.mode === "expanded" && State.view === "overview") {
+        const ids = State.visibleTasks.map((t) => t.id);
+        const next = stepFocus(ids, State.focusTask?.id ?? null, e.key === "ArrowRight" ? 1 : -1);
+        if (next) State.setFocus(next);
+      }
       State.lastActivity = performance.now();
     });
 
@@ -585,18 +631,22 @@ export class Island {
       x >= rect.x - HIT_MARGIN && x <= rect.x + rect.w + HIT_MARGIN &&
       y >= rect.y - HIT_MARGIN && y <= rect.y + rect.h + HIT_MARGIN;
 
-    if (inIsland && !this.wasInIsland) {
+    // Updated before the FSM runs: its transition handlers read wasInIsland, and
+    // a stale false made an island opened by hover schedule its own auto-close.
+    const wasIn = this.wasInIsland;
+    this.wasInIsland = inIsland;
+    if (inIsland && !wasIn) {
       if (this.fsm.state === "coucou") this.greeting.hover();
       this.fsm.mouseEntered();
       this.homeCollapseAt = null;
     }
-    if (!inIsland && this.wasInIsland) {
-      this.fsm.mouseLeft();
+    if (!inIsland && wasIn) {
+      // Leaving closes at once, except the chat: the pointer drifts while typing.
+      this.fsm.mouseLeft(State.view !== "prompt");
       if (this.fsm.state === "home" && !State.isPinned) {
         this.homeCollapseAt = performance.now() + State.settings.autoCloseInterval * 1000;
       }
     }
-    this.wasInIsland = inIsland;
 
     // Bot hover → love
     const overBot = State.mode === "expanded" && State.stateOverride == null && this.isBotHit(x, y);
@@ -733,7 +783,10 @@ export class Island {
       ? settling
       : settling ||
         !this.botCx.settled || !this.botCy.settled || !this.botSize.settled ||
-        greetingActive || this.engine.busy || UploadSeq.isActive;
+        greetingActive || this.engine.busy || UploadSeq.isActive ||
+        // A view mid-transition (the ticker scrolling a step): stopping here
+        // froze two ticker rows on top of each other once Mochi went still.
+        (this.views.get(State.view)?.busy?.() ?? false);
 
     if (busy) {
       requestAnimationFrame(this.frame);

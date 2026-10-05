@@ -7,10 +7,16 @@ mod hooks;
 mod integrations;
 mod island;
 mod log;
+mod mcp_stdio;
+mod media;
+mod notify;
+mod personal;
 mod pipe;
 mod platform;
+mod quota;
 mod secrets;
 mod settings;
+mod space;
 mod tray;
 
 use std::process::Command;
@@ -300,6 +306,26 @@ async fn refresh_integration(app: AppHandle, id: String) {
     integrations::poll_once(app, &id).await;
 }
 
+/// The Music pill's ⏮ ⏯ ⏭ buttons.
+#[tauri::command]
+async fn media_control(app: AppHandle, action: String) -> Result<(), String> {
+    personal::media_control(app, action).await
+}
+
+/// Opens a messaging app from the Messages card. Only these four names are
+/// accepted, so the island can never make Windows launch an arbitrary URL.
+#[tauri::command]
+fn open_app(app: String) {
+    let url = match app.as_str() {
+        "discord" => "discord://",
+        "slack" => "slack://open",
+        "telegram" => "tg://",
+        "whatsapp" => "whatsapp://",
+        _ => return,
+    };
+    platform::open_url(url);
+}
+
 /// Lets the island write to the same log as the Rust side.
 #[tauri::command]
 fn log_line(message: String) {
@@ -413,6 +439,8 @@ pub fn run() {
             secret_set,
             secret_clear,
             refresh_integration,
+            media_control,
+            open_app,
             open_n8n,
             open_settings_window,
             set_paused,

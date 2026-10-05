@@ -39,8 +39,8 @@ installs for the current user only — no admin prompt.
 
 | What you do | What happens |
 |---|---|
-| Move the mouse to the very top-centre of the screen | Mochi peeks out |
-| Click the small island | It opens |
+| Move the mouse to the very top-centre of the screen | The island opens, no click needed |
+| Move the pointer off the island | It closes at once. The chat and anything that opened on its own (a finished session) wait for **Auto-close** instead; a permission request stays until answered |
 | Click Mochi | It gets annoyed. Three times in a row and it goes dizzy |
 | Rest the pointer on Mochi for two seconds | Hearts |
 | Drag a file onto the island | Mochi turns into a box, swallows it, then offers to answer questions about it |
@@ -67,6 +67,42 @@ never blocked or slowed down by Coucou.** If nobody answers a permission request
 in time, Coucou stays quiet and Claude Code asks in the terminal as usual.
 
 It works from any terminal — Windows Terminal, PowerShell, VS Code, Git Bash.
+
+### Plans and questions
+
+- **Plan approval (ExitPlanMode).** The island shows the plan itself (scrollable)
+  with the terminal's choices: **Yes, bypass**, **Yes, accept edits**, **Yes,
+  manual** (approve each edit), and **Change plan…**, which sends your note back
+  to Claude so it keeps planning. Approving switches the session's permission
+  mode through `updatedPermissions` (`setMode`, destination `session`); when
+  Claude Code's own `permission_suggestions` carry that mode, its entry is used
+  as is.
+- **Questions (AskUserQuestion).** Each question shows its options as chips
+  (descriptions on hover), one question at a time with an `i/N` counter.
+  Multi-select questions toggle chips then **Next / Send**; **Other…** takes free
+  text; **Reply in terminal** closes the card and leaves the terminal dialog.
+- **Answer in either place.** The terminal dialog and the island card are up at
+  the same time (both come from the same `PermissionRequest`); whichever is
+  answered first wins.
+  - Answered on the island: the relay returns the decision and the terminal
+    dialog closes.
+  - Answered in the terminal: Claude Code aborts the hook, the relay's pipe
+    closes, Coucou sees it (`hook-gone`) and takes the card down within about
+    2 s. As a backstop, the session moving on (the tool runs, a new prompt, Stop)
+    also clears a leftover card.
+- **Why `updatedInput`.** ExitPlanMode and AskUserQuestion require user
+  interaction: Claude Code ignores a hook's plain `allow` for them and keeps
+  waiting on the terminal. The relay therefore always answers them with
+  `updatedInput`: the plan input unchanged, or the questions plus `answers`.
+  This was verified against CLI 2.1.289 through the Agent SDK. Without it, a
+  plan approved on the island left the terminal still asking.
+- Older builds installed a separate `PreToolUse` `--ask` hook for
+  AskUserQuestion. Installing or updating the hooks removes it.
+- The island answers the relay with one line: `allow` / `deny`, or JSON
+  `{"plan":"<mode>"}`, `{"feedback":"…"}`, `{"answers":{…}}`. Anything else is
+  dropped and the terminal asks, so a bad line can never approve or deny.
+- Plans are forwarded up to 64 KB; every other string in a hook payload is still
+  capped at 2,000 characters.
 
 ## Chat and keys
 
@@ -101,6 +137,53 @@ Tests: `cargo test --lib` covers argument building and output parsing. The
 live eval runs two real turns and checks the second remembers the first:
 `cargo test --lib claude_cli_live -- --ignored --nocapture` (set
 `COUCOU_CLAUDE_CONFIG_DIR` to test another profile).
+
+## Personal pills (this build)
+
+This build hides the stock integrations (Stripe, GitHub, Vercel, n8n, Resend,
+Notion, Cal.com: their code stays, so upstream still merges) and shows pills
+that read only what is already on this PC. No keys, no new accounts.
+
+| Pill | Source | Refresh |
+|---|---|---|
+| One per **Claude Code session** | hook events, by `session_id` (`cc_<8 hex>`), named after the project folder | live |
+| **Claude** (usage) | `%LOCALAPPDATA%\Coucou\status\<session_id>.json`, written by the Claude Code status line | 5 s |
+| **Space** | `list_timebox` on the local `space-timebox` MCP server, over stdio, no LLM | 5 min |
+| **Music** | Windows media session (Spotify, browsers, any player) | 2 s |
+| **Messages** | Windows notifications from Discord, Slack, Telegram, WhatsApp | 3 s |
+
+- **One pill at a time.** The overview shows a single pill, full width. The
+  header shows one dot per pill in that pill's colour, a ring on any with news,
+  and the active pill's name. Two-finger swipe (or tilt wheel), drag the card
+  left/right, ← →, or tap a dot to move between pills.
+- **Sessions.** Every Claude Code session gets its own pill with its ticker,
+  context % and cost. A permission request, plan or question focuses the
+  session that asked. `SessionEnd` removes the pill after 5 s, and sessions
+  quiet for 2 h are swept. The catch-all Claude Code pill only shows while no
+  session exists.
+- **Claude usage.** The status line script (`statusline.js` in the Claude Code
+  config folder) calls `statusline-coucou.js`, which writes the 5h/7d limits,
+  context and cost atomically per session. Files older than 24 h are deleted and
+  limits whose reset time has passed are ignored. The pill sweats at 90 % of the
+  5-hour limit and raises an alert at 80 % and 95 %.
+- **Space.** Runs `uv --directory <space-timebox> run space-timebox serve` and
+  calls `list_timebox` for today: points done/total, sprint (SP) vs timebox (TB)
+  items, and the `/point` rules as warnings (total ≠ 8, open items at 0 pt).
+  Login stays with space-timebox (`space-timebox login`); its errors are shown as is.
+  The folder is set in **Settings → Integrations → Space** (empty = default).
+- **Music.** Prefers a playing session, then Spotify. ⏮ ⏯ ⏭ act on the same
+  session.
+- **Messages.** Reads Action Center toasts through `UserNotificationListener`
+  (Windows asks once for notification access). Shows sender, message,
+  server/workspace and channel; clicking a row opens the app. Slack toasts never
+  name the workspace, so it comes from **Settings → Slack workspace**. Messages
+  stay in memory (the last 15), and the log records counts only. A toast an app
+  clears before the next poll (3 s) is not seen. Discord's toast format is
+  parsed as `Author (#channel, Server)`; adjust `notify.rs` if a live toast differs.
+
+Tests: `cargo test -p coucou --lib` (parsers, MCP framing, quota files, Space
+summary, session routing) and `npm test`. Live evals, counts only, never content:
+`cargo test -p coucou --lib live -- --ignored --nocapture`.
 
 No telemetry. The only network requests Coucou makes are to the services you
 configure yourself.

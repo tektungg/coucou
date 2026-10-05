@@ -7,6 +7,8 @@ import { Bridge, onEvent } from "../core/bridge";
 import { Sound } from "../core/sound";
 import { State } from "../core/state";
 import type { Island } from "./island";
+import { parseQuestions } from "./askQuestion";
+import { isSessionPill, resolvesCard, routeHook } from "./sessions";
 
 const CLAUDE_ID = "integration_claude";
 
@@ -25,7 +27,12 @@ interface HookPayload {
   tool_input?: Record<string, unknown>;
   /** Optional agent tag: lowercase, digits and hyphens, ≤ 24 chars. */
   coucou_agent?: string;
+  /** "ask_user_question" when the relay's --ask hook waits for answers. */
+  coucou_kind?: string;
 }
+
+/** Clears the question card if no answer was given before the hook gave up. */
+let questionTimeout: number | null = null;
 
 /** Same rule as HookServer.validateAgent on macOS. "claude" is reserved. */
 function validateAgent(raw: string | undefined): string | null {
@@ -138,7 +145,41 @@ function clearSession() {
 
 export function registerHookHandlers(island: Island) {
   void onEvent<HookPayload>("hook", (payload) => handleHook(island, payload));
+  // The relay hung up: the terminal answered first and Claude Code aborted it.
+  void onEvent<{ request_id: string }>("hook-gone", ({ request_id }) =>
+    dismissCard(island, (card) => card.requestId === request_id),
+  );
 }
+
+/**
+ * Takes down an approval, plan or question card that was answered elsewhere
+ * (in the terminal), without sending any decision. `matches` picks the card.
+ */
+function dismissCard(
+  island: Island,
+  matches: (card: { requestId: string; taskId: string }) => boolean,
+) {
+  const card = State.pendingApproval ?? State.pendingQuestion;
+  if (!card || !matches(card)) return;
+  if (State.pendingApproval) {
+    if (pendingTimeout != null) window.clearTimeout(pendingTimeout);
+    pendingTimeout = null;
+  } else if (questionTimeout != null) {
+    window.clearTimeout(questionTimeout);
+    questionTimeout = null;
+  }
+  State.pendingApproval = null;
+  State.pendingQuestion = null;
+  State.isPinned = false;
+  island.dropPin();
+  State.updateTask(card.taskId, "working");
+  State.setPillBadge(card.taskId, null);
+  if (State.view === "approval" || State.view === "plan" || State.view === "question") {
+    island.setView(State.defaultView());
+  }
+  State.notify();
+}
+
 
 function handleHook(island: Island, payload: HookPayload) {
   if (State.paused) {
@@ -155,12 +196,15 @@ function handleHook(island: Island, payload: HookPayload) {
   const projectName = aliasProjectName(raw || "Session");
 
   // Route to the right pill. Valid coucou_agent → dynamic "agent_<name>" pill.
-  // "claude" is reserved; absent or invalid → Claude Code pill unchanged.
+  // "claude" is reserved. Claude Code events get one pill per session; only a
+  // payload without a session id falls back to the catch-all Claude Code pill.
   const validAgent = validateAgent(payload.coucou_agent);
-  const agentId = validAgent ? `agent_${validAgent}` : CLAUDE_ID;
+  const sessionId = payload.session_id ?? "";
+  const agentId = routeHook(validAgent, sessionId);
   const isExternalAgent = validAgent !== null;
+  const isSession = isSessionPill(agentId);
 
-  const focused = State.focusId === agentId;
+  const focused = State.focusTask?.id === agentId;
 
   /** Alerts force the island open; work events only reveal the compact island. */
   const surface = (view: Parameters<Island["alert"]>[0], isAlert: boolean) => {
@@ -173,14 +217,27 @@ function handleHook(island: Island, payload: HookPayload) {
     }
   };
 
-  /** Ensure the agent pill exists (no-op for Claude Code). */
+  /** Ensure the pill exists and is up to date (name, cwd, activity). */
   const ensurePill = () => {
     if (isExternalAgent) {
       State.upsertExternalAgent(agentId, validAgent!, agentColor(validAgent!));
+    } else if (isSession) {
+      State.upsertSession(agentId, sessionId, projectName, cwd);
     } else {
       upsert(projectName, cwd);
     }
   };
+  // Every Claude Code event keeps its session pill alive and in order, except
+  // the end of the session itself.
+  if (isSession && name !== "SessionEnd") ensurePill();
+  State.sweepSessions();
+
+  // Backstop for the terminal answering first when the relay's hang-up was
+  // missed: the session carrying on means its card is no longer waiting.
+  const cardTool = State.pendingApproval?.tool ?? (State.pendingQuestion ? "AskUserQuestion" : "");
+  if (cardTool && resolvesCard(name, payload.tool_name, cardTool)) {
+    dismissCard(island, (card) => card.taskId === agentId);
+  }
 
   switch (name) {
     case "SessionStart":
@@ -200,9 +257,19 @@ function handleHook(island: Island, payload: HookPayload) {
     }
 
     case "PreToolUse": {
+      if (payload.coucou_kind === "ask_user_question") {
+        showQuestion(island, payload, isExternalAgent, agentId, ensurePill);
+        break;
+      }
       ensurePill();
-      State.updateTask(agentId, "working");
       const tool = payload.tool_name ?? "Tool";
+      // The waiting --ask copy of this event owns AskUserQuestion's card; the
+      // plain one only marks the task, without a step that says nothing.
+      if (tool === "AskUserQuestion") {
+        State.updateTask(agentId, "question");
+        break;
+      }
+      State.updateTask(agentId, "working");
       State.appendStep(agentId, stepLabel(tool, payload.tool_input ?? {}));
       surface("overview", false);
       break;
@@ -256,6 +323,14 @@ function handleHook(island: Island, payload: HookPayload) {
     case "SessionEnd":
       if (isExternalAgent) {
         State.removeTask(agentId);
+      } else if (isSession) {
+        // A moment to see it end; a session resumed meanwhile keeps its pill.
+        State.updateTask(agentId, "idle");
+        const endedAt = performance.now();
+        window.setTimeout(() => {
+          const t = State.tasks.find((x) => x.id === agentId);
+          if (t && (t.lastEventAt ?? 0) <= endedAt) State.removeTask(agentId);
+        }, 5000);
       } else {
         State.updateTask(agentId, "idle");
         clearSession();
@@ -280,38 +355,50 @@ function handleHook(island: Island, payload: HookPayload) {
       }
 
       const requestId = payload.request_id ?? "";
+      const tool = payload.tool_name ?? "Tool";
+      // AskUserQuestion: the terminal shows its dialog at the same moment, and
+      // the card answers it too (the relay hands the answers back as
+      // updatedInput). Whichever is answered first wins; the other goes away.
+      if (tool === "AskUserQuestion") {
+        showQuestion(island, payload, isExternalAgent, agentId, ensurePill);
+        break;
+      }
       // One card, one request. A second one must never quietly replace the first
       // — that would leave a human staring at request B while request A waits for
       // a decision nobody can give. Hand it straight back to the terminal.
-      if (State.pendingApproval && State.pendingApproval.requestId !== requestId) {
+      if (
+        (State.pendingApproval && State.pendingApproval.requestId !== requestId) ||
+        State.pendingQuestion
+      ) {
         if (requestId) void Bridge.approvalDecline(requestId);
         break;
       }
-      upsert(projectName, cwd);
+      ensurePill();
       if (pendingTimeout != null) window.clearTimeout(pendingTimeout);
-      const tool = payload.tool_name ?? "Tool";
       const input = payload.tool_input ?? {};
+      const isPlan = tool === "ExitPlanMode";
       State.pendingApproval = {
         requestId,
         sessionId: payload.session_id ?? "",
+        taskId: agentId,
         tool,
         command: approvalTarget(tool, input),
+        kind: isPlan ? "plan" : "tool",
+        plan: isPlan && typeof input.plan === "string" ? input.plan : undefined,
+        planFilePath:
+          isPlan && typeof input.planFilePath === "string" ? input.planFilePath : undefined,
       };
+      const cardView = isPlan ? "plan" : "approval";
       // The relay's short ack window closes in 800 ms; everything below this
       // line is synchronous, so the card really is up by the time it lands.
       if (requestId) void Bridge.approvalAck(requestId);
-      State.updateTask(CLAUDE_ID, "approval");
+      State.updateTask(agentId, "approval");
       State.isPinned = true;
       Sound.play("approval");
-      if (focused) {
-        island.alert("approval");
-      } else {
-        // Another agent holds the view, so the card would yank it away. The badge
-        // is the signal instead — but it has to be on screen for that to mean
-        // anything, hence the reveal. We just told the relay a human can act.
-        State.setPillBadge(CLAUDE_ID, "approval");
-        island.reveal();
-      }
+      // The session that asks takes the focus: with one pill per session, a
+      // badge on a pill would leave the card naming the wrong project.
+      State.setFocus(agentId);
+      island.alert(cardView);
       // Coucou answers within 108 s or not at all; after that the terminal has
       // taken over and the card would be lying.
       pendingTimeout = window.setTimeout(() => {
@@ -320,9 +407,9 @@ function handleHook(island: Island, payload: HookPayload) {
         State.pendingApproval = null;
         State.isPinned = false;
         island.dropPin();
-        State.updateTask(CLAUDE_ID, "working");
-        State.setPillBadge(CLAUDE_ID, null);
-        if (State.view === "approval") island.setView(State.defaultView());
+        State.updateTask(agentId, "working");
+        State.setPillBadge(agentId, null);
+        if (State.view === "approval" || State.view === "plan") island.setView(State.defaultView());
         State.notify();
       }, 110_000);
       break;
@@ -332,4 +419,50 @@ function handleHook(island: Island, payload: HookPayload) {
       break;
   }
   State.notify();
+}
+
+/**
+ * AskUserQuestion through the relay's --ask hook: the questions with their
+ * options, answered from the island. Anything the card cannot carry goes
+ * straight back to the terminal.
+ */
+function showQuestion(
+  island: Island,
+  payload: HookPayload,
+  isExternalAgent: boolean,
+  taskId: string,
+  ensurePill: () => void,
+) {
+  const requestId = payload.request_id ?? "";
+  const items = parseQuestions(payload.tool_input);
+  const busy =
+    State.pendingApproval != null ||
+    (State.pendingQuestion != null && State.pendingQuestion.requestId !== requestId);
+  if (isExternalAgent || !items || busy) {
+    if (requestId) void Bridge.approvalDecline(requestId);
+    return;
+  }
+  ensurePill();
+  if (questionTimeout != null) window.clearTimeout(questionTimeout);
+  State.pendingQuestion = { requestId, taskId, items, index: 0, answers: [] };
+  // Same 800 ms ack window as a permission request.
+  if (requestId) void Bridge.approvalAck(requestId);
+  State.updateTask(taskId, "question");
+  State.isPinned = true;
+  Sound.play("question");
+  // As with approvals: the session asking takes the focus.
+  State.setFocus(taskId);
+  island.alert("question");
+  // The relay stops waiting at 110 s; past that the terminal is asking.
+  questionTimeout = window.setTimeout(() => {
+    questionTimeout = null;
+    if (State.pendingQuestion?.requestId !== requestId) return;
+    State.pendingQuestion = null;
+    State.isPinned = false;
+    island.dropPin();
+    State.updateTask(taskId, "working");
+    State.setPillBadge(taskId, null);
+    if (State.view === "question") island.setView(State.defaultView());
+    State.notify();
+  }, 110_000);
 }

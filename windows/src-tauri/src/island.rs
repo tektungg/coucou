@@ -208,6 +208,10 @@ pub fn spawn_cursor_poll(app: AppHandle, gate: Arc<PollGate>) {
             let mut ticks: u32 = 0;
             while gate.is_active() {
                 std::thread::sleep(Duration::from_millis(period));
+                // Collapsed while we slept: this tick must not touch click-through.
+                if !gate.is_active() {
+                    break;
+                }
 
                 // Monitors get plugged in, unplugged, rearranged and rescaled, and
                 // an island pinned to coordinates that no longer exist is an island
@@ -280,6 +284,16 @@ pub fn spawn_cursor_poll(app: AppHandle, gate: Arc<PollGate>) {
                 }
 
                 let _ = win.emit("cursor", CursorPayload { x, y });
+            }
+
+            // Parked because the island hid. set_collapsed told the wake strip to
+            // take the mouse, but a tick already past the check above could still
+            // have made the window click-through right after — and a strip the
+            // mouse falls through can only be revived from the tray. This loop is
+            // the only other writer, so it has the last word: the strip listens.
+            if gate.collapsed.load(Ordering::Relaxed) {
+                set_ignore_cursor(&app, false);
+                gate.forget_ignore_state();
             }
         }
     });

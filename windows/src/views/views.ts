@@ -7,10 +7,12 @@ import { ICONS } from "./icons";
 import { Ticker } from "./ticker";
 import { State, type AgentTask } from "../core/state";
 import { washRGBA, type IslandViewName, type Wash } from "../core/layout";
-import { createMiniBot, pruneMiniBots } from "../mochi/minibots";
 import { buildPrompt } from "./chat";
 import { buildChoose, buildUpload, buildUploading } from "./upload";
 import { renderIntegrationCard, type IntegrationCardHooks } from "./integrations";
+import { buildAnswers, type AskAnswer } from "../island/askQuestion";
+import { isSessionPill } from "../island/sessions";
+import { SwipeAccumulator, dragDirection, slideDirection, stepFocus } from "./carousel";
 
 export interface ViewActions {
   setView(v: IslandViewName): void;
@@ -21,6 +23,11 @@ export interface ViewActions {
   openTarget(): void;
   openUrl(url: string): void;
   decide(d: "allow" | "deny"): void;
+  decidePlan(choice: PlanChoice): void;
+  /** null = "Reply in terminal". */
+  answerQuestion(answers: Record<string, string | string[]> | null): void;
+  /** The island takes keyboard focus while one of its text fields is open. */
+  wantKeyboard(on: boolean): void;
   toggleSound(): void;
   setVolume(v: number): void;
   setAutoClose(seconds: number): void;
@@ -35,6 +42,8 @@ export interface ViewHost {
   focus?(): void;
   /** Called every frame while the view is on screen. */
   tick?(nowMs: number): void;
+  /** True while the view still needs frames (a transition in flight). */
+  busy?(): boolean;
 }
 
 // ── Shared pieces ─────────────────────────────────────────────────────────────
@@ -90,16 +99,52 @@ export function buildHeader(actions: ViewActions): ViewHost {
     actions.setView(v);
   }
 
+  // The overview's pager: one dot per pill, the active one named.
+  const pager = h("div", { class: "pager" });
+  let pagerKey = "";
+  const BADGE_RING: Record<string, string> = { approval: "#F5A524", finished: "#22C55E", error: "#F4505E" };
+
+  function syncPager() {
+    const tasks = State.visibleTasks;
+    const focus = State.focusTask?.id ?? "";
+    const show = State.view === "overview" && tasks.length > 0;
+    const key = show
+      ? `${focus}|${tasks.map((t) => `${t.id}:${t.color}:${t.name}:${t.pillBadge ?? ""}`).join(",")}`
+      : "";
+    if (key === pagerKey) return;
+    pagerKey = key;
+    clear(pager);
+    if (!show) return;
+    for (const t of tasks) {
+      const active = t.id === focus;
+      const d = h("button", {
+        class: active ? "pager-dot on" : "pager-dot",
+        title: t.id === "integration_claude" ? "VS Code" : t.name,
+        onclick: () => {
+          if (!active) actions.setFocus(t.id);
+        },
+      });
+      d.style.setProperty("--dot", t.color);
+      if (t.pillBadge) d.style.setProperty("--ring", BADGE_RING[t.pillBadge]);
+      pager.append(d);
+      if (active) {
+        pager.append(h("span", { class: "pager-label", text: t.id === "integration_claude" ? "VS Code" : t.name }));
+      }
+    }
+  }
+
   const el = h(
     "div",
     { id: "header" },
     h("div", { class: "tabs" }, tabHome, tabChat, tabDrop),
+    pager,
     h("div", { class: "header-actions" }, gearBtn, soundBtn),
   );
 
   return {
     el,
     sync() {
+      syncPager();
       const v = State.view;
       tabHome.classList.toggle("on", v === "overview" || v === "empty");
       tabChat.classList.toggle("on", v === "prompt");
@@ -127,15 +172,32 @@ function buildOverview(actions: ViewActions): ViewHost {
     svg(ICONS.arrowUpRight, 8),
   );
   const left = card(null, leftBody, jump);
-  const pills = h("div", { class: "pills" });
-  const right = card(null, pills);
+  // One pill at a time, full width; the dots in the header say which, and a
+  // swipe moves to the next (views/carousel.ts).
+  const slot = h("div", { class: "left" }, left);
+  const el = h("div", { class: "view overview" }, slot);
 
-  const el = h("div", { class: "view overview" },
-    h("div", { class: "left" }, left),
-    h("div", { class: "right" }, right),
-  );
+  const ids = () => State.visibleTasks.map((t) => t.id);
+  const go = (dir: -1 | 1) => {
+    const next = stepFocus(ids(), State.focusTask?.id ?? null, dir);
+    if (next && next !== State.focusTask?.id) actions.setFocus(next);
+  };
+  const swipe = new SwipeAccumulator();
+  el.addEventListener("wheel", (e) => {
+    const dir = swipe.add(e.deltaX, e.deltaY, performance.now());
+    if (dir !== 0) go(dir);
+  }, { passive: true });
+  let dragFrom: { x: number; y: number } | null = null;
+  el.addEventListener("mousedown", (e) => {
+    dragFrom = { x: e.clientX, y: e.clientY };
+  });
+  window.addEventListener("mouseup", (e) => {
+    if (!dragFrom) return;
+    const dir = dragDirection(e.clientX - dragFrom.x, e.clientY - dragFrom.y);
+    dragFrom = null;
+    if (dir !== 0) go(dir);
+  });
 
-  let pillIds = "";
   let detailOpen = false;
   let lastFocus: string | null = null;
   let mode: "ticker" | "card" | null = null;
@@ -163,9 +225,17 @@ function buildOverview(actions: ViewActions): ViewHost {
     tick(nowMs: number) {
       if (mode === "ticker") ticker.tick(nowMs);
     },
+    busy: () => mode === "ticker" && ticker.animating,
     sync() {
       const task = State.focusTask;
       if (task?.id !== lastFocus) {
+        // Slide the new pill in from the side the dots say it lives on.
+        const dir = slideDirection(ids(), lastFocus, task?.id ?? null);
+        if (dir !== 0) {
+          slot.classList.remove("slide-next", "slide-prev");
+          void slot.offsetWidth; // restart the animation
+          slot.classList.add(dir > 0 ? "slide-next" : "slide-prev");
+        }
         lastFocus = task?.id ?? null;
         detailOpen = false;
         cardKey = "";
@@ -174,8 +244,11 @@ function buildOverview(actions: ViewActions): ViewHost {
 
       // VS Code with a live Claude Code session keeps the ticker; every other
       // pill shows its own card, exactly like IntegrationCardView.
+      // A session pill always shows its ticker: it exists because a session does.
       const sessionActive =
-        task?.id === "integration_claude" && (task.state !== "idle" || task.steps.length > 0);
+        task != null &&
+        (isSessionPill(task.id) ||
+          (task.id === "integration_claude" && (task.state !== "idle" || task.steps.length > 0)));
 
       if (task && sessionActive) {
         if (mode !== "ticker") {
@@ -188,8 +261,17 @@ function buildOverview(actions: ViewActions): ViewHost {
         who.append(
           dot(task.color, 7),
           h("span", { class: "name", text: task.name }),
-          h("span", { class: "tool", text: task.source === "claudeCode" ? "Claude Code" : "n8n" }),
         );
+        // A session pill is Claude Code by definition: its context and cost
+        // (from the statusline's status file) say more than the tool name.
+        const usage = [
+          task.ctxPct != null ? `ctx ${Math.round(task.ctxPct)}%` : "",
+          task.costUsd != null ? `$${task.costUsd.toFixed(2)}` : "",
+        ].filter(Boolean);
+        const label = usage.length
+          ? usage.join(" · ")
+          : task.source === "claudeCode" ? "Claude Code" : "n8n";
+        who.append(h("span", { class: "tool", text: label }));
         if (task.steps.length > 1) {
           who.append(h("span", {
             class: "count",
@@ -213,59 +295,8 @@ function buildOverview(actions: ViewActions): ViewHost {
       }
 
       jump.style.display = detailOpen ? "none" : "";
-
-      const others = State.otherTasks.slice(0, 4);
-      const pillKey = others.map((t) => `${t.id}:${t.pillBadge ?? ""}`).join("|");
-      if (pillKey !== pillIds) {
-        pillIds = pillKey;
-        clear(pills);
-        for (const t of others) pills.append(buildPill(t, actions));
-        pruneMiniBots();
-      }
     },
   };
-}
-
-function buildPill(task: AgentTask, actions: ViewActions): HTMLElement {
-  const label = task.id === "integration_claude" ? "VS Code" : task.name;
-  const canvas = createMiniBot(task, 24);
-  const pill = h(
-    "div",
-    { class: "pill", onclick: () => actions.setFocus(task.id) },
-    canvas,
-    h("span", { class: "lbl", text: label }),
-  );
-  pill.style.borderColor = `${task.color}24`;
-  pill.addEventListener("mouseenter", () => {
-    pill.style.background = `${task.color}2e`;
-    pill.style.borderColor = `${task.color}8c`;
-    pill.style.boxShadow = `0 2px 10px ${task.color}59`;
-    (pill.querySelector(".lbl") as HTMLElement).style.color = lighten(task.color, 0.3);
-  });
-  pill.addEventListener("mouseleave", () => {
-    pill.style.background = "";
-    pill.style.borderColor = `${task.color}24`;
-    pill.style.boxShadow = "";
-    (pill.querySelector(".lbl") as HTMLElement).style.color = "";
-  });
-
-  if (task.pillBadge) {
-    const colors = { approval: "#F5A524", finished: "#22C55E", error: "#F4505E" } as const;
-    const icons = { approval: ICONS.bang, finished: ICONS.check, error: ICONS.xmark } as const;
-    const inner = h("i", { style: `background:${colors[task.pillBadge]}` }, svg(icons[task.pillBadge], 6, { stroke: task.pillBadge === "finished" ? 3 : 0 }));
-    const badge = h("div", { class: "pill-badge" }, inner);
-    badge.style.boxShadow = `0 0 4px ${colors[task.pillBadge]}99`;
-    pill.append(badge);
-  }
-  return pill;
-}
-
-function lighten(hex: string, amount: number): string {
-  const v = parseInt(hex.replace("#", ""), 16);
-  const c = [(v >> 16) & 255, (v >> 8) & 255, v & 255].map((x) =>
-    Math.min(255, Math.round(x + amount * 255)),
-  );
-  return `rgb(${c[0]},${c[1]},${c[2]})`;
 }
 
 // ── Empty ─────────────────────────────────────────────────────────────────────
@@ -317,22 +348,258 @@ function buildApproval(actions: ViewActions): ViewHost {
   };
 }
 
-// ── Question ──────────────────────────────────────────────────────────────────
+// ── Plan (ExitPlanMode) ───────────────────────────────────────────────────────
 
-function buildQuestion(): ViewHost {
-  const who = h("div");
-  const title = h("div", { class: "title" });
-  const row = h("div", { class: "actions" });
-  const el = h("div", { class: "view" }, card("cyan", stack(116, 16, who, title, row)));
+export type PlanMode = "bypassPermissions" | "acceptEdits" | "default";
+export type PlanChoice = { mode: PlanMode } | { feedback: string };
+
+/** The terminal's "Ready to code?" choices, in the same order. */
+const PLAN_CHOICES: { mode: PlanMode; label: string; hint: string }[] = [
+  { mode: "bypassPermissions", label: "Yes, bypass", hint: "Yes, and switch to bypass permissions (no further prompts)" },
+  { mode: "acceptEdits", label: "Yes, accept edits", hint: "Yes, and auto-accept edits" },
+  { mode: "default", label: "Yes, manual", hint: "Yes, manually approve edits" },
+];
+
+/** A single-line text field with Send and ✕, styled like the chat bar. */
+function textField(
+  placeholder: string,
+  onSend: (text: string) => void,
+  onCancel: () => void,
+): { el: HTMLElement; input: HTMLInputElement } {
+  const input = h("input", {
+    class: "chat-input",
+    type: "text",
+    placeholder,
+    spellcheck: "false",
+    autocomplete: "off",
+  }) as HTMLInputElement;
+  const send = () => {
+    if (input.value.trim()) onSend(input.value);
+  };
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") send();
+    // Escape closes the field only; the window handler would close the island.
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      onCancel();
+    }
+  });
+  const el = h(
+    "div",
+    { class: "chat-bar" },
+    input,
+    btn("Send", "primary", send),
+    h("button", { class: "link-btn", text: "✕", title: "Cancel", onclick: onCancel }),
+  );
+  return { el, input };
+}
+
+function buildPlan(actions: ViewActions): ViewHost {
+  const head = h("div", { class: "card-head" });
+  const text = h("div", { class: "plan-text" });
+  const bottom = h("div");
+  const el = h(
+    "div",
+    { class: "view" },
+    card("indigo", stack(116, 16, head, text, bottom)),
+  );
+  (el.querySelector(".stack") as HTMLElement).classList.add("top");
+
+  // Rebuilt only when the request or the mode changes: a rebuild between a
+  // mouse-down and a mouse-up would swallow the click.
+  let key = "";
+  let writing = false;
+
+  function closeField() {
+    writing = false;
+    actions.wantKeyboard(false);
+    key = "";
+    State.notify();
+  }
+
   return {
     el,
     sync() {
-      clear(who);
-      who.append(agentWho(State.focusTask, "Claude Code is asking a question"));
-      const task = State.focusTask;
-      title.textContent = task?.steps.at(-1) ?? "Claude needs an answer.";
-      clear(row);
-      row.append(h("div", { class: "sub", text: "Answer in your terminal — Coucou can't reply for you yet." }));
+      const req = State.pendingApproval;
+      const k = `${req?.requestId ?? ""}~${writing}`;
+      if (k === key) return;
+      if (req?.requestId !== key.split("~")[0]) writing = false;
+      key = `${req?.requestId ?? ""}~${writing}`;
+
+      clear(head);
+      head.append(agentWho(State.focusTask, "has a plan ready"));
+      text.textContent = req?.plan?.trim() || "The plan is in the terminal.";
+      text.scrollTop = 0;
+
+      clear(bottom);
+      if (writing) {
+        const field = textField(
+          "Tell Claude what to change…",
+          (note) => {
+            writing = false;
+            actions.decidePlan({ feedback: note });
+          },
+          closeField,
+        );
+        bottom.append(field.el);
+        actions.wantKeyboard(true);
+        window.setTimeout(() => field.input.focus(), 120);
+        return;
+      }
+      const row = h("div", { class: "actions" });
+      for (const c of PLAN_CHOICES) {
+        const b = btn(c.label, c.mode === "bypassPermissions" ? "primary" : "secondary", () =>
+          actions.decidePlan({ mode: c.mode }),
+        );
+        b.title = c.hint;
+        row.append(b);
+      }
+      const change = btn("Change plan…", "secondary", () => {
+        writing = true;
+        State.notify();
+      });
+      change.title = "No, tell Claude what to change";
+      row.append(change);
+      bottom.append(row);
+    },
+  };
+}
+
+// ── Question ──────────────────────────────────────────────────────────────────
+
+function buildQuestion(actions: ViewActions): ViewHost {
+  const head = h("div", { class: "card-head" });
+  const header = h("div", { class: "ask-header" });
+  const title = h("div", { class: "ask-question" });
+  const body = h("div");
+  const el = h("div", { class: "view" }, card("cyan", stack(116, 16, head, header, title, body)));
+  const stackEl = el.querySelector(".stack") as HTMLElement;
+
+  let key = "";
+  /** Typing an "Other" answer for the question on screen. */
+  let other = false;
+  /** Multi-select picks for the question on screen. */
+  let picks = new Set<string>();
+
+  /** Records this question's answer, then shows the next one or sends them all. */
+  function commit(answer: AskAnswer) {
+    const q = State.pendingQuestion;
+    if (!q) return;
+    q.answers[q.index] = answer;
+    if (other) actions.wantKeyboard(false);
+    other = false;
+    picks = new Set();
+    if (q.index + 1 < q.items.length) {
+      q.index += 1;
+      key = "";
+      actions.blip();
+      State.notify();
+    } else {
+      actions.answerQuestion(buildAnswers(q.items, q.answers));
+    }
+  }
+
+  function legacy() {
+    // A question seen only through a Notification: nothing to answer here.
+    stackEl.classList.remove("top");
+    clear(head);
+    head.append(agentWho(State.focusTask, "Claude Code is asking a question"));
+    header.textContent = "";
+    title.textContent = State.focusTask?.steps.at(-1) ?? "Claude needs an answer.";
+    clear(body);
+    body.append(h("div", { class: "sub", text: "Answer in your terminal." }));
+  }
+
+  return {
+    el,
+    sync() {
+      const q = State.pendingQuestion;
+      if (!q) {
+        key = "";
+        legacy();
+        return;
+      }
+      const k = `${q.requestId}~${q.index}~${other}~${[...picks].join("|")}`;
+      if (k === key) return;
+      key = k;
+      stackEl.classList.add("top");
+
+      const item = q.items[q.index];
+      clear(head);
+      head.append(agentWho(State.focusTask, "is asking"));
+      if (q.items.length > 1) {
+        head.append(h("span", { class: "count", text: `${q.index + 1}/${q.items.length}` }));
+      }
+      head.append(h("button", {
+        class: "link-btn",
+        text: "Reply in terminal",
+        onclick: () => {
+          if (other) actions.wantKeyboard(false);
+          other = false;
+          actions.answerQuestion(null);
+        },
+      }));
+      header.textContent = item.header;
+      title.textContent = item.question;
+      title.title = item.question;
+
+      clear(body);
+      if (other) {
+        const field = textField(
+          "Your answer…",
+          (text) => commit({ kind: "other", text }),
+          () => {
+            other = false;
+            actions.wantKeyboard(false);
+            key = "";
+            State.notify();
+          },
+        );
+        body.append(field.el);
+        actions.wantKeyboard(true);
+        window.setTimeout(() => field.input.focus(), 120);
+        return;
+      }
+
+      const chips = h("div", { class: "ask-chips" });
+      for (const o of item.options) {
+        const chip = h("button", {
+          class: picks.has(o.label) ? "ask-chip on" : "ask-chip",
+          text: o.label,
+          title: o.description || o.label,
+          onclick: () => {
+            if (!item.multiSelect) {
+              commit({ kind: "labels", labels: [o.label] });
+              return;
+            }
+            if (picks.has(o.label)) picks.delete(o.label);
+            else picks.add(o.label);
+            State.notify();
+          },
+        });
+        chips.append(chip);
+      }
+      chips.append(h("button", {
+        class: "ask-chip other",
+        text: "Other…",
+        onclick: () => {
+          other = true;
+          State.notify();
+        },
+      }));
+      body.append(chips);
+
+      if (item.multiSelect) {
+        const last = q.index + 1 >= q.items.length;
+        const next = btn(last ? "Send" : "Next", "primary", () => {
+          // Keep the options' order, not the click order.
+          const labels = item.options.map((o) => o.label).filter((l) => picks.has(l));
+          if (labels.length) commit({ kind: "labels", labels });
+        });
+        if (picks.size === 0) next.style.opacity = "0.4";
+        // In the chip row itself: a row of its own falls off a short card.
+        chips.append(next);
+      }
     },
   };
 }
@@ -491,7 +758,8 @@ export function buildViews(
   map.set("overview", buildOverview(actions));
   map.set("empty", buildEmpty(actions));
   map.set("approval", buildApproval(actions));
-  map.set("question", buildQuestion());
+  map.set("plan", buildPlan(actions));
+  map.set("question", buildQuestion(actions));
   map.set("error", buildError(actions));
   map.set("finished", buildFinished(actions));
   map.set("confused", buildConfused());

@@ -8,6 +8,7 @@ import { h, svg, clear, dot } from "./dom";
 import { ICONS } from "./icons";
 import { State, type AgentTask } from "../core/state";
 import { Bridge } from "../core/bridge";
+import { PERSONAL_IDS, personalIdleLabel, renderPersonalCard } from "./personal";
 
 /** Same shape as the Swift `timeAgo` computed properties. */
 export function timeAgo(value: unknown): string {
@@ -20,24 +21,24 @@ export function timeAgo(value: unknown): string {
   return `${Math.floor(diff / 86400)}d`;
 }
 
-function header(color: string, name: string, kind: string, extra?: Node): HTMLElement {
+export function header(color: string, name: string, kind: string, extra?: Node): HTMLElement {
   const row = h("div", { class: "int-head" }, dot(color, 7), h("b", { text: name }), h("span", { text: kind }));
   if (extra) row.append(extra);
   return row;
 }
 
 /** Highlighted first row + plain rows, the layout every list card shares. */
-function listRow(accent: string, first: boolean, ...children: Node[]): HTMLElement {
+export function listRow(accent: string, first: boolean, ...children: Node[]): HTMLElement {
   const row = h("div", { class: first ? "int-row first" : "int-row" }, dot(accent, 5), ...children);
   if (first) row.style.background = `${accent}14`;
   return row;
 }
 
-function get(id: string): Record<string, unknown> {
+export function get(id: string): Record<string, unknown> {
   return (State.integrations[id]?.data ?? {}) as Record<string, unknown>;
 }
 
-function arr(id: string, key: string): Record<string, unknown>[] {
+export function arr(id: string, key: string): Record<string, unknown>[] {
   const v = get(id)[key];
   return Array.isArray(v) ? (v as Record<string, unknown>[]) : [];
 }
@@ -55,11 +56,32 @@ const OPEN_URLS: Record<string, string> = {
 
 function idleCard(task: AgentTask, openSettings: () => void): HTMLElement {
   const info = State.integrations[task.id];
-  const configured = info?.configured ?? false;
+  // The personal pills need no key: they read local data, so they are always
+  // "configured" and only ever waiting or in error.
+  const personal = PERSONAL_IDS.has(task.id);
+  const configured = personal || (info?.configured ?? false);
   const error = info?.error ?? null;
   // The Claude Code pill is about hooks, not a key — the macOS wording would be
   // misleading here.
   const missing = task.id === "integration_claude" ? "Hooks not installed" : "Key not configured";
+  if (personal && !error) {
+    return h(
+      "div",
+      { class: "int-card" },
+      header(task.color, task.name, "Personal"),
+      h("div", { class: "int-status" }, dot("#8e939c", 5), h("span", { text: personalIdleLabel(task.id) })),
+      h(
+        "div",
+        { class: "int-actions" },
+        h("button", {
+          class: "link-btn",
+          style: `color:${task.color}d9`,
+          text: "Refresh",
+          onclick: () => void Bridge.refreshIntegration(task.id),
+        }),
+      ),
+    );
+  }
   const label = error ?? (configured ? "Connected · loading…" : missing);
   const statusColor = error || !configured ? "#F4505E" : "#22C55E";
 
@@ -404,6 +426,12 @@ export function hasIntegrationData(id: string): boolean {
 }
 
 export function renderIntegrationCard(task: AgentTask, hooks: IntegrationCardHooks): HTMLElement {
+  if (PERSONAL_IDS.has(task.id)) {
+    return (
+      renderPersonalCard(task, hooks.detailOpen, hooks.openDetail, hooks.closeDetail) ??
+      idleCard(task, hooks.openSettings)
+    );
+  }
   if (task.id === "integration_n8n") {
     const hasActivity = task.steps.length > 0 && (task.state === "finished" || task.state === "error");
     return hooks.detailOpen && hasActivity

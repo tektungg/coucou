@@ -103,18 +103,19 @@ fn read_settings_lossy() -> Value {
     read_settings().unwrap_or_else(|_| json!({}))
 }
 
+/// `args` is the event name, optionally preceded by flags (`--ask PreToolUse`).
 #[cfg(windows)]
-fn hook_command(event: &str) -> String {
+fn hook_command(args: &str) -> String {
     let exe = settings::hook_exe_path().to_string_lossy().replace('\\', "/");
-    format!("\"{exe}\" {event}")
+    format!("\"{exe}\" {args}")
 }
 
 /// Claude Code runs the command through `sh`, which still reads `$`, `` ` ``
 /// and `\` inside double quotes. Single quotes keep the path a path, whatever
 /// the home directory is called.
 #[cfg(unix)]
-fn hook_command(event: &str) -> String {
-    format!("{} {event}", sh_quote(&settings::hook_exe_path().to_string_lossy()))
+fn hook_command(args: &str) -> String {
+    format!("{} {args}", sh_quote(&settings::hook_exe_path().to_string_lossy()))
 }
 
 /// `s` as one single-quoted shell word: `'` becomes `'\''`, nothing else is
@@ -164,6 +165,10 @@ fn merged(existing: &Value) -> Value {
         }));
         hooks.insert((*event).to_string(), Value::Array(list));
     }
+
+    // No separate AskUserQuestion hook any more: the PermissionRequest one above
+    // answers it while the terminal dialog is up too (the retain removed any
+    // older `--ask` entry), so the user can reply in either place.
 
     root.insert("hooks".into(), Value::Object(hooks));
     Value::Object(root)
@@ -568,6 +573,18 @@ mod tests {
         );
         assert!(pre.iter().any(entry_is_ours), "our own hook was not added");
         assert!(after["hooks"]["SomeEventWeDoNotTouch"].is_array());
+
+        // No waiting `--ask` entry any more, and an old one is cleaned up.
+        assert!(!pre.iter().any(|e| e["matcher"] == "AskUserQuestion"));
+        let mut with_old_ask = after.clone();
+        with_old_ask["hooks"]["PreToolUse"].as_array_mut().unwrap().push(serde_json::json!({
+            "matcher": "AskUserQuestion",
+            "hooks": [{ "type": "command", "command": "\"C:/x/coucou-hook.exe\" --ask PreToolUse" }]
+        }));
+        let twice = merged(&with_old_ask);
+        let pre2 = twice["hooks"]["PreToolUse"].as_array().unwrap();
+        assert_eq!(pre2.iter().filter(|e| entry_is_ours(e)).count(), 1);
+        assert!(!pre2.iter().any(|e| e["matcher"] == "AskUserQuestion"));
 
         // And removing ours puts it back exactly as it was.
         let cleaned = without_ours(&after);

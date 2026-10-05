@@ -18,6 +18,8 @@ export class IslandStateMachine {
   greetHoverCollapseDelay = 10;
   /** An alert waiting for an answer stays open, even when the mouse leaves. */
   pinned = false;
+  /** Hovering the compact (or hidden) island opens it, no click needed. */
+  hoverOpens = true;
 
   private petitHide: number | null = null;
   private homeCollapse: number | null = null;
@@ -34,10 +36,15 @@ export class IslandStateMachine {
     switch (this.state) {
       case "hidden":
         this.cancelTimers();
-        this.transition("petit");
+        this.transition(this.hoverOpens ? "home" : "petit");
         break;
       case "petit":
-        this.clear("petitHide");
+        if (this.hoverOpens) {
+          this.cancelTimers();
+          this.transition("home");
+        } else {
+          this.clear("petitHide");
+        }
         break;
       case "home":
         this.clear("homeCollapse");
@@ -48,7 +55,12 @@ export class IslandStateMachine {
     }
   }
 
-  mouseLeft() {
+  /**
+   * `immediate`: the pointer really left, so an open island closes right away
+   * (unless pinned). Without it the island waits `homeToPetitDelay`, which is
+   * what the chat and anything opened without a hover (an alert) get.
+   */
+  mouseLeft(immediate = false) {
     switch (this.state) {
       case "hidden":
         break;
@@ -56,7 +68,12 @@ export class IslandStateMachine {
         this.schedulePetitHide();
         break;
       case "home":
-        this.scheduleHomeCollapse();
+        if (immediate && !this.pinned) {
+          this.cancelTimers();
+          this.transition("petit");
+        } else {
+          this.scheduleHomeCollapse();
+        }
         break;
       case "coucou":
         this.clear("greetCollapse");

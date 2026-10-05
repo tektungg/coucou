@@ -51,6 +51,8 @@ function handle(island: Island, update: IntegrationUpdate) {
     configured: previous?.configured ?? true,
   };
 
+  if (!update.error) applyPersonal(update);
+
   const event = update.event;
   if (event) {
     const task = State.tasks.find((t) => t.id === update.id);
@@ -78,6 +80,8 @@ function handle(island: Island, update: IntegrationUpdate) {
           t.steps = [];
           t.stepIndex = 0;
           t.pillBadge = null;
+          // Back to whatever the pill's data says (music playing, quota high).
+          applyPersonal({ id: update.id, data: State.integrations[update.id]?.data ?? {}, error: null, event: null });
           State.notify();
         }, 60_000),
       );
@@ -85,4 +89,30 @@ function handle(island: Island, update: IntegrationUpdate) {
   }
 
   State.notify();
+}
+
+/**
+ * What the personal pills' data means for the island beyond their cards:
+ * each session pill gets its context and cost, and a pill's mood follows its
+ * data (sweating near the 5-hour limit, bobbing while music plays).
+ */
+function applyPersonal(update: IntegrationUpdate) {
+  const data = (update.data ?? {}) as Record<string, unknown>;
+  const task = State.tasks.find((t) => t.id === update.id);
+  // An event card (a new message, a quota warning) owns the pill until it clears.
+  const showingEvent = task != null && (task.state === "finished" || task.state === "error");
+
+  if (update.id === "integration_quota") {
+    const sessions = Array.isArray(data.sessions) ? (data.sessions as Record<string, unknown>[]) : [];
+    for (const s of sessions) {
+      const pill = State.tasks.find((t) => t.sessionId && t.sessionId === s.sessionId);
+      if (!pill) continue;
+      if (typeof s.ctxPct === "number") pill.ctxPct = s.ctxPct;
+      if (typeof s.costUsd === "number") pill.costUsd = s.costUsd;
+    }
+    const five = (data.fiveHour as { pct?: unknown } | null)?.pct;
+    if (task && !showingEvent) task.state = typeof five === "number" && five >= 90 ? "ratelimit" : "idle";
+  } else if (update.id === "integration_media") {
+    if (task && !showingEvent) task.state = data.playing === true ? "working" : "idle";
+  }
 }

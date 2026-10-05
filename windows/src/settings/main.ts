@@ -4,7 +4,7 @@
 
 import "./settings.css";
 import { Bridge, onEvent, type HookStatus } from "../core/bridge";
-import { DEFAULT_SETTINGS, type Settings } from "../core/state";
+import { DEFAULT_SETTINGS, HIDDEN_INTEGRATIONS, MESSAGE_APPS, type Settings } from "../core/state";
 import { h, clear } from "../views/dom";
 
 let settings: Settings = { ...DEFAULT_SETTINGS };
@@ -306,6 +306,12 @@ interface IntegrationDef {
   color: string;
   /** Credential Manager keys, in the order they are shown. */
   fields: { key: string; label: string; placeholder: string; secret: boolean }[];
+  /** Plain (non-secret) preferences, stored in settings.json. */
+  prefs?: { prop: "slackWorkspace" | "spaceTimeboxDir"; label: string; placeholder: string }[];
+  /** Shows the Messages app toggles. */
+  apps?: boolean;
+  /** One line on where the data comes from. */
+  info?: string;
 }
 
 const INTEGRATIONS: IntegrationDef[] = [
@@ -326,7 +332,23 @@ const INTEGRATIONS: IntegrationDef[] = [
     fields: [{ key: "notion-api-key", label: "Integration token", placeholder: "ntn_…", secret: true }] },
   { id: "integration_calcom", name: "Cal.com", color: "#C9956A",
     fields: [{ key: "calcom-api-key", label: "API key", placeholder: "cal_…", secret: true }] },
+  // This build's own pills: no keys, everything is read on this PC.
+  { id: "integration_quota", name: "Claude", color: "#E07B53", fields: [],
+    info: "5-hour and 7-day limits, per-session context and cost, from your Claude Code status line." },
+  { id: "integration_space", name: "Space", color: "#4F8EF7", fields: [],
+    prefs: [{ prop: "spaceTimeboxDir", label: "space-timebox folder", placeholder: "%USERPROFILE%\\.claude-kantor\\mcp\\space-timebox  (empty = default)" }],
+    info: "Today's sprint tasks and timebox through the local space-timebox MCP server." },
+  { id: "integration_media", name: "Music", color: "#1DB954", fields: [],
+    info: "Now playing from the Windows media session: Spotify, browsers, any player." },
+  { id: "integration_messages", name: "Messages", color: "#5865F2", fields: [],
+    prefs: [{ prop: "slackWorkspace", label: "Slack workspace", placeholder: "Shown on Slack messages" }],
+    apps: true,
+    info: "New messages read from Windows notifications. Kept in memory only." },
 ];
+
+const APP_LABELS: Record<string, string> = {
+  discord: "Discord", slack: "Slack", telegram: "Telegram", whatsapp: "WhatsApp",
+};
 
 const MAX_ACTIVE = 4;
 
@@ -336,10 +358,10 @@ function integrationsSection(present: Record<string, boolean>): HTMLElement {
 
   function updateNote() {
     const used = settings.activeIntegrations.length;
-    note.textContent = `Pick up to ${MAX_ACTIVE} pills to show next to Mochi — ${used}/${MAX_ACTIVE} in use. Keys are stored in the Windows Credential Manager, never on disk.`;
+    note.textContent = `Pick up to ${MAX_ACTIVE} pills to show next to Mochi — ${used}/${MAX_ACTIVE} in use. Each Claude Code session also gets its own pill. Everything here is read on this PC; no keys needed.`;
   }
 
-  for (const def of INTEGRATIONS) {
+  for (const def of INTEGRATIONS.filter((d) => !HIDDEN_INTEGRATIONS.has(d.id))) {
     const active = settings.activeIntegrations.includes(def.id);
     const sw = h("button", { class: active ? "switch on" : "switch" });
     sw.addEventListener("click", () => {
@@ -384,6 +406,39 @@ function integrationsSection(present: Record<string, boolean>): HTMLElement {
           input, saveBtn, dotEl,
         ),
       );
+    }
+    if (def.info) rows.append(h("div", { class: "hint", style: "padding-top:4px", text: def.info }));
+    for (const pref of def.prefs ?? []) {
+      const input = h("input", {
+        type: "text",
+        placeholder: pref.placeholder,
+        spellcheck: "false",
+        style: "flex:1 1 auto;min-width:0",
+      }) as HTMLInputElement;
+      input.value = settings[pref.prop];
+      input.addEventListener("change", () => {
+        settings[pref.prop] = input.value.trim();
+        void save();
+      });
+      rows.append(
+        h("div", { class: "row" }, h("label", { style: "min-width:104px", text: pref.label }), input),
+      );
+    }
+    if (def.apps) {
+      const boxes = h("div", { class: "row", style: "gap:14px;flex-wrap:wrap" });
+      for (const app of MESSAGE_APPS) {
+        const box = h("input", { type: "checkbox" }) as HTMLInputElement;
+        box.checked = settings.messageApps.includes(app);
+        box.addEventListener("change", () => {
+          const set = new Set(settings.messageApps);
+          if (box.checked) set.add(app);
+          else set.delete(app);
+          settings.messageApps = MESSAGE_APPS.filter((a) => set.has(a));
+          void save();
+        });
+        boxes.append(h("label", { style: "display:flex;align-items:center;gap:5px" }, box, h("span", { text: APP_LABELS[app] })));
+      }
+      rows.append(boxes);
     }
 
     list.append(
