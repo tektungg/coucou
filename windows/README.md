@@ -178,7 +178,12 @@ that read only what is already on this PC. No keys, no new accounts.
   session.
 - **Messages.** Reads Action Center toasts through `UserNotificationListener`
   (Windows asks once for notification access). Shows sender, message,
-  server/workspace and channel; clicking a row opens the app. Slack toasts never
+  server/workspace and channel; clicking a row opens the app. The card groups
+  messages by app (the app with the newest message first, `views/messageGroups.ts`)
+  in a list that scrolls, and goes back to the top when news comes in. A new
+  message opens the island on the Messages pill and closes after the auto-close
+  delay; it never takes the island from an approval, a question, the chat or a
+  pointer already in it (`island/messageAlert.ts`). Slack toasts never
   name the workspace, so it comes from **Settings → Slack workspace**. Messages
   stay in memory (the last 15), and the log records counts only. A toast an app
   clears before the next poll (3 s) is not seen. Discord's toast format is

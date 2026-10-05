@@ -7,6 +7,7 @@ import { State, type AgentTask } from "../core/state";
 import { Bridge } from "../core/bridge";
 import { arr, get, header, listRow, timeAgo } from "./integrations";
 import { sortSpaceItems } from "./spaceTasks";
+import { groupByApp, type MessageGroup } from "./messageGroups";
 
 export const PERSONAL_IDS = new Set([
   "integration_quota", "integration_space", "integration_media", "integration_messages",
@@ -217,17 +218,74 @@ function messageRow(m: Record<string, unknown>, first: boolean, full: boolean): 
   return row;
 }
 
+/** One line per message under its app's heading: sender, text, age. */
+function groupedMessageRow(m: Record<string, unknown>, newest: boolean): HTMLElement {
+  const app = str(m.app);
+  const place = messagePlace(m);
+  const row = h(
+    "div",
+    { class: newest ? "int-row msg-row newest" : "int-row msg-row" },
+    h("span", { class: "int-name", text: str(m.sender) || APP_NAMES[app] || "Message" }),
+    h("span", { class: "int-sub", text: `${place ? `${place}: ` : ""}${str(m.text)}` }),
+    h("span", { class: "int-ago", text: timeAgo(num(m.at) ?? Date.now()) }),
+  );
+  if (newest) row.style.background = `${APP_COLORS[app] ?? "#8e939c"}1f`;
+  row.title = `${APP_NAMES[app] ?? app}${place ? ` · ${place}` : ""}`;
+  row.addEventListener("click", () => {
+    void Bridge.openApp(app);
+  });
+  return row;
+}
+
+function groupHead(group: MessageGroup<Record<string, unknown>>): HTMLElement {
+  const name = APP_NAMES[group.app] ?? (group.app || "Other");
+  const head = h(
+    "div",
+    { class: "msg-group", title: `Open ${name}` },
+    dot(APP_COLORS[group.app] ?? "#8e939c", 5),
+    h("b", { text: name }),
+    h("span", { class: "int-ago", text: String(group.items.length) }),
+  );
+  head.addEventListener("click", () => {
+    void Bridge.openApp(group.app);
+  });
+  return head;
+}
+
+/** The card is rebuilt on every poll: keep the list where the user left it, back to the top for news. */
+let msgScrollTop = 0;
+let msgNewestId: unknown = null;
+
 function messagesCard(onDetail: () => void): HTMLElement {
   const messages = arr("integration_messages", "messages");
   const more = h("button", { class: "int-more", title: "All messages", onclick: onDetail }, svg(ICONS.ellipsis, 8));
-  const rows = h("div", { class: "int-rows" });
-  messages.slice(0, 3).forEach((m, i) => rows.append(messageRow(m, i === 0, false)));
-  return h("div", { class: "int-card" }, header("#5865F2", "Messages", `${messages.length} recent`, more), rows);
+  const list = h("div", { class: "int-rows msg-list" });
+  for (const g of groupByApp(messages)) {
+    list.append(groupHead(g));
+    for (const m of g.items) list.append(groupedMessageRow(m, m === messages[0]));
+  }
+  const newestId = messages[0]?.id ?? null;
+  if (newestId !== msgNewestId) {
+    msgNewestId = newestId;
+    msgScrollTop = 0;
+  }
+  list.addEventListener("scroll", () => {
+    msgScrollTop = list.scrollTop;
+  }, { passive: true });
+  // Not in the DOM yet: restore once it is laid out.
+  requestAnimationFrame(() => {
+    list.scrollTop = msgScrollTop;
+  });
+  return h("div", { class: "int-card" }, header("#5865F2", "Messages", `${messages.length} recent`, more), list);
 }
 
 function messagesDetail(onBack: () => void): HTMLElement {
-  const list = h("div", { class: "int-rows scroll" });
-  arr("integration_messages", "messages").forEach((m, i) => list.append(messageRow(m, i === 0, true)));
+  const messages = arr("integration_messages", "messages");
+  const list = h("div", { class: "int-rows scroll msg-detail" });
+  for (const g of groupByApp(messages)) {
+    list.append(groupHead(g));
+    g.items.forEach((m) => list.append(messageRow(m, m === messages[0], true)));
+  }
   return detailFrame("#5865F2", "Messages", onBack, list);
 }
 

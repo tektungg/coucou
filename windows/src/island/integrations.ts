@@ -65,8 +65,10 @@ function handle(island: Island, update: IntegrationUpdate) {
       }
       Sound.play(event.success ? "finish" : "error");
       // Same as the Swift pollers: show the compact island so the badge is seen,
-      // but never steal the screen for a successful deploy.
-      island.reveal();
+      // but never steal the screen for a successful deploy. A chat message is
+      // the exception: it is meant to be read, so the island opens on it.
+      if (update.id === "integration_messages" && event.success) island.showMessage(update.id);
+      else island.reveal();
 
       const existing = clearTimers.get(update.id);
       if (existing != null) window.clearTimeout(existing);

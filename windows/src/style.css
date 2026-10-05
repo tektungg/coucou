@@ -1426,6 +1426,68 @@ input[type="range"]::-webkit-slider-thumb {
   flex: none;
   color: var(--green);
 }
+
+/* Messages card: grouped by app, newest app first, scrolling inside the card.
+   A heading is 16px and a message row 20px; 78px shows about three and a half. */
+.int-rows.msg-list {
+  padding-top: 2px;
+  gap: 1px;
+  overflow-y: auto;
+  max-height: 78px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.msg-group {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  height: 16px;
+  padding: 0 8px;
+  cursor: pointer;
+}
+
+.msg-group b {
+  font: 600 10px var(--font);
+  color: #c5c8cd;
+}
+
+.msg-detail .msg-group:not(:first-child) {
+  margin-top: 4px;
+}
+
+.msg-row {
+  flex: none;
+  height: 20px;
+  box-sizing: border-box;
+  padding-left: 18px;
+  cursor: pointer;
+}
+
+.msg-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.msg-row .int-name {
+  flex: 0 0 auto;
+  max-width: 32%;
+}
+
+.msg-row.newest .int-name {
+  color: #e6e7ea;
+}
+
+.msg-row .int-sub {
+  flex: 1 1 auto;
+  color: #6b7079;
+}
+
+.msg-row .int-ago {
+  margin-left: auto;
+  padding-left: 6px;
+}
+
 .gauge-row {
   display: flex;
   align-items: center;

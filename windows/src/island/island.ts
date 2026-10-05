@@ -20,6 +20,7 @@ import { buildHeader, buildViews, type ViewActions, type ViewHost } from "../vie
 import { h } from "../views/dom";
 import { IslandStateMachine } from "./fsm";
 import { stepFocus } from "../views/carousel";
+import { messageAlertAction } from "./messageAlert";
 
 const BOT_OVERHANG = 40;
 /** Same margin as the Rust hit test (src-tauri/src/island.rs). */
@@ -74,6 +75,8 @@ export class Island {
   /** Last shape handed to Rust for the click-through test. */
   private pushedRect = { x: -1, y: -1, w: -1, h: -1 };
   private homeCollapseAt: number | null = null;
+  /** Set while a new message opens the island: its own sound already played. */
+  private quietOpen = false;
 
   // Bot hover → love (IslandWindowController.botHoverIn)
   private botHovering = false;
@@ -285,7 +288,7 @@ export class Island {
     const prev = State.mode;
     if (mode === prev) return;
     State.mode = mode;
-    if (mode === "expanded") Sound.play("open");
+    if (mode === "expanded" && !this.quietOpen) Sound.play("open");
     if (prev === "expanded") {
       Sound.play("close");
       State.isPinned = false;
@@ -372,6 +375,36 @@ export class Island {
 
   reveal() {
     this.fsm.reveal();
+  }
+
+  /**
+   * A new chat message: show it on the Messages pill instead of only beeping.
+   * The island opens like a hover would and closes after the auto-close delay;
+   * an approval, the chat or a pointer already in the island keeps it.
+   */
+  showMessage(taskId: string) {
+    const action = messageAlertAction({
+      mode: State.mode,
+      view: State.view,
+      pinned: State.isPinned || this.fsm.pinned,
+      waiting: State.pendingApproval != null || State.pendingQuestion != null,
+      pointerInIsland: this.wasInIsland,
+    });
+    if (action === "none") {
+      this.fsm.reveal();
+      return;
+    }
+    State.setFocus(taskId);
+    if (action === "open") {
+      // home → expand(overview), then mouseLeft() schedules the auto-close.
+      this.quietOpen = true;
+      try {
+        this.fsm.forceHome();
+      } finally {
+        this.quietOpen = false;
+      }
+      this.homeCollapseAt = performance.now() + State.settings.autoCloseInterval * 1000;
+    }
   }
 
   /** An alert stopped waiting for an answer: let the island auto-close again. */
