@@ -143,14 +143,15 @@ live eval runs two real turns and checks the second remembers the first:
 
 This build hides the stock integrations (Stripe, GitHub, Vercel, n8n, Resend,
 Notion, Cal.com: their code stays, so upstream still merges) and shows pills
-that read only what is already on this PC. No keys, no new accounts.
+that read only what is already on this PC. No keys, no new accounts. The one
+network call is the Music pill's lyrics (lrclib.net), which Settings can turn off.
 
 | Pill | Source | Refresh |
 |---|---|---|
 | One per **Claude Code session** | hook events, by `session_id` (`cc_<8 hex>`), named after the project folder | live |
 | **Claude** (usage) | `%LOCALAPPDATA%\Coucou\status\<session_id>.json`, written by the Claude Code status line | 5 s |
 | **Space** | `list_timebox` on the local `space-timebox` MCP server, over stdio, no LLM | 5 min |
-| **Music** | Windows media session (Spotify, browsers, any player) | 2 s |
+| **Music** | Windows media session (Spotify, browsers, any player); lyrics from [LRCLIB](https://lrclib.net) | 2 s |
 | **Messages** | Windows notifications from Discord, Slack, Telegram, WhatsApp | 3 s |
 
 - **One pill at a time.** The overview shows a single pill, full width. The
@@ -176,7 +177,24 @@ that read only what is already on this PC. No keys, no new accounts.
   Login stays with space-timebox (`space-timebox login`); its errors are shown as is.
   The folder is set in **Settings → Integrations → Space** (empty = default).
 - **Music.** Prefers a playing session, then Spotify. ⏮ ⏯ ⏭ act on the same
-  session.
+  session. The card shows the cover (with a soft glow of it behind), "Title ·
+  Artist", the progress with times, and three synced lyric lines: the one
+  being sung in the middle, the one before and the one after. The lyrics button
+  (or a click on the lines) opens every line, the sung one centred. The cover
+  is read once per song (a few times more to catch Spotify's late swap) and
+  fetched with `media_art`, never resent with the 2 s poll. The poll only
+  reaches the island when something changes (`media::same_media` ignores the
+  player re-reporting its position); the island moves the bar and the lyrics
+  itself with a 250 ms timer that only runs while a song plays on screen.
+  Collapsed with the Music pill in focus and a song playing, the island widens
+  and sings the current line instead of showing the other pills (the song's
+  title and artist during the intro and the gaps).
+- **Lyrics.** `lyrics.rs` asks LRCLIB's exact match (title, artist, album,
+  length), then its search, picking the result within 3 s of the song's length
+  (synced lyrics first). Results, "not found" included, are cached for the run;
+  network errors are retried 30 s later. Only the title, artist, album and
+  length leave the PC, nothing reaches the log, and nothing is sent while
+  **Settings → Integrations → Music → Lyrics** is off or Coucou is paused.
 - **Messages.** Reads Action Center toasts through `UserNotificationListener`
   (Windows asks once for notification access). Shows sender, message,
   server/workspace and channel; clicking a row opens the app. The card groups

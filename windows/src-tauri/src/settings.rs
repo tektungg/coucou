@@ -36,6 +36,13 @@ pub struct Settings {
     /// Apps the Messages pill reads from Windows notifications.
     #[serde(default = "default_message_apps")]
     pub message_apps: Vec<String>,
+    /// Lyrics on the Music card, from lrclib.net. On by default; off sends nothing.
+    #[serde(default = "default_true")]
+    pub lyrics_enabled: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// The stock integrations this build hides (Claude Code covers them).
@@ -98,6 +105,7 @@ impl Default for Settings {
             slack_workspace: String::new(),
             space_timebox_dir: String::new(),
             message_apps: default_message_apps(),
+            lyrics_enabled: true,
         }
     }
 }
@@ -158,6 +166,15 @@ mod tests {
         assert_eq!(s.slack_workspace, "");
         assert_eq!(s.space_timebox_dir, "");
         assert_eq!(s.message_apps, default_message_apps());
+        assert!(s.lyrics_enabled);
+    }
+
+    #[test]
+    fn lyrics_can_be_switched_off() {
+        let json = serde_json::to_value(Settings { lyrics_enabled: false, ..Settings::default() }).unwrap();
+        assert_eq!(json["lyricsEnabled"], false);
+        let back: Settings = serde_json::from_value(json).unwrap();
+        assert!(!back.lyrics_enabled);
     }
 
     /// A settings.json written before the CLI chat existed must still load,

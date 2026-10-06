@@ -165,6 +165,32 @@ body {
   transition: opacity 0.25s ease-in-out;
 }
 
+/* Collapsed on a playing Music pill: the line being sung (views/personal.ts). */
+#lyric-strip {
+  position: absolute;
+  top: 0;
+  left: 62px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s ease-in-out;
+}
+
+.lyric-strip-line {
+  font: 600 12px/16px var(--font);
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.lyric-strip-line.enter {
+  animation: lyric-in 0.28s cubic-bezier(0.3, 0.9, 0.4, 1);
+}
+
 /* A mini Mochi: the slot is the body, the canvas is larger and overflows it so
    hands, badges and particles are not cut off. */
 .mini {
@@ -1364,11 +1390,6 @@ input[type="range"]::-webkit-slider-thumb {
   max-width: 42%;
 }
 
-.media-btn svg {
-  width: 10px;
-  height: 10px;
-}
-
 .int-head-right {
   display: inline-flex;
   align-items: center;
@@ -1614,41 +1635,295 @@ input[type="range"]::-webkit-slider-thumb {
   text-align: right;
 }
 
-.media-body {
+/* Music card (views/personal.ts): cover, names and controls, the line being
+   sung with the next one under it, progress. Fits the 108 px card. */
+.media-card {
+  padding-bottom: 4px;
+}
+
+.media-glow {
+  position: absolute;
+  inset: -30% -8% -30% 38%;
+  z-index: -1;
+  background-size: cover;
+  background-position: center;
+  filter: blur(34px) saturate(1.4);
+  opacity: 0.2;
+  pointer-events: none;
+  transition: opacity 0.6s ease;
+}
+
+.media-card:not(.playing) .media-glow {
+  opacity: 0.1;
+}
+
+.media-main {
+  display: flex;
+  gap: 11px;
+  padding-top: 4px;
+  min-height: 0;
+}
+
+.media-art {
+  flex: 0 0 auto;
+  width: 70px;
+  height: 70px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #1e2024;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  display: grid;
+  place-items: center;
+}
+
+.media-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  animation: media-fade 0.35s ease;
+}
+
+.media-art.empty {
+  background: linear-gradient(140deg, #1db954 0%, #0f6b32 100%);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+@keyframes media-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.media-info {
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding-top: 6px;
+  justify-content: space-between;
+  padding-right: 4px;
+}
+
+.media-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
   min-width: 0;
 }
 
+.media-names {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: 600 12.5px/22px var(--font);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .media-title {
-  font: 600 12.5px var(--font);
+  color: var(--ink);
+}
+
+.media-artist {
+  font-weight: 400;
+  color: var(--dim-2);
+}
+
+.media-controls {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.media-btn {
+  width: 24px;
+  height: 22px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-2);
+  display: grid;
+  place-items: center;
+  cursor: default;
+  transition: background 0.12s ease, transform 0.12s ease;
+}
+
+.media-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.media-btn:active {
+  transform: scale(0.92);
+}
+
+.media-btn.main {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: #0e0f11;
+}
+
+.media-btn.main:hover {
+  background: #fff;
+}
+
+.media-btn.main svg {
+  width: 10px;
+  height: 10px;
+}
+
+.media-btn.off {
+  opacity: 0.3;
+}
+
+.media-lyrics {
+  min-width: 0;
+  padding: 1px 0;
+  cursor: default;
+}
+
+.media-line {
+  font: 600 11.5px/15px var(--font);
   color: var(--ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.media-controls {
+.media-line.side {
+  font: 400 10.5px/12px var(--font);
+  color: var(--dim-3);
+  min-height: 12px;
+}
+
+.media-line.rest {
+  color: var(--dim-2);
+}
+
+.media-line.status {
+  font-weight: 400;
+  color: var(--dim-2);
+}
+
+.media-line.enter {
+  animation: lyric-in 0.28s cubic-bezier(0.3, 0.9, 0.4, 1);
+}
+
+@keyframes lyric-in {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: none; }
+}
+
+.media-progress {
   display: flex;
-  gap: 6px;
-  padding-top: 5px;
+  align-items: center;
+  gap: 7px;
 }
 
-.media-btn {
-  width: 26px;
-  height: 22px;
-  border: 0;
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--ink-2);
-  font: 500 11px var(--font);
-  cursor: default;
+.media-time {
+  font: 500 9.5px var(--font);
+  color: var(--dim-3);
+  font-variant-numeric: tabular-nums;
+  min-width: 24px;
 }
 
-.media-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
+.media-time.end {
+  text-align: right;
+}
+
+.media-bar {
+  position: relative;
+  flex: 1 1 auto;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.media-bar i {
+  position: absolute;
+  inset: 0;
+  border-radius: 2px;
+  background: var(--ink-2);
+  transform-origin: left center;
+  transform: scaleX(0);
+  transition: transform 0.25s linear;
+}
+
+.media-card.playing .media-bar i {
+  background: #1db954;
+}
+
+.media-card.no-lyrics .media-info {
+  justify-content: space-around;
+}
+
+/* Lyrics detail: every line, the sung one bright and centred. */
+.media-detail .int-detail-head {
+  padding-right: 24px;
+}
+
+.media-detail .int-detail-head b {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.media-detail-artist {
+  font: 400 11px var(--font);
+  color: var(--dim-2);
+  white-space: nowrap;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.media-progress.mini {
+  margin-left: auto;
+  flex: 0 0 150px;
+}
+
+.int-rows.scroll.lyr-list {
+  max-height: 78px;
+  gap: 1px;
+  padding-right: 8px;
+  mask-image: linear-gradient(transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
+}
+
+.lyr-line {
+  font: 500 12px/17px var(--font);
+  color: var(--dim-2);
+  transition: color 0.25s ease;
+}
+
+.lyr-line.past {
+  color: var(--dim-4);
+}
+
+.lyr-line.on {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.lyr-line.rest {
+  color: var(--dim-4);
+}
+
+.lyr-line.plain {
+  color: #c5c8cd;
+}
+
+.lyr-gap {
+  height: 8px;
+}
+
+.lyr-credit {
+  font: 400 9.5px var(--font);
+  color: var(--dim-4);
+  padding: 6px 0 10px;
 }
 
 .int-amount {

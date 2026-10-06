@@ -4,7 +4,7 @@
 import { Tracked, Spring, clamp } from "../core/anim";
 import { Bridge, IS_TAURI, onDragDrop } from "../core/bridge";
 import {
-  EXPANDED_CORNER, EXPANDED_W, NOTCH_W, PANEL_H, PANEL_W,
+  COMPACT_LYRIC_W, COMPACT_W, EXPANDED_CORNER, EXPANDED_W, NOTCH_W, PANEL_H, PANEL_W,
   ROUNDED_CORNER, VIEW_LAYOUTS, botGlowColor, botGlowOpacity, botPosition, chatPromptHeight,
   islandSize,
   type IslandMode, type IslandViewName,
@@ -18,6 +18,7 @@ import { UploadCanvas } from "../upload/canvas";
 import { USC, UploadSeq } from "../upload/sequence";
 import { buildHeader, buildViews, type ViewActions, type ViewHost } from "../views/views";
 import { h } from "../views/dom";
+import { lyricStripActive, lyricStripEl } from "../views/personal";
 import { IslandStateMachine } from "./fsm";
 import { stepFocus } from "../views/carousel";
 import { MESSAGE_GLANCE_S, messageAlertAction } from "./messageAlert";
@@ -240,6 +241,7 @@ export class Island {
       this.botGlow,
       this.botCanvas,
       this.miniGrid,
+      lyricStripEl(),
       this.countdown,
     );
 
@@ -534,7 +536,8 @@ export class Island {
   // ── Geometry ────────────────────────────────────────────────────────────────
 
   private targetSize(): { w: number; h: number; r: number } {
-    const { w, h } = islandSize(State.mode, State.view, State.chatHistory.length);
+    const compactW = this.lyricMode() ? COMPACT_LYRIC_W : COMPACT_W;
+    const { w, h } = islandSize(State.mode, State.view, State.chatHistory.length, compactW);
     const r = State.mode === "expanded" ? EXPANDED_CORNER : ROUNDED_CORNER;
     return { w, h, r };
   }
@@ -565,6 +568,10 @@ export class Island {
     // the state-driven DOM sync.
     this.miniGrid.style.left = `${w - 40 - 14.5}px`;
     this.miniGrid.style.top = `${hh / 2 - 14.5}px`;
+    // Right of the compact Mochi (cx 40, 20 px wide) to the right edge.
+    const strip = lyricStripEl();
+    strip.style.width = `${Math.max(0, w - 62 - 18)}px`;
+    strip.style.height = `${hh}px`;
     this.greetingCanvas.style.left = `${(w - EXPANDED_W) / 2}px`;
     this.uploadCanvas.el.style.left = `${(w - EXPANDED_W) / 2}px`;
 
@@ -982,8 +989,15 @@ export class Island {
       }
     }
 
-    // Compact mini grid
-    const showGrid = State.mode === "compact";
+    // Compact: the line being sung while the Music pill plays, else the mini grid.
+    const lyricMode = this.lyricMode();
+    if (lyricMode !== this.lastLyricMode) {
+      this.lastLyricMode = lyricMode;
+      // Wider for a lyric line, back to the usual size after.
+      if (State.mode === "compact") this.animateGeometry(!lyricMode);
+    }
+    lyricStripEl().style.opacity = lyricMode ? "1" : "0";
+    const showGrid = State.mode === "compact" && !lyricMode;
     this.miniGrid.style.opacity = showGrid ? "1" : "0";
     if (showGrid) {
       const others = State.otherTasks.slice(0, 4);
@@ -1000,6 +1014,13 @@ export class Island {
 
     syncMiniBotStates(State.tasks);
     this.engine.setState(State.effectiveState);
+  }
+
+  private lastLyricMode = false;
+
+  /** Collapsed on a playing Music pill: the island sings instead of showing the other pills. */
+  private lyricMode(): boolean {
+    return State.mode === "compact" && lyricStripActive();
   }
 
   /** Applies settings coming from Rust at boot. */

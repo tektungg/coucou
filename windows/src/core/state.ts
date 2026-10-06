@@ -146,6 +146,8 @@ export interface Settings {
   spaceTimeboxDir: string;
   /** Which apps the Messages pill listens to (MESSAGE_APPS). */
   messageApps: string[];
+  /** Lyrics on the Music card, from lrclib.net. */
+  lyricsEnabled: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -163,6 +165,7 @@ export const DEFAULT_SETTINGS: Settings = {
   slackWorkspace: "",
   spaceTimeboxDir: "",
   messageApps: [...MESSAGE_APPS],
+  lyricsEnabled: true,
 };
 
 type Listener = () => void;

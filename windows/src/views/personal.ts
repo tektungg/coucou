@@ -1,13 +1,17 @@
 // Cards for this build's own pills: Claude usage, Space, music, messages.
 // Kept out of integrations.ts so the stock cards stay as upstream ships them.
 
-import { h, svg, dot } from "./dom";
+import { h, svg, dot, clear } from "./dom";
 import { ICONS } from "./icons";
 import { State, type AgentTask } from "../core/state";
 import { Bridge } from "../core/bridge";
 import { arr, get, header, listRow, timeAgo } from "./integrations";
 import { sortSpaceItems } from "./spaceTasks";
 import { ExpandedMessages, groupByApp, needsExpander, type MessageGroup } from "./messageGroups";
+import {
+  currentPositionMs, formatTime, lyricWindow, plainLines, progress, stripText, timelineOf, trackKey,
+  type LyricLine, type Lyrics, type Timeline,
+} from "./lyrics";
 
 export const PERSONAL_IDS = new Set([
   "integration_quota", "integration_space", "integration_media", "integration_messages",
@@ -155,43 +159,459 @@ function spaceDetail(onBack: () => void): HTMLElement {
 
 // ── Music ─────────────────────────────────────────────────────────────────────
 
-function mediaCard(): HTMLElement {
+// The card is rebuilt only when the poll's data changes (a new song, play ↔
+// pause, a seek). Between rebuilds a 250 ms timer moves the progress bar and
+// the lyrics in place, and only while the island is open on a playing song.
+// The cover and the lyrics arrive after the card is built and patch it.
+
+const MUSIC_GREEN = "#1DB954";
+/** Songs whose lyrics are kept for this run (lyrics.rs caches too). */
+const LYRICS_KEPT = 40;
+/** A failed lyrics request is tried again on a later card after this long. */
+const LYRICS_RETRY_MS = 30_000;
+const TICK_MS = 250;
+
+type LyricsState =
+  | { status: "loading" }
+  | { status: "done"; lyrics: Lyrics | null }
+  | { status: "error"; at: number };
+
+const lyricsByTrack = new Map<string, LyricsState>();
+/** The cover snapshot() read last; `id` is the poll's `artId`. */
+let cover: { id: number; url: string } | null = null;
+let coverLoading = 0;
+
+/** What the timer repaints: the card on screen, compact or detail. */
+interface LiveMedia {
+  key: string;
+  root: HTMLElement;
+  timeline: Timeline;
+  lyricsOn: boolean;
+  fill: HTMLElement | null;
+  elapsed: HTMLElement | null;
+  total: HTMLElement | null;
+  art: HTMLElement | null;
+  glow: HTMLElement | null;
+  /** Card: the line being sung, with the one before and after. */
+  lyricBox: HTMLElement | null;
+  prev: HTMLElement | null;
+  current: HTMLElement | null;
+  next: HTMLElement | null;
+  /** Detail: every line. */
+  list: HTMLElement | null;
+  lineEls: HTMLElement[];
+  index: number;
+  /** The user scrolled the detail list: leave it there for a moment. */
+  userScrollAt: number;
+}
+
+let live: LiveMedia | null = null;
+let timer: ReturnType<typeof setInterval> | null = null;
+
+const LYRICS_ICON = "M5 7h14M5 12h14M5 17h8";
+const NOTE_ICON = "M9 18V6l10-2v12M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm10-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0z";
+
+function lyricsOn(): boolean {
+  return State.settings.lyricsEnabled !== false;
+}
+
+function lyricsFor(key: string): LyricsState | undefined {
+  return lyricsByTrack.get(key);
+}
+
+function ensureLyrics(d: Record<string, unknown>, key: string) {
+  if (!lyricsOn() || str(d.title) === "") return;
+  const known = lyricsByTrack.get(key);
+  if (known && !(known.status === "error" && Date.now() - known.at > LYRICS_RETRY_MS)) return;
+  lyricsByTrack.set(key, { status: "loading" });
+  while (lyricsByTrack.size > LYRICS_KEPT) {
+    const oldest = lyricsByTrack.keys().next().value;
+    if (oldest === undefined) break;
+    lyricsByTrack.delete(oldest);
+  }
+  const duration = num(d.durationMs);
+  Bridge.mediaLyrics(str(d.title), str(d.artist), str(d.album), duration && duration > 0 ? duration : null)
+    .then((lyrics) => lyricsByTrack.set(key, { status: "done", lyrics }))
+    .catch(() => lyricsByTrack.set(key, { status: "error", at: Date.now() }))
+    .finally(() => {
+      if (live?.key === key) renderLyrics(live);
+      paintStrip(Date.now());
+    });
+}
+
+function ensureCover(d: Record<string, unknown>) {
+  const id = num(d.artId) ?? 0;
+  if (id === 0 || cover?.id === id || coverLoading === id) return;
+  coverLoading = id;
+  void Bridge.mediaArt().then((art) => {
+    coverLoading = 0;
+    if (!art) return;
+    cover = art;
+    if (live) paintCover(live);
+  });
+}
+
+function paintCover(l: LiveMedia) {
   const d = get("integration_media");
+  const url = cover && cover.id === num(d.artId) ? cover.url : null;
+  if (l.art) {
+    clear(l.art);
+    if (url) {
+      l.art.append(h("img", { src: url, alt: "", draggable: "false" }));
+      l.art.classList.remove("empty");
+    } else {
+      l.art.append(svg(NOTE_ICON, 22, { stroke: 1.8 }));
+      l.art.classList.add("empty");
+    }
+  }
+  if (l.glow) l.glow.style.backgroundImage = url ? `url("${url}")` : "";
+}
+
+/** The status line shown in place of lyrics, or null when there are lines to sing. */
+function lyricsStatus(key: string): string | null {
+  if (!lyricsOn()) return null;
+  const s = lyricsFor(key);
+  if (!s || s.status === "loading") return "Looking for lyrics…";
+  if (s.status === "error") return "Lyrics unavailable right now";
+  const l = s.lyrics;
+  if (!l || (l.synced.length === 0 && !l.plain && !l.instrumental)) return "No lyrics on LRCLIB";
+  if (l.synced.length === 0 && l.instrumental) return "♪  Instrumental";
+  if (l.synced.length === 0) return "Lyrics not synced · open ≡ to read";
+  return null;
+}
+
+function syncedLines(key: string): LyricLine[] {
+  const s = lyricsFor(key);
+  return s?.status === "done" && s.lyrics ? s.lyrics.synced : [];
+}
+
+/** Rebuilds the lyric part of the live card after the lyrics arrive or the preference flips. */
+function renderLyrics(l: LiveMedia) {
+  l.lyricsOn = lyricsOn();
+  l.index = -2; // force the next paint
+  if (l.lyricBox) {
+    l.lyricBox.style.display = l.lyricsOn ? "" : "none";
+    l.root.classList.toggle("no-lyrics", !l.lyricsOn);
+  }
+  if (l.list) fillLyricList(l);
+  paint(l, Date.now());
+}
+
+function setLine(el: HTMLElement | null, text: string, animate: boolean) {
+  if (!el) return;
+  const shown = text.trim() === "" ? "♪" : text;
+  if (el.textContent === shown) return;
+  el.textContent = shown;
+  el.classList.toggle("rest", shown === "♪");
+  if (animate) {
+    el.classList.remove("enter");
+    void el.offsetWidth; // restart the animation
+    el.classList.add("enter");
+  }
+}
+
+function paint(l: LiveMedia, nowMs: number) {
+  const t = l.timeline;
+  const pos = currentPositionMs(t, nowMs);
+  if (l.fill) l.fill.style.transform = `scaleX(${progress(t, nowMs).toFixed(4)})`;
+  if (l.elapsed) l.elapsed.textContent = formatTime(pos);
+  if (l.total) l.total.textContent = t.durationMs > 0 ? formatTime(t.durationMs) : "";
+
+  if (!l.lyricsOn) return;
+  const status = lyricsStatus(l.key);
+  const lines = syncedLines(l.key);
+  if (l.prev && l.current && l.next) {
+    if (status != null) {
+      l.prev.textContent = "";
+      l.current.textContent = status;
+      l.current.classList.add("status");
+      l.current.classList.remove("rest", "enter");
+      l.next.textContent = "";
+    } else {
+      l.current.classList.remove("status");
+      const w = lyricWindow(lines, pos);
+      if (w.index !== l.index) {
+        const first = l.index === -2;
+        l.index = w.index;
+        // Before the first line: the intro, with the first line waiting below.
+        l.prev.textContent = w.prev;
+        setLine(l.current, w.index < 0 ? "" : w.current, !first);
+        l.next.textContent = w.next;
+        if (!first) {
+          for (const el of [l.prev, l.next]) {
+            el.classList.remove("enter");
+            void el.offsetWidth; // restart the animation
+            el.classList.add("enter");
+          }
+        }
+      }
+    }
+  }
+  if (l.list && lines.length) {
+    const index = lyricWindow(lines, pos).index;
+    if (index !== l.index) {
+      const first = l.index === -2;
+      l.index = index;
+      l.lineEls.forEach((el, i) => {
+        el.classList.toggle("on", i === index);
+        el.classList.toggle("past", i < index);
+      });
+      const el = l.lineEls[index];
+      if (el && nowMs - l.userScrollAt > 4_000) {
+        const top = el.offsetTop - l.list.clientHeight / 2 + el.offsetHeight / 2;
+        l.list.scrollTo({ top: Math.max(0, top), behavior: first ? "auto" : "smooth" });
+      }
+    }
+  }
+}
+
+function cardMoving(): boolean {
+  const l = live;
+  return l != null && l.root.isConnected && State.mode === "expanded" && l.timeline.playing;
+}
+
+function stripMoving(): boolean {
+  return State.mode === "compact" && lyricStripActive();
+}
+
+function tick() {
+  const card = cardMoving();
+  const strip = stripMoving();
+  if (!card && !strip) {
+    stopTimer();
+    return;
+  }
+  const now = Date.now();
+  if (card && live) paint(live, now);
+  if (strip) paintStrip(now);
+}
+
+function stopTimer() {
+  if (timer != null) clearInterval(timer);
+  timer = null;
+}
+
+/** Runs the timer exactly while there is something moving on screen. */
+function syncTimer() {
+  const strip = stripMoving();
+  if (strip) {
+    // The island may collapse before the card was ever built.
+    const d = get("integration_media");
+    ensureLyrics(d, trackKey(d));
+  }
+  const wanted = cardMoving() || strip;
+  if (wanted && timer == null) {
+    timer = setInterval(tick, TICK_MS);
+    tick();
+  } else if (!wanted) {
+    stopTimer();
+  }
+}
+
+// ── Collapsed island: the line being sung ─────────────────────────────────────
+
+const stripLine = h("div", { class: "lyric-strip-line" });
+const strip = h("div", { id: "lyric-strip" }, stripLine);
+
+/** The strip island.ts lays over the collapsed island in place of the mini bots. */
+export function lyricStripEl(): HTMLElement {
+  return strip;
+}
+
+/** True while the collapsed island should sing: the Music pill has the focus and a song plays. */
+export function lyricStripActive(): boolean {
+  if (State.focusTask?.id !== "integration_media" || !hasPersonalData("integration_media")) return false;
+  return get("integration_media").playing === true;
+}
+
+function paintStrip(nowMs: number) {
+  if (!lyricStripActive()) return;
+  const d = get("integration_media");
+  const lines = lyricsOn() ? syncedLines(trackKey(d)) : [];
+  const text = stripText(d, lines, currentPositionMs(timelineOf(d), nowMs));
+  if (stripLine.textContent === text) return;
+  stripLine.textContent = text;
+  stripLine.title = text;
+  stripLine.classList.remove("enter");
+  void stripLine.offsetWidth; // restart the animation
+  stripLine.classList.add("enter");
+}
+
+// Opening the island or flipping the Lyrics preference reaches the card
+// without a rebuild: catch both here.
+State.subscribe(() => {
+  if (live && live.lyricsOn !== lyricsOn()) {
+    if (lyricsOn()) ensureLyrics(get("integration_media"), live.key);
+    renderLyrics(live);
+  }
+  syncTimer();
+});
+
+function goLive(l: LiveMedia) {
+  live = l;
+  paintCover(l);
+  // Laid out once it is in the DOM: paint then, so the bar starts right.
+  requestAnimationFrame(() => {
+    if (live !== l) return;
+    renderLyrics(l);
+    syncTimer();
+  });
+}
+
+function emptyLive(key: string, root: HTMLElement, timeline: Timeline): LiveMedia {
+  return {
+    key, root, timeline, lyricsOn: lyricsOn(),
+    fill: null, elapsed: null, total: null, art: null, glow: null,
+    lyricBox: null, prev: null, current: null, next: null,
+    list: null, lineEls: [], index: -2, userScrollAt: 0,
+  };
+}
+
+function mediaButtons(d: Record<string, unknown>): HTMLElement {
   const playing = d.playing === true;
   // Paths, not ⏮ ⏯ ⏭: Windows draws those as coloured emoji tiles.
-  const button = (path: string, title: string, action: string, enabled: boolean) => {
+  const button = (path: string, title: string, action: string, enabled: boolean, cls = "") => {
     const b = h(
       "button",
       {
-        class: "media-btn",
+        class: `media-btn ${cls}`.trim(),
         title,
-        onclick: () => {
+        onclick: (e: Event) => {
+          e.stopPropagation();
           if (enabled) void Bridge.mediaControl(action);
         },
       },
-      svg(path, 10),
+      svg(path, cls ? 11 : 10),
     );
-    if (!enabled) b.style.opacity = "0.35";
+    if (!enabled) b.classList.add("off");
     return b;
   };
   return h(
     "div",
-    { class: "int-card" },
-    header("#1DB954", "Music", str(d.app) || "Now playing"),
+    { class: "media-controls" },
+    button(MEDIA_ICONS.prev, "Previous", "prev", d.canPrev === true),
+    button(playing ? MEDIA_ICONS.pause : MEDIA_ICONS.play, playing ? "Pause" : "Play", "play_pause", d.canPlayPause !== false, "main"),
+    button(MEDIA_ICONS.next, "Next", "next", d.canNext === true),
+  );
+}
+
+function mediaCard(onDetail: () => void): HTMLElement {
+  const d = get("integration_media");
+  const key = trackKey(d);
+  const timeline = timelineOf(d);
+  ensureLyrics(d, key);
+  ensureCover(d);
+
+  const art = h("div", { class: "media-art empty" });
+  const glow = h("div", { class: "media-glow" });
+  const fill = h("i");
+  const elapsed = h("span", { class: "media-time" });
+  const total = h("span", { class: "media-time end" });
+  const prev = h("div", { class: "media-line side" });
+  const current = h("div", { class: "media-line" });
+  const next = h("div", { class: "media-line side" });
+  const lyricBox = h("div", { class: "media-lyrics" }, prev, current, next);
+
+  const lyricsBtn = h("button", { class: "int-more", title: "Lyrics", onclick: onDetail }, svg(LYRICS_ICON, 9, { stroke: 2.4 }));
+  const right = h("span", { class: "int-head-right" }, lyricsOn() ? lyricsBtn : null);
+  const title = str(d.title);
+  const artist = str(d.artist);
+  const names = artist ? `${title} · ${artist}` : title;
+
+  const root = h(
+    "div",
+    { class: timeline.playing ? "int-card media-card playing" : "int-card media-card" },
+    glow,
+    header(MUSIC_GREEN, "Music", str(d.app) || "Now playing", right),
     h(
       "div",
-      { class: "media-body" },
-      h("div", { class: "media-title", text: str(d.title) }),
-      h("div", { class: "int-sub", text: str(d.artist) }),
+      { class: "media-main" },
+      art,
       h(
         "div",
-        { class: "media-controls" },
-        button(MEDIA_ICONS.prev, "Previous", "prev", d.canPrev === true),
-        button(playing ? MEDIA_ICONS.pause : MEDIA_ICONS.play, playing ? "Pause" : "Play", "play_pause", d.canPlayPause !== false),
-        button(MEDIA_ICONS.next, "Next", "next", d.canNext === true),
+        { class: "media-info" },
+        h(
+          "div",
+          { class: "media-top" },
+          // "Title · Artist" on one line; the album stays off the card.
+          h(
+            "div",
+            { class: "media-names", title: names },
+            h("span", { class: "media-title", text: title }),
+            artist ? h("span", { class: "media-artist", text: ` · ${artist}` }) : null,
+          ),
+          mediaButtons(d),
+        ),
+        lyricBox,
+        h("div", { class: "media-progress" }, elapsed, h("div", { class: "media-bar" }, fill), total),
       ),
     ),
   );
+  // Clicking the lyrics opens them all.
+  lyricBox.addEventListener("click", () => {
+    if (lyricsOn()) onDetail();
+  });
+
+  const l = emptyLive(key, root, timeline);
+  Object.assign(l, { fill, elapsed, total, art, glow, lyricBox, prev, current, next });
+  goLive(l);
+  return root;
+}
+
+function fillLyricList(l: LiveMedia) {
+  if (!l.list) return;
+  clear(l.list);
+  l.lineEls = [];
+  const status = lyricsStatus(l.key);
+  const s = lyricsFor(l.key);
+  const lyrics = s?.status === "done" ? s.lyrics : null;
+  if (!lyricsOn()) {
+    l.list.append(h("div", { class: "int-status", text: "Lyrics are off (Settings → Music)." }));
+    return;
+  }
+  if (lyrics && lyrics.synced.length) {
+    for (const line of lyrics.synced) {
+      const el = h("div", { class: line.text.trim() ? "lyr-line" : "lyr-line rest", text: line.text.trim() || "♪" });
+      l.lineEls.push(el);
+      l.list.append(el);
+    }
+  } else if (lyrics && lyrics.plain) {
+    l.list.append(h("div", { class: "int-status", text: "Not synced with the song." }));
+    for (const line of plainLines(lyrics.plain)) {
+      l.list.append(h("div", { class: line ? "lyr-line plain" : "lyr-gap", text: line }));
+    }
+  } else {
+    l.list.append(h("div", { class: "int-status", text: status ?? "No lyrics on LRCLIB" }));
+  }
+  l.list.append(h("div", { class: "lyr-credit", text: "Lyrics from lrclib.net" }));
+}
+
+function mediaDetail(onBack: () => void): HTMLElement {
+  const d = get("integration_media");
+  const key = trackKey(d);
+  const timeline = timelineOf(d);
+  ensureLyrics(d, key);
+
+  const list = h("div", { class: "int-rows scroll lyr-list" });
+  const fill = h("i");
+  const elapsed = h("span", { class: "media-time" });
+  const total = h("span", { class: "media-time end" });
+  const frame = detailFrame(MUSIC_GREEN, str(d.title) || "Lyrics", onBack, list);
+  frame.classList.add("media-detail");
+  const head = frame.querySelector(".int-detail-head");
+  const artist = str(d.artist);
+  if (head) {
+    if (artist) head.append(h("span", { class: "media-detail-artist", text: artist }));
+    head.append(h("div", { class: "media-progress mini" }, elapsed, h("div", { class: "media-bar" }, fill), total));
+  }
+
+  const l = emptyLive(key, frame, timeline);
+  Object.assign(l, { fill, elapsed, total, list });
+  list.addEventListener("wheel", () => {
+    l.userScrollAt = Date.now();
+  }, { passive: true });
+  goLive(l);
+  return frame;
 }
 
 // ── Messages ──────────────────────────────────────────────────────────────────
@@ -382,7 +802,7 @@ export function renderPersonalCard(
     case "integration_space":
       return detailOpen ? spaceDetail(closeDetail) : spaceCard(openDetail);
     case "integration_media":
-      return mediaCard();
+      return detailOpen ? mediaDetail(closeDetail) : mediaCard(openDetail);
     case "integration_messages":
       return detailOpen ? messagesDetail(closeDetail) : messagesCard(openDetail);
     default:

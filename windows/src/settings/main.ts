@@ -310,6 +310,8 @@ interface IntegrationDef {
   prefs?: { prop: "slackWorkspace" | "spaceTimeboxDir"; label: string; placeholder: string }[];
   /** Shows the Messages app toggles. */
   apps?: boolean;
+  /** Shows the Music pill's Lyrics toggle. */
+  lyrics?: boolean;
   /** One line on where the data comes from. */
   info?: string;
 }
@@ -338,7 +340,7 @@ const INTEGRATIONS: IntegrationDef[] = [
   { id: "integration_space", name: "Space", color: "#4F8EF7", fields: [],
     prefs: [{ prop: "spaceTimeboxDir", label: "space-timebox folder", placeholder: "%USERPROFILE%\\.claude-kantor\\mcp\\space-timebox  (empty = default)" }],
     info: "Today's sprint tasks and timebox through the local space-timebox MCP server." },
-  { id: "integration_media", name: "Music", color: "#1DB954", fields: [],
+  { id: "integration_media", name: "Music", color: "#1DB954", fields: [], lyrics: true,
     info: "Now playing from the Windows media session: Spotify, browsers, any player." },
   { id: "integration_messages", name: "Messages", color: "#5865F2", fields: [],
     prefs: [{ prop: "slackWorkspace", label: "Slack workspace", placeholder: "Shown on Slack messages" }],
@@ -422,6 +424,15 @@ function integrationsSection(present: Record<string, boolean>): HTMLElement {
       });
       rows.append(
         h("div", { class: "row" }, h("label", { style: "min-width:104px", text: pref.label }), input),
+      );
+    }
+    if (def.lyrics) {
+      rows.append(
+        h("div", { class: "row" },
+          h("label", { style: "min-width:104px", text: "Lyrics" }),
+          toggle(settings.lyricsEnabled, (v) => { settings.lyricsEnabled = v; void save(); }),
+          h("span", { class: "hint", text: "From lrclib.net: the song's title and artist are sent there." }),
+        ),
       );
     }
     if (def.apps) {

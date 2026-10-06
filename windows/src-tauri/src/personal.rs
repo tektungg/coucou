@@ -4,19 +4,22 @@
 // `integration` event and the island owns badges, sounds and cards. None of
 // them needs a key or reaches a service the user did not already use: the
 // status files are local, Space goes through the user's own MCP server, and
-// music and messages come from Windows itself.
+// music and messages come from Windows itself. The one exception is lyrics:
+// the playing song's title and artist go to lrclib.net, only while the Lyrics
+// preference is on (Settings → Music).
 //
 // Message text and song titles are never logged.
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
 use crate::integrations::{emit, spawn, IntegrationEvent, IntegrationUpdate};
-use crate::{log, media, notify, quota, space};
+use crate::{log, lyrics, media, notify, quota, space};
 
 /// Messages kept for the card. In memory only: they die with the app.
 const MESSAGE_HISTORY: usize = 15;
@@ -117,26 +120,57 @@ async fn poll_space(app: AppHandle) {
 // ── Music ─────────────────────────────────────────────────────────────────────
 
 /// Last snapshot sent, so a poll every 2 s only reaches the island on change.
-static LAST_MEDIA: Mutex<Option<Value>> = Mutex::new(None);
+/// `Some(None)` = "nothing playing" was sent; `None` = nothing sent yet.
+static LAST_MEDIA: Mutex<Option<Option<media::MediaInfo>>> = Mutex::new(None);
 
 async fn poll_media(app: AppHandle) {
     let result = tokio::task::spawn_blocking(media::snapshot)
         .await
         .unwrap_or_else(|e| Err(e.to_string()));
-    let data = match result {
-        Ok(Some(info)) => serde_json::to_value(&info).unwrap_or_else(|_| json!({})),
-        Ok(None) => json!({}),
-        // A transient WinRT failure is not worth a red card: keep the last one.
-        Err(_) => return,
-    };
+    // A transient WinRT failure is not worth a red card: keep the last one.
+    let Ok(info) = result else { return };
     {
         let mut last = LAST_MEDIA.lock().unwrap();
-        if last.as_ref() == Some(&data) {
+        // The timeline moves on every poll; the card follows it by itself.
+        let unchanged = match (last.as_ref(), info.as_ref()) {
+            (Some(Some(a)), Some(b)) => media::same_media(a, b),
+            (Some(None), None) => true,
+            _ => false,
+        };
+        if unchanged {
             return;
         }
-        *last = Some(data.clone());
+        *last = Some(info.clone());
     }
+    let data = match info {
+        Some(info) => serde_json::to_value(&info).unwrap_or_else(|_| json!({})),
+        None => json!({}),
+    };
     emit(&app, update("integration_media", data, None, None));
+}
+
+/// The cover the Music card shows, as (art_id, data URL).
+pub fn media_art() -> Option<Value> {
+    media::art().map(|(id, url)| json!({ "id": id, "url": url }))
+}
+
+/// Lyrics for the song on the Music card. None while the Lyrics preference
+/// is off or Coucou is paused: then nothing reaches lrclib.net.
+pub async fn media_lyrics(
+    app: AppHandle,
+    title: String,
+    artist: String,
+    album: String,
+    duration_ms: Option<u64>,
+) -> Result<Option<lyrics::Lyrics>, String> {
+    if !pref(&app, |s| s.lyrics_enabled).unwrap_or(false) || crate::integrations::PAUSED.load(Ordering::Relaxed) {
+        return Ok(None);
+    }
+    lyrics::fetch(&title, &artist, &album, duration_ms).await.map_err(|err| {
+        // The error is about the network, never the song.
+        log::line(format!("lyrics failed: {err}"));
+        err
+    })
 }
 
 /// Play/pause, next or previous on the session the Music pill shows.

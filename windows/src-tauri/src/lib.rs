@@ -7,6 +7,7 @@ mod hooks;
 mod integrations;
 mod island;
 mod log;
+mod lyrics;
 mod mcp_stdio;
 mod media;
 mod notify;
@@ -312,6 +313,24 @@ async fn media_control(app: AppHandle, action: String) -> Result<(), String> {
     personal::media_control(app, action).await
 }
 
+/// The Music card's cover: { id, url } (a data URL), or null.
+#[tauri::command]
+fn media_art() -> Option<serde_json::Value> {
+    personal::media_art()
+}
+
+/// The Music card's lyrics from lrclib.net, or null (none, or Lyrics off).
+#[tauri::command]
+async fn media_lyrics(
+    app: AppHandle,
+    title: String,
+    artist: String,
+    album: String,
+    duration_ms: Option<u64>,
+) -> Result<Option<lyrics::Lyrics>, String> {
+    personal::media_lyrics(app, title, artist, album, duration_ms).await
+}
+
 /// Whether a fullscreen app (game, video, presentation) is in front: hovering
 /// the island then leaves it shut.
 #[tauri::command]
@@ -453,6 +472,8 @@ pub fn run() {
             secret_clear,
             refresh_integration,
             media_control,
+            media_art,
+            media_lyrics,
             open_app,
             dismiss_messages,
             fullscreen_active,

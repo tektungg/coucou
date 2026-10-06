@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { Settings } from "./state";
+import type { Lyrics } from "../views/lyrics";
 
 export const IS_TAURI =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -88,6 +89,11 @@ export const Bridge = {
   chatReset: () => call<void>("chat_reset"),
   /** Play/pause, next or previous on the media session the Music pill shows. */
   mediaControl: (action: string) => call<void>("media_control", { action }),
+  /** The Music card's cover as a data URL; `id` matches the poll's `artId`. */
+  mediaArt: () => call<{ id: number; url: string } | null>("media_art"),
+  /** Lyrics from lrclib.net; null when there are none or the Lyrics preference is off. Throws on a network failure. */
+  mediaLyrics: (title: string, artist: string, album: string, durationMs: number | null) =>
+    callOrThrow<Lyrics | null>("media_lyrics", { title, artist, album, durationMs }),
   /** Brings a messaging app forward; Rust maps the name to its URL scheme. */
   openApp: (app: string) => call<void>("open_app", { app }),
   /** True while a fullscreen game, video or presentation is in front. */
