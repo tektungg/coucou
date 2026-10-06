@@ -39,6 +39,9 @@ pub struct Settings {
     /// Lyrics on the Music card, from lrclib.net. On by default; off sends nothing.
     #[serde(default = "default_true")]
     pub lyrics_enabled: bool,
+    /// The Music card shows Japanese, Korean and Chinese lyrics in Latin letters.
+    #[serde(default)]
+    pub lyrics_romanized: bool,
 }
 
 fn default_true() -> bool {
@@ -106,6 +109,7 @@ impl Default for Settings {
             space_timebox_dir: String::new(),
             message_apps: default_message_apps(),
             lyrics_enabled: true,
+            lyrics_romanized: false,
         }
     }
 }
@@ -167,6 +171,7 @@ mod tests {
         assert_eq!(s.space_timebox_dir, "");
         assert_eq!(s.message_apps, default_message_apps());
         assert!(s.lyrics_enabled);
+        assert!(!s.lyrics_romanized);
     }
 
     #[test]

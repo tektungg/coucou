@@ -1922,6 +1922,24 @@ input[type="range"]::-webkit-slider-thumb {
   height: 8px;
 }
 
+/* The Aa toggle: original ⇄ romanized lyrics. */
+.int-more.roman-btn {
+  width: auto;
+  padding: 0 5px;
+  border-radius: 5px;
+  font: 700 9.5px var(--font);
+  letter-spacing: 0.02em;
+}
+
+.int-more.roman-btn:hover {
+  color: var(--ink-2);
+}
+
+.int-more.roman-btn.on {
+  background: rgba(29, 185, 84, 0.2);
+  color: #7ee2a2;
+}
+
 .lyr-credit {
   font: 400 9.5px var(--font);
   color: var(--dim-4);

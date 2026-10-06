@@ -127,3 +127,39 @@ test("hoverOpens=false keeps the old hover-then-click behaviour", () => {
   fsm.click();
   assert.equal(fsm.state, "home");
 });
+
+test("the compact island stays up while it is asked to (lyrics playing)", () => {
+  const { fsm } = fsmIn("petit");
+  let keep = true;
+  fsm.keepPetit = () => keep;
+  mock.timers.tick(fsm.petitToHiddenDelay * 1000 + 1);
+  assert.equal(fsm.state, "petit");
+  mock.timers.tick(fsm.petitToHiddenDelay * 1000 + 1);
+  assert.equal(fsm.state, "petit", "asked again at every delay");
+  // The song stops: gone at the next delay, not at once.
+  keep = false;
+  assert.equal(fsm.state, "petit");
+  mock.timers.tick(fsm.petitToHiddenDelay * 1000 + 1);
+  assert.equal(fsm.state, "hidden");
+});
+
+test("a late answer hides the compact island (fullscreen app in front)", async () => {
+  const { fsm } = fsmIn("petit");
+  fsm.keepPetit = () => Promise.resolve(false);
+  mock.timers.tick(fsm.petitToHiddenDelay * 1000 + 1);
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(fsm.state, "hidden");
+});
+
+test("a late answer does not undo what happened meanwhile", async () => {
+  const { fsm } = fsmIn("petit");
+  let answer: (keep: boolean) => void = () => {};
+  fsm.keepPetit = () => new Promise<boolean>((r) => { answer = r; });
+  mock.timers.tick(fsm.petitToHiddenDelay * 1000 + 1);
+  fsm.mouseEntered(); // the user opened it while the check ran
+  answer(false);
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(fsm.state, "home");
+});

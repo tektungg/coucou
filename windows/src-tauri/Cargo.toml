@@ -22,6 +22,11 @@ serde_json = { version = "1", features = ["preserve_order"] }
 tokio = { version = "1", features = ["net", "io-util", "sync", "time", "rt", "process", "macros"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 base64 = "0.22"
+# Lyrics romanization (romanize.rs): Japanese readings from the embedded
+# IPADIC dictionary, kana to romaji, Chinese to pinyin. All offline.
+lindera = { version = "6.2", default-features = false, features = ["embed-ipadic"] }
+wana_kana = "5"
+pinyin = "0.11"
 
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }

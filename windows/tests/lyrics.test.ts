@@ -3,7 +3,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   activeLine,
+  canRomanize,
   currentPositionMs,
+  displayLines,
+  displayPlain,
   defaultQuery,
   durationMatch,
   hitKind,
@@ -12,6 +15,7 @@ import {
   lyricWindow,
   plainLines,
   progress,
+  romanLabel,
   stripIslandWidth,
   stripText,
   subtitle,
@@ -168,4 +172,48 @@ test("the collapsed island grows to fit a long line, within bounds", () => {
   assert.ok(stripIslandWidth(333, 420, 700) >= 333 + 2 * 58);
   // Longer than the window: capped, the line ellipsizes.
   assert.equal(stripIslandWidth(2_000, 420, 700), 700);
+});
+
+const korean = {
+  id: 1,
+  synced: [{ t: 1_000, text: "눈과 귀를 막고" }, { t: 2_000, text: "Love shot" }],
+  plain: "눈과 귀를 막고\nLove shot",
+  instrumental: false,
+  chosen: false,
+  lang: "ko",
+  romanized: ["nungwa gwireul makgo", "Love shot"],
+  romanizedPlain: "nungwa gwireul makgo\nLove shot",
+};
+
+test("the Aa toggle swaps the lines, keeping their times", () => {
+  assert.deepEqual(displayLines(korean, true), [{ t: 1_000, text: "nungwa gwireul makgo" }, { t: 2_000, text: "Love shot" }]);
+  assert.equal(displayLines(korean, false), korean.synced);
+  assert.equal(displayPlain(korean, true), "nungwa gwireul makgo\nLove shot");
+  assert.equal(displayPlain(korean, false), korean.plain);
+});
+
+test("without a usable romanization the original shows", () => {
+  const english = { ...korean, lang: null, romanized: null, romanizedPlain: null };
+  assert.equal(displayLines(english, true), english.synced);
+  assert.equal(displayPlain(english, true), english.plain);
+  // Lines that do not line up are not trusted.
+  const short = { ...korean, romanized: ["only one"] };
+  assert.equal(displayLines(short, true), short.synced);
+  assert.deepEqual(displayLines(null, true), []);
+  assert.equal(displayPlain(undefined, true), null);
+});
+
+test("the toggle only shows when there is something to switch to", () => {
+  assert.equal(canRomanize(korean), true);
+  assert.equal(canRomanize({ ...korean, romanized: null }), true);
+  assert.equal(canRomanize({ ...korean, romanized: null, romanizedPlain: null }), false);
+  assert.equal(canRomanize({ ...korean, romanized: [], romanizedPlain: "" }), false);
+  assert.equal(canRomanize(null), false);
+});
+
+test("the toggle names the romanization of the song's language", () => {
+  assert.equal(romanLabel("ja"), "romaji");
+  assert.equal(romanLabel("zh"), "pinyin");
+  assert.equal(romanLabel("ko"), "romanization");
+  assert.equal(romanLabel(null), "romanization");
 });

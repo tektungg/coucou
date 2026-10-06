@@ -191,7 +191,10 @@ network call is the Music pill's lyrics (lrclib.net), which Settings can turn of
   song's title and artist during the intro and the gaps). A line longer than
   the island grows it to fit, up to the window's width, where it ellipsizes;
   short lines leave it at its base width so it does not jump on every line
-  (`stripIslandWidth` in `views/lyrics.ts`).
+  (`stripIslandWidth` in `views/lyrics.ts`). While the song plays the compact
+  island does not auto-hide (the FSM's `keepPetit`), except over a fullscreen
+  game, video or presentation, and a song starting on the Music pill brings
+  it back if it had hidden.
 - **Lyrics.** `lyrics.rs` asks LRCLIB's exact match (title, artist, album,
   length) and stops there only when it is synced and within 2 s of the song.
   Otherwise it searches (as reported, with "feat."/"Remastered" noise
@@ -199,6 +202,18 @@ network call is the Music pill's lyrics (lrclib.net), which Settings can turn of
   saw: a length within 3 s first, then synced over plain over instrumental,
   then the closest length. Results, "not found" included, are cached for the
   run; network errors are retried 30 s later.
+- **Romanization.** Japanese, Korean and Chinese lyrics get a Latin version,
+  switched with the **Aa** button on the card or the lyrics detail (remembered
+  in settings, applies to the card, the detail and the collapsed island).
+  `romanize.rs` decides the song's language from all its lines (any kana makes
+  kanji Japanese) and works offline: Korean is Revised Romanization computed
+  from the Hangul block (liaison, nasalization, ㄹ and ㅎ rules); Japanese is
+  romaji from the readings of the IPADIC dictionary embedded with `lindera`
+  (particles は/へ/を as wa/e/o, inflections joined to their word, a short list
+  of number words it misreads); Chinese is pinyin with tone marks (`pinyin`
+  crate, one syllable per character, so a character with two readings can get
+  the wrong one). The embedded dictionary makes the release binary about
+  46 MB larger, and the first build downloads it from lindera.dev.
 - **Wrong lyrics.** The 🔍 button in the lyrics detail (or "Search lyrics by
   hand" when none were found) opens a search box prefilled with the title and
   first artist. Rows come best first, with the length in green (same, ≤ 2 s),

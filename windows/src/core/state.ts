@@ -148,6 +148,8 @@ export interface Settings {
   messageApps: string[];
   /** Lyrics on the Music card, from lrclib.net. */
   lyricsEnabled: boolean;
+  /** Japanese, Korean and Chinese lyrics shown in Latin letters (the card's Aa button). */
+  lyricsRomanized: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -166,6 +168,7 @@ export const DEFAULT_SETTINGS: Settings = {
   spaceTimeboxDir: "",
   messageApps: [...MESSAGE_APPS],
   lyricsEnabled: true,
+  lyricsRomanized: false,
 };
 
 type Listener = () => void;

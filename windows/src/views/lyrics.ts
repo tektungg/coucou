@@ -16,6 +16,37 @@ export interface Lyrics {
   instrumental: boolean;
   /** Picked by hand in the search, remembered for this song. */
   chosen: boolean;
+  /** "ja", "ko" or "zh" when the song gets romanized (romanize.rs). */
+  lang: string | null;
+  /** `synced` in Latin letters, line for line. */
+  romanized: string[] | null;
+  /** `plain` in Latin letters, same line breaks. */
+  romanizedPlain: string | null;
+}
+
+/** Whether these lyrics have a romanized version to switch to. */
+export function canRomanize(l: Lyrics | null | undefined): boolean {
+  return l != null && ((l.romanized?.length ?? 0) > 0 || (l.romanizedPlain ?? "") !== "");
+}
+
+/** The synced lines to show: romanized when asked and available, line for line. */
+export function displayLines(l: Lyrics | null | undefined, romanized: boolean): LyricLine[] {
+  if (!l) return [];
+  const roman = l.romanized;
+  // A romanization that does not line up is not trusted.
+  if (!romanized || !roman || roman.length !== l.synced.length) return l.synced;
+  return l.synced.map((line, i) => ({ t: line.t, text: roman[i] }));
+}
+
+/** The plain lyrics to show, romanized when asked and available. */
+export function displayPlain(l: Lyrics | null | undefined, romanized: boolean): string | null {
+  if (!l) return null;
+  return romanized && l.romanizedPlain ? l.romanizedPlain : l.plain;
+}
+
+/** What the toggle calls the romanization of a language. */
+export function romanLabel(lang: string | null | undefined): string {
+  return lang === "ja" ? "romaji" : lang === "zh" ? "pinyin" : "romanization";
 }
 
 export interface Timeline {

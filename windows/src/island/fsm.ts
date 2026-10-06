@@ -20,6 +20,12 @@ export class IslandStateMachine {
   pinned = false;
   /** Hovering the compact (or hidden) island opens it, no click needed. */
   hoverOpens = true;
+  /**
+   * Asked when the compact island's hide delay runs out: true keeps it up
+   * for another delay (a song's lyrics are on it). May answer later, after
+   * a fullscreen check; the island hides only if nothing moved meanwhile.
+   */
+  keepPetit: () => boolean | Promise<boolean> = () => false;
 
   private petitHide: number | null = null;
   private homeCollapse: number | null = null;
@@ -147,7 +153,16 @@ export class IslandStateMachine {
     this.clear("petitHide");
     this.petitHide = window.setTimeout(() => {
       this.petitHide = null;
-      if (this.state === "petit") this.transition("hidden");
+      if (this.state !== "petit") return;
+      const decide = (keep: boolean) => {
+        // Something else happened while asking (a hover, an alert): it decides.
+        if (this.state !== "petit" || this.petitHide != null) return;
+        if (keep) this.schedulePetitHide();
+        else this.transition("hidden");
+      };
+      const keep = this.keepPetit();
+      if (typeof keep === "boolean") decide(keep);
+      else keep.then(decide, () => decide(false));
     }, this.petitToHiddenDelay * 1000);
   }
 

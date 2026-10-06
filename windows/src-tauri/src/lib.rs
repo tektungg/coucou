@@ -15,6 +15,7 @@ mod personal;
 mod pipe;
 mod platform;
 mod quota;
+mod romanize;
 mod secrets;
 mod settings;
 mod space;

@@ -18,6 +18,8 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
+use crate::romanize;
+
 const API: &str = "https://lrclib.net/api";
 const TIMEOUT: Duration = Duration::from_secs(8);
 /// LRCLIB asks clients to say who they are.
@@ -54,6 +56,38 @@ pub struct Lyrics {
     pub instrumental: bool,
     /// Picked by hand in the search rather than matched.
     pub chosen: bool,
+    /// "ja", "ko" or "zh" when the song is in a script that gets romanized.
+    pub lang: Option<String>,
+    /// `synced` in Latin letters, line for line.
+    pub romanized: Option<Vec<String>>,
+    /// `plain` in Latin letters, with the same line breaks.
+    pub romanized_plain: Option<String>,
+}
+
+impl Lyrics {
+    /// Adds the song's language and its romanized lines (romanize.rs), or
+    /// leaves the lyrics as they are when they are not Japanese, Korean or Chinese.
+    pub(crate) fn with_romanization(mut self) -> Lyrics {
+        let texts = self.synced.iter().map(|l| l.text.as_str()).chain(self.plain.iter().flat_map(|p| p.lines()));
+        let Some(lang) = romanize::detect(texts) else {
+            return self;
+        };
+        self.lang = Some(lang.code().to_string());
+        if !self.synced.is_empty() {
+            self.romanized = Some(romanize::lines(lang, self.synced.iter().map(|l| l.text.as_str())));
+        }
+        self.romanized_plain =
+            self.plain.as_deref().map(|p| romanize::lines(lang, p.lines()).join("\n"));
+        self
+    }
+}
+
+/// Romanizes off the async runtime: the first Japanese song loads the
+/// dictionary. A failure there keeps the lyrics, without romanization.
+async fn annotate(lyrics: Option<Lyrics>) -> Option<Lyrics> {
+    let lyrics = lyrics?;
+    let fallback = lyrics.clone();
+    Some(tokio::task::spawn_blocking(move || lyrics.with_romanization()).await.unwrap_or(fallback))
 }
 
 /// One LRCLIB record, as `/api/get` and `/api/search` return it.
@@ -93,7 +127,16 @@ impl Record {
         if synced.is_empty() && plain.is_none() && !self.instrumental {
             return None;
         }
-        Some(Lyrics { id: self.id, synced, plain, instrumental: self.instrumental, chosen })
+        Some(Lyrics {
+            id: self.id,
+            synced,
+            plain,
+            instrumental: self.instrumental,
+            chosen,
+            lang: None,
+            romanized: None,
+            romanized_plain: None,
+        })
     }
 
     /// How far the record's length is from the song's; None when either is unknown.
@@ -412,7 +455,7 @@ pub async fn fetch(title: &str, artist: &str, album: &str, duration_ms: Option<u
     // A record the user picked for this song wins over any match.
     if let Some(id) = choices::get(&key) {
         if let Some(record) = get_by_id(&client, id).await? {
-            let lyrics = record.into_lyrics(true);
+            let lyrics = annotate(record.into_lyrics(true)).await;
             remember(key, lyrics.clone());
             return Ok(lyrics);
         }
@@ -424,7 +467,7 @@ pub async fn fetch(title: &str, artist: &str, album: &str, duration_ms: Option<u
     let mut pool: Vec<Record> = Vec::new();
     if let Some(record) = get_exact(&client, title, artist.trim(), album.trim(), duration_ms).await? {
         if is_sure(&record, duration_ms) {
-            let lyrics = record.into_lyrics(false);
+            let lyrics = annotate(record.into_lyrics(false)).await;
             remember(key, lyrics.clone());
             return Ok(lyrics);
         }
@@ -451,7 +494,7 @@ pub async fn fetch(title: &str, artist: &str, album: &str, duration_ms: Option<u
             break;
         }
     }
-    let lyrics = pick_best(&pool, duration_ms).and_then(|i| pool.swap_remove(i).into_lyrics(false));
+    let lyrics = annotate(pick_best(&pool, duration_ms).and_then(|i| pool.swap_remove(i).into_lyrics(false))).await;
     remember(key, lyrics.clone());
     Ok(lyrics)
 }
@@ -485,7 +528,7 @@ pub async fn choose(
     };
     let client = client()?;
     let record = get_by_id(&client, id).await?.ok_or("That record is gone from LRCLIB")?;
-    let lyrics = record.into_lyrics(true).ok_or("That record has no lyrics")?;
+    let lyrics = annotate(record.into_lyrics(true)).await.ok_or("That record has no lyrics")?;
     choices::set(&key, Some(id))?;
     remember(key, Some(lyrics.clone()));
     Ok(Some(lyrics))
@@ -742,6 +785,9 @@ mod tests {
             plain: None,
             instrumental: false,
             chosen: true,
+            lang: Some("ko".into()),
+            romanized: Some(vec!["Baby".into()]),
+            romanized_plain: None,
         };
         let json = serde_json::to_value(&l).unwrap();
         assert_eq!(json["synced"][0]["t"], 1500);
@@ -749,6 +795,43 @@ mod tests {
         assert_eq!(json["instrumental"], false);
         assert_eq!(json["id"], 3);
         assert_eq!(json["chosen"], true);
+        assert_eq!(json["lang"], "ko");
+        assert_eq!(json["romanized"][0], "Baby");
+        assert!(json["romanizedPlain"].is_null());
+    }
+
+    fn lyrics_of(lrc: &str, plain: Option<&str>) -> Lyrics {
+        Record { synced_lyrics: Some(lrc.into()), plain_lyrics: plain.map(Into::into), ..Record::default() }
+            .into_lyrics(false)
+            .unwrap()
+    }
+
+    #[test]
+    fn korean_lyrics_get_romanized_line_for_line() {
+        let l = lyrics_of("[00:01.00]눈과 귀를 막고\n[00:03.00]\n[00:05.00]Love shot", Some("눈과 귀를 막고\n\nLove shot"))
+            .with_romanization();
+        assert_eq!(l.lang.as_deref(), Some("ko"));
+        assert_eq!(l.romanized.unwrap(), vec!["nungwa gwireul makgo", "", "Love shot"]);
+        assert_eq!(l.romanized_plain.as_deref(), Some("nungwa gwireul makgo\n\nLove shot"));
+    }
+
+    #[test]
+    fn english_lyrics_are_left_alone() {
+        let l = lyrics_of("[00:01.00]Saturday mornin', jumped outta bed", None).with_romanization();
+        assert_eq!(l.lang, None);
+        assert_eq!(l.romanized, None);
+        assert_eq!(l.romanized_plain, None);
+    }
+
+    #[test]
+    fn plain_only_lyrics_get_a_romanized_plain() {
+        let l = Record { plain_lyrics: Some("我爱你\n你是我的".into()), ..Record::default() }
+            .into_lyrics(false)
+            .unwrap()
+            .with_romanization();
+        assert_eq!(l.lang.as_deref(), Some("zh"));
+        assert_eq!(l.romanized, None);
+        assert_eq!(l.romanized_plain.as_deref(), Some("wǒ ài nǐ\nnǐ shì wǒ de"));
     }
 
     /// The exact match only had plain lyrics; a synced record of the same
@@ -838,6 +921,29 @@ mod tests {
         assert!(choices::load(&path).is_empty());
         assert!(choices::load(&dir.join("missing.json")).is_empty());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Live eval: a real J-pop, C-pop and K-pop song from lrclib.net, every
+    /// synced line romanized and in Latin letters. Prints a few lines to judge.
+    #[test]
+    #[ignore]
+    fn romanize_live() {
+        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        for (title, artist, lang) in [("夜に駆ける", "YOASOBI", "ja"), ("晴天", "周杰倫", "zh"), ("Love Shot", "EXO", "ko")] {
+            let l = rt.block_on(fetch(title, artist, "", None)).unwrap().expect("found");
+            assert_eq!(l.lang.as_deref(), Some(lang), "{artist}");
+            let roman = l.romanized.clone().expect("romanized");
+            assert_eq!(roman.len(), l.synced.len());
+            let non_latin = roman
+                .iter()
+                .filter(|r| r.chars().any(|c| super::romanize::detect([c.to_string().repeat(4).as_str()]).is_some()))
+                .count();
+            println!("romanize_live: {lang} lines={} non_latin_left={non_latin}", roman.len());
+            for (orig, r) in l.synced.iter().zip(&roman).filter(|(o, _)| !o.text.is_empty()).take(4) {
+                println!("  {} -> {r}", orig.text);
+            }
+            assert_eq!(non_latin, 0, "{artist}");
+        }
     }
 
     /// Live eval against lrclib.net. Prints counts only, never lyrics.

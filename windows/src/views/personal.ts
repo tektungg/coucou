@@ -10,7 +10,8 @@ import { arr, get, header, listRow, timeAgo } from "./integrations";
 import { sortSpaceItems } from "./spaceTasks";
 import { ExpandedMessages, groupByApp, needsExpander, type MessageGroup } from "./messageGroups";
 import {
-  currentPositionMs, defaultQuery, durationMatch, formatTime, hitKind, lyricWindow, plainLines, progress,
+  canRomanize, currentPositionMs, defaultQuery, displayLines, displayPlain, durationMatch, formatTime, hitKind,
+  lyricWindow, plainLines, progress, romanLabel,
   stripIslandWidth, stripText, timelineOf, trackKey,
   type LyricHit, type LyricLine, type Lyrics, type Timeline,
 } from "./lyrics";
@@ -205,6 +206,8 @@ interface LiveMedia {
   index: number;
   /** The user scrolled the detail list: leave it there for a moment. */
   userScrollAt: number;
+  /** The Aa toggle, shown once the lyrics turn out to have a romanization. */
+  romanBtn: HTMLElement | null;
 }
 
 let live: LiveMedia | null = null;
@@ -283,9 +286,53 @@ function lyricsStatus(key: string): string | null {
   return null;
 }
 
-function syncedLines(key: string): LyricLine[] {
+function lyricsOf(key: string): Lyrics | null {
   const s = lyricsFor(key);
-  return s?.status === "done" && s.lyrics ? s.lyrics.synced : [];
+  return s?.status === "done" ? s.lyrics : null;
+}
+
+/** The lines on show: romanized while the Aa toggle is on and the song has them. */
+function syncedLines(key: string): LyricLine[] {
+  return displayLines(lyricsOf(key), romanOn());
+}
+
+function romanOn(): boolean {
+  return State.settings.lyricsRomanized === true;
+}
+
+/** Flips original ⇄ romanized everywhere at once and remembers it. */
+function toggleRoman() {
+  State.settings.lyricsRomanized = !romanOn();
+  void Bridge.saveSettings(State.settings);
+  if (live) renderLyrics(live);
+  // The strip only repaints on a new line: make this one new.
+  stripLine.textContent = "";
+  paintStrip(Date.now());
+}
+
+function romanButton(): HTMLElement {
+  const b = h("button", {
+    class: "int-more roman-btn",
+    text: "Aa",
+    onclick: (e: Event) => {
+      e.stopPropagation();
+      toggleRoman();
+    },
+  });
+  b.style.display = "none";
+  return b;
+}
+
+/** Shows the toggle when the song has a romanization, lit while it is on. */
+function syncRomanButton(l: LiveMedia) {
+  const b = l.romanBtn;
+  if (!b) return;
+  const lyrics = lyricsOf(l.key);
+  const shown = lyricsOn() && canRomanize(lyrics);
+  b.style.display = shown ? "" : "none";
+  b.classList.toggle("on", shown && romanOn());
+  const label = romanLabel(lyrics?.lang);
+  b.title = romanOn() ? "Show the original lyrics" : `Show ${label}`;
 }
 
 /** Rebuilds the lyric part of the live card after the lyrics arrive or the preference flips. */
@@ -297,6 +344,7 @@ function renderLyrics(l: LiveMedia) {
     l.root.classList.toggle("no-lyrics", !l.lyricsOn);
   }
   if (l.list) fillLyricList(l);
+  syncRomanButton(l);
   paint(l, Date.now());
 }
 
@@ -493,7 +541,7 @@ function emptyLive(key: string, root: HTMLElement, timeline: Timeline): LiveMedi
     key, root, timeline, lyricsOn: lyricsOn(),
     fill: null, elapsed: null, total: null, art: null, glow: null,
     lyricBox: null, prev: null, current: null, next: null,
-    list: null, lineEls: [], index: -2, userScrollAt: 0,
+    list: null, lineEls: [], index: -2, userScrollAt: 0, romanBtn: null,
   };
 }
 
@@ -543,7 +591,8 @@ function mediaCard(onDetail: () => void): HTMLElement {
   const lyricBox = h("div", { class: "media-lyrics" }, prev, current, next);
 
   const lyricsBtn = h("button", { class: "int-more", title: "Lyrics", onclick: onDetail }, svg(LYRICS_ICON, 9, { stroke: 2.4 }));
-  const right = h("span", { class: "int-head-right" }, lyricsOn() ? lyricsBtn : null);
+  const romanBtn = romanButton();
+  const right = h("span", { class: "int-head-right" }, romanBtn, lyricsOn() ? lyricsBtn : null);
   const title = str(d.title);
   const artist = str(d.artist);
   const names = artist ? `${title} · ${artist}` : title;
@@ -583,7 +632,7 @@ function mediaCard(onDetail: () => void): HTMLElement {
   });
 
   const l = emptyLive(key, root, timeline);
-  Object.assign(l, { fill, elapsed, total, art, glow, lyricBox, prev, current, next });
+  Object.assign(l, { fill, elapsed, total, art, glow, lyricBox, prev, current, next, romanBtn });
   goLive(l);
   return root;
 }
@@ -593,21 +642,21 @@ function fillLyricList(l: LiveMedia) {
   clear(l.list);
   l.lineEls = [];
   const status = lyricsStatus(l.key);
-  const s = lyricsFor(l.key);
-  const lyrics = s?.status === "done" ? s.lyrics : null;
+  const lyrics = lyricsOf(l.key);
   if (!lyricsOn()) {
     l.list.append(h("div", { class: "int-status", text: "Lyrics are off (Settings → Music)." }));
     return;
   }
+  const plain = displayPlain(lyrics, romanOn());
   if (lyrics && lyrics.synced.length) {
-    for (const line of lyrics.synced) {
+    for (const line of displayLines(lyrics, romanOn())) {
       const el = h("div", { class: line.text.trim() ? "lyr-line" : "lyr-line rest", text: line.text.trim() || "♪" });
       l.lineEls.push(el);
       l.list.append(el);
     }
-  } else if (lyrics && lyrics.plain) {
+  } else if (lyrics && plain) {
     l.list.append(h("div", { class: "int-status", text: "Not synced with the song." }));
-    for (const line of plainLines(lyrics.plain)) {
+    for (const line of plainLines(plain)) {
       l.list.append(h("div", { class: line ? "lyr-line plain" : "lyr-gap", text: line }));
     }
   } else {
@@ -867,13 +916,17 @@ function mediaDetail(onBack: () => void, onRebuild: () => void): HTMLElement {
   if (head) {
     if (artist) head.append(h("span", { class: "media-detail-artist", text: artist }));
     head.append(h("div", { class: "media-progress mini" }, elapsed, h("div", { class: "media-bar" }, fill), total));
+  }
+  const romanBtn = romanButton();
+  if (head) {
+    head.append(romanBtn);
     if (lyricsOn()) {
       head.append(h("button", { class: "int-more", title: "Wrong lyrics? Search by hand", onclick: openSearch }, svg(SEARCH_ICON, 10, { stroke: 2.4 })));
     }
   }
 
   const l = emptyLive(key, frame, timeline);
-  Object.assign(l, { fill, elapsed, total, list });
+  Object.assign(l, { fill, elapsed, total, list, romanBtn });
   list.addEventListener("wheel", () => {
     l.userScrollAt = Date.now();
   }, { passive: true });

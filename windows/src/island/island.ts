@@ -104,6 +104,16 @@ export class Island {
     this.build();
     this.wireFsm();
     this.wireInput();
+    // While a song plays on the Music pill the compact island stays up with
+    // its lyrics, except over a fullscreen game, video or presentation.
+    this.fsm.keepPetit = () =>
+      lyricStripActive() ? Bridge.fullscreenActive().then((f) => f !== true) : false;
+    // A song starting on the Music pill brings the compact island back.
+    State.subscribe(() => {
+      const active = lyricStripActive();
+      if (active && !this.stripWasActive && State.mode === "hidden") void this.revealForLyrics();
+      this.stripWasActive = active;
+    });
     // A lyric line wider than the collapsed island grows it; a short one shrinks it back.
     onLyricStripResize(() => {
       if (this.lyricMode()) this.animateGeometry(lyricStripWidth() < this.width.value);
@@ -1030,6 +1040,14 @@ export class Island {
   }
 
   private lastLyricMode = false;
+  private stripWasActive = false;
+
+  /** Shows the compact island for a song's lyrics, never over a fullscreen app. */
+  private async revealForLyrics() {
+    if ((await Bridge.fullscreenActive()) === true) return;
+    if (State.mode === "hidden" && lyricStripActive()) this.fsm.reveal();
+  }
+
   /** Set while a new message holds the island on the Messages pill. */
   private glance: GlanceReturn | null = null;
 
