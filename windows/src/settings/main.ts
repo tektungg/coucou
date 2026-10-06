@@ -4,7 +4,7 @@
 
 import "./settings.css";
 import { Bridge, onEvent, type HookStatus } from "../core/bridge";
-import { DEFAULT_SETTINGS, HIDDEN_INTEGRATIONS, MESSAGE_APPS, type Settings } from "../core/state";
+import { DEFAULT_SETTINGS, HIDDEN_INTEGRATIONS, MAX_ACTIVE_PILLS, MESSAGE_APPS, type Settings } from "../core/state";
 import { h, clear } from "../views/dom";
 
 let settings: Settings = { ...DEFAULT_SETTINGS };
@@ -335,8 +335,6 @@ const INTEGRATIONS: IntegrationDef[] = [
   { id: "integration_calcom", name: "Cal.com", color: "#C9956A",
     fields: [{ key: "calcom-api-key", label: "API key", placeholder: "cal_…", secret: true }] },
   // This build's own pills: no keys, everything is read on this PC.
-  { id: "integration_quota", name: "Claude", color: "#E07B53", fields: [],
-    info: "5-hour and 7-day limits, per-session context and cost, from your Claude Code status line." },
   { id: "integration_space", name: "Space", color: "#4F8EF7", fields: [],
     prefs: [{ prop: "spaceTimeboxDir", label: "space-timebox folder", placeholder: "%USERPROFILE%\\.claude-kantor\\mcp\\space-timebox  (empty = default)" }],
     info: "Today's sprint tasks and timebox through the local space-timebox MCP server." },
@@ -346,13 +344,19 @@ const INTEGRATIONS: IntegrationDef[] = [
     prefs: [{ prop: "slackWorkspace", label: "Slack workspace", placeholder: "Shown on Slack messages" }],
     apps: true,
     info: "New messages read from Windows notifications. Kept in memory only." },
+  { id: "integration_shelf", name: "Shelf", color: "#F5A524", fields: [],
+    info: "Files you drop on Mochi, plus your latest screenshots and downloads: drag them out, copy or open them." },
+  { id: "integration_audio", name: "Audio", color: "#A78BFA", fields: [],
+    info: "Output and microphone: switch devices, volume, mute. Shows when an app is using the mic." },
+  { id: "integration_quota", name: "Claude", color: "#E07B53", fields: [],
+    info: "5-hour and 7-day limits as a card. Off, sessions still show context and cost, and limit alerts still come." },
 ];
 
 const APP_LABELS: Record<string, string> = {
   discord: "Discord", slack: "Slack", telegram: "Telegram", whatsapp: "WhatsApp",
 };
 
-const MAX_ACTIVE = 4;
+const MAX_ACTIVE = MAX_ACTIVE_PILLS;
 
 function integrationsSection(present: Record<string, boolean>): HTMLElement {
   const note = h("div", { class: "hint" });

@@ -17,8 +17,12 @@ import { createMiniBot, pruneMiniBots, syncMiniBotStates, tickMiniBots } from ".
 import { UploadCanvas } from "../upload/canvas";
 import { USC, UploadSeq } from "../upload/sequence";
 import { buildHeader, buildViews, type ViewActions, type ViewHost } from "../views/views";
-import { h } from "../views/dom";
-import { lyricStripActive, lyricStripEl, lyricStripWidth, onLyricStripResize } from "../views/personal";
+import { h, svg } from "../views/dom";
+import {
+  lyricStripActive, lyricStripEl, lyricStripWidth, onLyricStripResize, shelfDragActive, showShelfTab,
+} from "../views/personal";
+import { headerMicBadge } from "../views/views";
+import { MIC_ICON, MIC_OFF_ICON } from "../views/shelf";
 import { IslandStateMachine } from "./fsm";
 import { stepFocus } from "../views/carousel";
 import {
@@ -49,6 +53,9 @@ export class Island {
   private botGlow!: HTMLElement;
   private greetingCanvas!: HTMLCanvasElement;
   private miniGrid!: HTMLElement;
+  /** Collapsed island: an app is recording (red) into the mic, or into a muted one (grey). */
+  private micBadge!: HTMLElement;
+  private micBadgeShown: "live" | "muted" | null = null;
   private countdown!: HTMLElement;
   private wakeStrip!: HTMLElement;
 
@@ -196,6 +203,7 @@ export class Island {
       // Only the island's own text fields need keystrokes; everything else
       // leaves the focus where the user was typing.
       wantKeyboard: (on) => void Bridge.focusWindow(on),
+      keepOnShelf: () => this.keepDropOnShelf(),
       toggleSound: () => {
         State.settings.soundEnabled = !State.settings.soundEnabled;
         Sound.setEnabled(State.settings.soundEnabled);
@@ -223,6 +231,7 @@ export class Island {
     this.botCanvas = h("canvas", { id: "bot-canvas" });
     this.greetingCanvas = h("canvas", { id: "greeting-canvas" });
     this.miniGrid = h("div", { id: "mini-grid" });
+    this.micBadge = h("div", { id: "mic-badge" });
     this.countdown = h("div", { id: "countdown" });
 
     this.header = buildHeader(actions);
@@ -240,6 +249,7 @@ export class Island {
           : null;
         this.setView("prompt");
       },
+      shelf: () => this.keepDropOnShelf(),
       cancel: () => this.setView(State.defaultView()),
     });
 
@@ -257,6 +267,7 @@ export class Island {
       this.botGlow,
       this.botCanvas,
       this.miniGrid,
+      this.micBadge,
       lyricStripEl(),
       this.countdown,
     );
@@ -452,6 +463,10 @@ export class Island {
   private onDragDrop(e: { type: string; paths?: string[] }) {
     if (e.type !== "over") void Bridge.log(`drag ${e.type} ${e.paths?.length ?? 0} file(s)`);
     if (State.paused) return;
+    // A file dragged out of the shelf crossing back over the island is not a drop.
+    if (shelfDragActive()) return;
+    // On the Shelf pill a drop goes straight onto the shelf, every file of it.
+    if (State.focusTask?.id === "integration_shelf" && this.shelfDrop(e)) return;
     switch (e.type) {
       case "enter":
       case "over": {
@@ -475,6 +490,7 @@ export class Island {
       }
       case "drop": {
         State.fileDragOver = false;
+        this.lastDropPaths = e.paths ?? [];
         const path = e.paths?.[0];
         if (!path) {
           this.engine.animateMorph(0);
@@ -484,6 +500,54 @@ export class Island {
         this.swallow(path);
         break;
       }
+    }
+  }
+
+  /** What the last drop held, as dropped (the chat works on an inbox copy). */
+  private lastDropPaths: string[] = [];
+
+  /** The choose card's "Keep on shelf": the original files, by reference. */
+  private keepDropOnShelf() {
+    const paths = this.lastDropPaths.length ? this.lastDropPaths : State.droppedFile ? [State.droppedFile.path] : [];
+    if (paths.length) {
+      void Bridge.shelfPin(paths).then(() => Sound.play("finish"), () => Sound.play("error"));
+    }
+    if (State.tasks.some((t) => t.id === "integration_shelf")) {
+      showShelfTab("pinned");
+      State.setFocus("integration_shelf");
+    }
+    this.setView("overview");
+  }
+
+  /**
+   * A drag over the island while the Shelf pill has the focus: the open card
+   * lights up and the drop keeps every file. False lets the usual drop run.
+   */
+  private shelfDrop(e: { type: string; paths?: string[] }): boolean {
+    switch (e.type) {
+      case "enter":
+      case "over":
+        if (!document.body.classList.contains("shelf-drop")) {
+          document.body.classList.add("shelf-drop");
+          if (State.mode !== "expanded" || State.view !== "overview") this.alert("overview");
+        }
+        return true;
+      case "leave":
+        document.body.classList.remove("shelf-drop");
+        return true;
+      case "drop": {
+        document.body.classList.remove("shelf-drop");
+        const paths = e.paths ?? [];
+        if (paths.length) {
+          showShelfTab("pinned");
+          void Bridge.shelfPin(paths).then(() => Sound.play("finish"), () => Sound.play("error"));
+        }
+        // The alert pinned the island open: let it close on its own again.
+        this.dropPin();
+        return true;
+      }
+      default:
+        return false;
     }
   }
 
@@ -588,8 +652,10 @@ export class Island {
     this.islandEl.style.transform = `translateX(-50%)`;
     // These follow the island as it resizes, so they belong here rather than in
     // the state-driven DOM sync.
-    this.miniGrid.style.left = `${w - 40 - 14.5}px`;
+    this.miniGrid.style.left = `${this.miniGridLeft(w)}px`;
     this.miniGrid.style.top = `${hh / 2 - 14.5}px`;
+    this.micBadge.style.left = `${w - 32}px`;
+    this.micBadge.style.top = `${hh / 2 - 9}px`;
     // Clear of the compact Mochi (cx 40, 20 px wide) on both sides, so the
     // line is centred on the island itself.
     const strip = lyricStripEl();
@@ -1020,6 +1086,15 @@ export class Island {
       if (State.mode === "compact") this.animateGeometry(!lyricMode);
     }
     lyricStripEl().style.opacity = lyricMode ? "1" : "0";
+    const badge = State.mode === "compact" ? headerMicBadge() : null;
+    if (badge !== this.micBadgeShown) {
+      this.micBadgeShown = badge;
+      this.micBadge.replaceChildren(svg(badge === "muted" ? MIC_OFF_ICON : MIC_ICON, 11, { stroke: 2.2 }));
+      this.micBadge.classList.toggle("muted", badge === "muted");
+      this.micBadge.style.opacity = badge ? "1" : "0";
+      // The mini bots make room for it.
+      this.miniGrid.style.left = `${this.miniGridLeft(this.width.value)}px`;
+    }
     const showGrid = State.mode === "compact" && !lyricMode;
     this.miniGrid.style.opacity = showGrid ? "1" : "0";
     if (showGrid) {
@@ -1040,6 +1115,10 @@ export class Island {
   }
 
   private lastLyricMode = false;
+
+  private miniGridLeft(w: number): number {
+    return w - 40 - 14.5 - (this.micBadgeShown ? 24 : 0);
+  }
   private stripWasActive = false;
 
   /** Shows the compact island for a song's lyrics, never over a fullscreen app. */

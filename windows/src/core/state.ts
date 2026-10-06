@@ -93,10 +93,12 @@ export const INTEGRATION_AGENTS: AgentTask[] = [
   task("integration_calcom", "Cal.com", "#C9956A", "n8n"),
   task("integration_stripe", "Stripe", "#0570DE", "n8n"),
   // This build's own pills: local data only, no third-party API keys.
-  task("integration_quota", "Claude", "#E07B53", "agent"),
   task("integration_space", "Space", "#4F8EF7", "agent"),
   task("integration_media", "Music", "#1DB954", "agent"),
   task("integration_messages", "Messages", "#5865F2", "agent"),
+  task("integration_shelf", "Shelf", "#F5A524", "agent"),
+  task("integration_audio", "Audio", "#A78BFA", "agent"),
+  task("integration_quota", "Claude", "#E07B53", "agent"),
 ];
 
 /**
@@ -108,9 +110,17 @@ export const HIDDEN_INTEGRATIONS: ReadonlySet<string> = new Set([
   "integration_notion", "integration_calcom", "integration_stripe",
 ]);
 
+/** This build's own pills, every one the Settings window can switch on. */
 export const PERSONAL_INTEGRATIONS = [
-  "integration_quota", "integration_space", "integration_media", "integration_messages",
+  "integration_space", "integration_media", "integration_messages", "integration_shelf", "integration_audio",
+  "integration_quota",
 ];
+
+/** On by default (settings.rs PERSONAL_INTEGRATIONS); Claude usage is opt-in. */
+export const PERSONAL_DEFAULTS = PERSONAL_INTEGRATIONS.filter((id) => id !== "integration_quota");
+
+/** Pills on at once (settings.rs MAX_ACTIVE). */
+export const MAX_ACTIVE_PILLS = 6;
 
 export const TOGGLEABLE_INTEGRATION_IDS = PERSONAL_INTEGRATIONS;
 
@@ -150,6 +160,8 @@ export interface Settings {
   lyricsEnabled: boolean;
   /** Japanese, Korean and Chinese lyrics shown in Latin letters (the card's Aa button). */
   lyricsRomanized: boolean;
+  /** One-time pill migration already applied (settings.rs migrate_pills); kept so a save does not undo it. */
+  pillLayout: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -157,7 +169,7 @@ export const DEFAULT_SETTINGS: Settings = {
   soundVolume: 0.12,
   autoCloseInterval: 15,
   absenceInterval: 180,
-  activeIntegrations: [...PERSONAL_INTEGRATIONS],
+  activeIntegrations: [...PERSONAL_DEFAULTS],
   screen: "primary",
   autostart: false,
   hooksInstalled: false,
@@ -169,6 +181,7 @@ export const DEFAULT_SETTINGS: Settings = {
   messageApps: [...MESSAGE_APPS],
   lyricsEnabled: true,
   lyricsRomanized: false,
+  pillLayout: 1,
 };
 
 type Listener = () => void;
@@ -366,7 +379,7 @@ class AppState {
       this.settings.activeIntegrations = active.filter((x) => x !== id);
       if (this.focusId === id) this.focusId = "integration_claude";
     } else {
-      if (active.length >= 4) return;
+      if (active.length >= MAX_ACTIVE_PILLS) return;
       this.settings.activeIntegrations = [...active, id];
     }
     this.loadIntegrationTasks();

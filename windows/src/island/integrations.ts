@@ -2,6 +2,8 @@
 // pollers: a genuinely new item flips the pill to finished/error, badges it when
 // the pill isn't focused, plays a sound, and clears itself after 60 s.
 
+import { alertTarget } from "./quotaAlert";
+import { patchAudioCard } from "../views/personal";
 import { onEvent, Bridge, type IntegrationUpdate } from "../core/bridge";
 import { Sound } from "../core/sound";
 import { State } from "../core/state";
@@ -52,15 +54,18 @@ function handle(island: Island, update: IntegrationUpdate) {
   };
 
   if (!update.error) applyPersonal(update);
+  if (update.id === "integration_audio") patchAudioCard();
 
   const event = update.event;
-  if (event) {
-    const task = State.tasks.find((t) => t.id === update.id);
+  // Claude usage alerts still reach a session pill when its own pill is off.
+  const targetId = event ? alertTarget(update.id, State.tasks) : null;
+  if (event && targetId) {
+    const task = State.tasks.find((t) => t.id === targetId);
     if (task) {
       task.state = event.success ? "finished" : "error";
       task.steps = event.detail ? [event.label, event.detail] : [event.label];
       task.stepIndex = task.steps.length - 1;
-      if (State.focusId !== update.id) {
+      if (State.focusId !== targetId) {
         task.pillBadge = event.success ? "finished" : "error";
       }
       Sound.play(event.success ? "finish" : "error");
@@ -70,20 +75,20 @@ function handle(island: Island, update: IntegrationUpdate) {
       if (update.id === "integration_messages" && event.success) void island.showMessage(update.id);
       else island.reveal();
 
-      const existing = clearTimers.get(update.id);
+      const existing = clearTimers.get(targetId);
       if (existing != null) window.clearTimeout(existing);
       clearTimers.set(
-        update.id,
+        targetId,
         window.setTimeout(() => {
-          clearTimers.delete(update.id);
-          const t = State.tasks.find((x) => x.id === update.id);
+          clearTimers.delete(targetId);
+          const t = State.tasks.find((x) => x.id === targetId);
           if (!t || (t.state !== "finished" && t.state !== "error")) return;
           t.state = "idle";
           t.steps = [];
           t.stepIndex = 0;
           t.pillBadge = null;
           // Back to whatever the pill's data says (music playing, quota high).
-          applyPersonal({ id: update.id, data: State.integrations[update.id]?.data ?? {}, error: null, event: null });
+          applyPersonal({ id: targetId, data: State.integrations[targetId]?.data ?? {}, error: null, event: null });
           State.notify();
         }, 60_000),
       );

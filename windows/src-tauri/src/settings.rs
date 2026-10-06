@@ -42,6 +42,41 @@ pub struct Settings {
     /// The Music card shows Japanese, Korean and Chinese lyrics in Latin letters.
     #[serde(default)]
     pub lyrics_romanized: bool,
+    /// Which one-time pill layout migration this file has had (migrate_pills).
+    #[serde(default)]
+    pub pill_layout: u32,
+}
+
+/// The pill layout this build ships: Shelf took the Claude usage pill's
+/// place and Audio joined (Claude usage stays available in Settings).
+pub const PILL_LAYOUT: u32 = 1;
+
+/// Pills that can be on at once (the header dots and the carousel fit six).
+pub const MAX_ACTIVE: usize = 6;
+
+/// Moves an older settings.json to the current pill layout, once: the
+/// Claude usage pill gives its place to Shelf, and Audio is added. True when
+/// something changed (the caller saves, so it never runs twice).
+pub(crate) fn migrate_pills(settings: &mut Settings) -> bool {
+    if settings.pill_layout >= PILL_LAYOUT {
+        return false;
+    }
+    let active = &mut settings.active_integrations;
+    if let Some(i) = active.iter().position(|id| id == "integration_quota") {
+        if active.iter().any(|id| id == "integration_shelf") {
+            active.remove(i);
+        } else {
+            active[i] = "integration_shelf".into();
+        }
+    } else if !active.iter().any(|id| id == "integration_shelf") {
+        active.push("integration_shelf".into());
+    }
+    if !active.iter().any(|id| id == "integration_audio") {
+        active.push("integration_audio".into());
+    }
+    active.truncate(MAX_ACTIVE);
+    settings.pill_layout = PILL_LAYOUT;
+    true
 }
 
 fn default_true() -> bool {
@@ -56,7 +91,7 @@ pub const HIDDEN_INTEGRATIONS: &[&str] = &[
 
 /// This build's own pills, on by default.
 pub const PERSONAL_INTEGRATIONS: &[&str] = &[
-    "integration_quota", "integration_space", "integration_media", "integration_messages",
+    "integration_space", "integration_media", "integration_messages", "integration_shelf", "integration_audio",
 ];
 
 fn default_model() -> String {
@@ -110,6 +145,7 @@ impl Default for Settings {
             message_apps: default_message_apps(),
             lyrics_enabled: true,
             lyrics_romanized: false,
+            pill_layout: PILL_LAYOUT,
         }
     }
 }
@@ -130,6 +166,11 @@ pub fn load() -> Settings {
         Err(_) => Settings::default(),
     };
     settings.active_integrations = migrate_integrations(&settings.active_integrations);
+    if migrate_pills(&mut settings) {
+        // Saved at once: a migration that ran on every start would bring back
+        // a pill the user later switched off.
+        let _ = save(&settings);
+    }
     settings
 }
 
@@ -172,6 +213,47 @@ mod tests {
         assert_eq!(s.message_apps, default_message_apps());
         assert!(s.lyrics_enabled);
         assert!(!s.lyrics_romanized);
+    }
+
+    fn with(active: &[&str], layout: u32) -> Settings {
+        Settings { active_integrations: ids(active), pill_layout: layout, ..Settings::default() }
+    }
+
+    #[test]
+    fn shelf_takes_the_claude_usage_place_and_audio_joins() {
+        let mut s = with(&["integration_quota", "integration_space", "integration_media", "integration_messages"], 0);
+        assert!(migrate_pills(&mut s));
+        assert_eq!(
+            s.active_integrations,
+            ids(&["integration_shelf", "integration_space", "integration_media", "integration_messages", "integration_audio"])
+        );
+        assert_eq!(s.pill_layout, PILL_LAYOUT);
+        // Once only: a pill switched off afterwards stays off.
+        s.active_integrations.retain(|id| id != "integration_audio");
+        assert!(!migrate_pills(&mut s));
+        assert!(!s.active_integrations.contains(&"integration_audio".to_string()));
+    }
+
+    #[test]
+    fn migration_without_claude_usage_still_adds_both() {
+        let mut s = with(&["integration_space"], 0);
+        assert!(migrate_pills(&mut s));
+        assert_eq!(s.active_integrations, ids(&["integration_space", "integration_shelf", "integration_audio"]));
+        // Already there: not duplicated, and the cap holds.
+        let mut s = with(&["integration_quota", "integration_shelf", "a", "b", "c", "d"], 0);
+        assert!(migrate_pills(&mut s));
+        assert_eq!(s.active_integrations.len(), MAX_ACTIVE);
+        assert_eq!(s.active_integrations.iter().filter(|id| *id == "integration_shelf").count(), 1);
+        assert!(!s.active_integrations.contains(&"integration_quota".to_string()));
+    }
+
+    #[test]
+    fn a_fresh_install_needs_no_migration() {
+        let mut s = Settings::default();
+        assert!(!migrate_pills(&mut s));
+        assert!(s.active_integrations.contains(&"integration_shelf".to_string()));
+        assert!(!s.active_integrations.contains(&"integration_quota".to_string()));
+        assert!(s.active_integrations.len() <= MAX_ACTIVE);
     }
 
     #[test]

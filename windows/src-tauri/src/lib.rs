@@ -1,5 +1,6 @@
 // Coucou for Windows — app wiring and the commands the island calls.
 
+mod audio;
 mod claude;
 mod claude_cli;
 mod files;
@@ -16,6 +17,7 @@ mod pipe;
 mod platform;
 mod quota;
 mod romanize;
+mod shelf;
 mod secrets;
 mod settings;
 mod space;
@@ -332,6 +334,64 @@ async fn media_lyrics(
     personal::media_lyrics(app, title, artist, album, duration_ms).await
 }
 
+/// Audio pill: default device (every role), volume 0..1, mute; flow = "output" | "input".
+#[tauri::command]
+async fn audio_set_default(app: AppHandle, id: String) -> Result<(), String> {
+    personal::audio_set_default(app, id).await
+}
+
+#[tauri::command]
+async fn audio_set_volume(app: AppHandle, flow: String, volume: f64) -> Result<(), String> {
+    personal::audio_set_volume(app, flow, volume).await
+}
+
+#[tauri::command]
+async fn audio_set_mute(app: AppHandle, flow: String, muted: bool) -> Result<(), String> {
+    personal::audio_set_mute(app, flow, muted).await
+}
+
+/// Shelf: keep dropped files (by reference), forget one, forget all.
+#[tauri::command]
+async fn shelf_pin(app: AppHandle, paths: Vec<String>) -> Result<(), String> {
+    personal::shelf_pin(app, paths).await
+}
+
+#[tauri::command]
+async fn shelf_unpin(app: AppHandle, path: String) -> Result<(), String> {
+    personal::shelf_unpin(app, path).await
+}
+
+#[tauri::command]
+async fn shelf_clear(app: AppHandle) -> Result<(), String> {
+    personal::shelf_clear(app).await
+}
+
+/// Shelf actions, each only on a file the card shows.
+#[tauri::command]
+async fn shelf_thumb(path: String) -> Result<Option<String>, String> {
+    personal::shelf_thumb(path).await
+}
+
+#[tauri::command]
+async fn shelf_open(path: String) -> Result<(), String> {
+    personal::shelf_open(path).await
+}
+
+#[tauri::command]
+async fn shelf_reveal(path: String) -> Result<(), String> {
+    personal::shelf_reveal(path).await
+}
+
+#[tauri::command]
+async fn shelf_copy(path: String) -> Result<(), String> {
+    personal::shelf_copy(path).await
+}
+
+#[tauri::command]
+async fn shelf_drag(app: AppHandle, paths: Vec<String>) -> Result<bool, String> {
+    personal::shelf_drag(app, paths).await
+}
+
 /// The lyrics detail's manual search on lrclib.net.
 #[tauri::command]
 async fn lyrics_search(app: AppHandle, query: String, duration_ms: Option<u64>) -> Result<Vec<lyrics::Hit>, String> {
@@ -496,6 +556,17 @@ pub fn run() {
             media_lyrics,
             lyrics_search,
             lyrics_choose,
+            shelf_pin,
+            shelf_unpin,
+            shelf_clear,
+            shelf_thumb,
+            shelf_open,
+            shelf_reveal,
+            shelf_copy,
+            shelf_drag,
+            audio_set_default,
+            audio_set_volume,
+            audio_set_mute,
             open_app,
             dismiss_messages,
             fullscreen_active,

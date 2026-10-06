@@ -2282,3 +2282,424 @@ input[type="range"]::-webkit-slider-thumb {
 .int-card.detail {
   padding-top: 8px;
 }
+
+/* ── Shelf (views/personal.ts) ─────────────────────────────────────────────── */
+
+.shelf-tabs {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: 4px;
+}
+
+.shelf-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  border-radius: 6px;
+  padding: 1px 7px;
+  background: transparent;
+  color: var(--dim-3);
+  font: 500 10.5px var(--font);
+  cursor: default;
+}
+
+.shelf-tab:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #c5c8cd;
+}
+
+.shelf-tab.on {
+  background: rgba(245, 165, 36, 0.14);
+  color: #f5c46b;
+}
+
+.shelf-tab i {
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
+.shelf-row {
+  display: flex;
+  gap: 6px;
+  padding: 6px 12px 6px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  mask-image: linear-gradient(90deg, #000 calc(100% - 18px), transparent);
+}
+
+.shelf-row::-webkit-scrollbar {
+  display: none;
+}
+
+.shelf-empty {
+  white-space: normal;
+  padding: 10px 0 0;
+}
+
+.shelf-tile {
+  position: relative;
+  flex: 0 0 64px;
+  width: 64px;
+  padding: 3px;
+  border-radius: 9px;
+  cursor: default;
+  transition: background 0.12s ease;
+}
+
+.shelf-tile:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.shelf-tile.dragging {
+  opacity: 0.45;
+}
+
+.shelf-thumb {
+  width: 58px;
+  height: 44px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.shelf-thumb img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.shelf-thumb.glyph {
+  background: color-mix(in srgb, var(--kind) 18%, transparent);
+}
+
+.shelf-thumb.glyph span {
+  font: 700 9px var(--font);
+  letter-spacing: 0.04em;
+  color: var(--kind);
+}
+
+.shelf-name {
+  margin-top: 3px;
+  font: 500 10px/12px var(--font);
+  color: #c5c8cd;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shelf-age {
+  font: 400 9px/11px var(--font);
+  color: var(--dim-4);
+}
+
+.shelf-acts {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.shelf-tile:hover .shelf-acts {
+  opacity: 1;
+}
+
+.shelf-act {
+  width: 17px;
+  height: 17px;
+  border: 0;
+  border-radius: 5px;
+  display: grid;
+  place-items: center;
+  background: rgba(14, 15, 17, 0.82);
+  color: var(--ink-2);
+  cursor: default;
+}
+
+.shelf-act:hover {
+  background: rgba(40, 42, 47, 0.95);
+}
+
+.shelf-flash {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  top: 17px;
+  padding: 2px 0;
+  border-radius: 5px;
+  background: rgba(14, 15, 17, 0.9);
+  color: #7ee2a2;
+  font: 600 9.5px var(--font);
+  text-align: center;
+  pointer-events: none;
+  animation: media-fade 0.15s ease;
+}
+
+/* A file dragged over the island while the Shelf pill is open. */
+body.shelf-drop .shelf-card {
+  box-shadow: inset 0 0 0 1.5px rgba(245, 165, 36, 0.55);
+  border-radius: 14px;
+  background: rgba(245, 165, 36, 0.05);
+}
+
+/* ── Audio (views/personal.ts) ─────────────────────────────────────────────── */
+
+.audio-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 14px 0 0;
+}
+
+.audio-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 30px;
+}
+
+.audio-mute {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--ink-2);
+  cursor: default;
+}
+
+.audio-mute:hover {
+  background: rgba(255, 255, 255, 0.13);
+}
+
+.audio-mute.muted {
+  background: rgba(244, 80, 94, 0.16);
+  color: #f4505e;
+}
+
+.audio-mute:disabled {
+  opacity: 0.35;
+}
+
+.audio-device {
+  flex: 0 1 190px;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  border: 0;
+  padding: 3px 6px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: default;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.audio-device:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.audio-device b {
+  font: 600 11.5px var(--font);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.audio-device span {
+  font: 400 10px var(--font);
+  color: var(--dim-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.audio-device svg {
+  flex: 0 0 auto;
+  color: var(--dim-4);
+  align-self: center;
+}
+
+.audio-slider {
+  flex: 1 1 auto;
+  min-width: 60px;
+  height: 14px;
+  margin: 0;
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: default;
+}
+
+.audio-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #a78bfa var(--fill, 0%), rgba(255, 255, 255, 0.1) var(--fill, 0%));
+}
+
+.audio-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: var(--ink);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+
+.audio-slider:disabled {
+  opacity: 0.35;
+}
+
+.audio-pct {
+  flex: 0 0 24px;
+  font: 500 10px var(--font);
+  color: var(--dim-2);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.mic-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 7px;
+  border-radius: 6px;
+  background: rgba(244, 80, 94, 0.14);
+  color: #f68a94;
+  font: 600 10px var(--font);
+  white-space: nowrap;
+}
+
+.mic-chip i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #f4505e;
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+.mic-chip.muted {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--dim-2);
+}
+
+.mic-chip.muted i {
+  background: var(--dim-3);
+  animation: none;
+}
+
+.int-rows.scroll.audio-devices {
+  max-height: 80px;
+  gap: 1px;
+  padding-right: 8px;
+}
+
+.audio-section {
+  font: 600 9.5px var(--font);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--dim-4);
+  padding: 5px 0 2px;
+}
+
+.audio-pick {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  border: 0;
+  border-radius: 6px;
+  padding: 3px 6px;
+  background: transparent;
+  color: #c5c8cd;
+  text-align: left;
+  cursor: default;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.audio-pick:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.audio-pick i {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid var(--dim-3);
+  align-self: center;
+}
+
+.audio-pick.on {
+  color: var(--ink);
+}
+
+.audio-pick.on i {
+  border-color: #a78bfa;
+  background: #a78bfa;
+}
+
+.audio-pick.busy {
+  opacity: 0.5;
+}
+
+.audio-pick b {
+  font: 600 11px var(--font);
+}
+
+.audio-pick span {
+  font: 400 10px var(--font);
+  color: var(--dim-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The open island's header: mute the mic from any pill while an app records. */
+.header-actions button.mic-btn {
+  color: #f4505e;
+}
+
+.header-actions button.mic-btn:not(.live) {
+  color: var(--dim-2);
+}
+
+.header-actions button.mic-btn.live svg {
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+/* The collapsed island's mic badge (island.ts). */
+#mic-badge {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: rgba(244, 80, 94, 0.2);
+  color: #f4505e;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s ease-in-out;
+}
+
+#mic-badge.muted {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--dim-2);
+}

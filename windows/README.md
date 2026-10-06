@@ -149,10 +149,12 @@ network call is the Music pill's lyrics (lrclib.net), which Settings can turn of
 | Pill | Source | Refresh |
 |---|---|---|
 | One per **Claude Code session** | hook events, by `session_id` (`cc_<8 hex>`), named after the project folder | live |
-| **Claude** (usage) | `%LOCALAPPDATA%\Coucou\status\<session_id>.json`, written by the Claude Code status line | 5 s |
+| **Claude** (usage, off by default) | `%LOCALAPPDATA%\Coucou\status\<session_id>.json`, written by the Claude Code status line | 5 s |
 | **Space** | `list_timebox` on the local `space-timebox` MCP server, over stdio, no LLM | 5 min |
 | **Music** | Windows media session (Spotify, browsers, any player); lyrics from [LRCLIB](https://lrclib.net) | 2 s |
 | **Messages** | Windows notifications from Discord, Slack, Telegram, WhatsApp | 3 s |
+| **Shelf** | Files dropped on Mochi (by reference), the Screenshots and Downloads folders | 3 s |
+| **Audio** | Core Audio (devices, volume, mute) and the microphone privacy registry | 2 s |
 
 - **One pill at a time.** The overview shows a single pill, full width. The
   header shows one dot per pill in that pill's colour, a ring on any with news,
@@ -224,6 +226,33 @@ network call is the Music pill's lyrics (lrclib.net), which Settings can turn of
   island. Only the title, artist, album and
   length leave the PC, nothing reaches the log, and nothing is sent while
   **Settings → Integrations → Music → Lyrics** is off or Coucou is paused.
+- **Shelf.** Took the Claude usage pill's place (a one-time settings
+  migration, `settings.rs migrate_pills`, also adds Audio; up to six pills can
+  be on). Three tabs: files kept on the shelf (dropped on Mochi while the Shelf
+  pill is open, or with **Keep on shelf** on the drop's choose card; kept by
+  reference in `shelf.json`, never copied or moved, gone from the shelf when
+  the file is), and the newest screenshots and downloads of the last 3 days
+  (partial downloads and system files skipped). Tiles show Explorer's own
+  thumbnail or icon (`IShellItemImageFactory` → WIC PNG, cached). Click opens
+  the file; press and move drags the real file out to any app (the `drag`
+  crate's OLE DoDragDrop, started from a Win32 timer on the island window so
+  its modal loop never runs inside tao's event handler, which crashed);
+  hover buttons copy it (as a file, and as a picture for images), show it in
+  Explorer, or take it off the shelf. Every action only accepts a path the
+  card shows.
+- **Audio.** Speaker and microphone rows: the icon mutes, the name opens the
+  device list (sets the default for every role through `IPolicyConfig`, the
+  Sound control panel's own interface), the slider sets the volume (patched in
+  place, so a poll never rebuilds the card under the pointer). Which apps use
+  the microphone comes from the privacy registry
+  (`CapabilityAccessManager\ConsentStore\microphone`); noise-removal apps
+  that hold the mic all day (NVIDIA Broadcast, Krisp, VoiceMeeter…) do not
+  count. While an app records, the open island's header shows a mic button
+  (one click mutes or unmutes, from any pill) and the collapsed island a red
+  badge (grey when muted).
+- **Claude usage, off.** Its poller still runs (it only reads local files):
+  session pills keep their context and cost, and a 5-hour limit alert goes to
+  the most recent Claude Code session pill (`island/quotaAlert.ts`).
 - **Messages.** Reads Action Center toasts through `UserNotificationListener`
   (Windows asks once for notification access). Shows sender, message,
   server/workspace and channel; clicking a row opens the app. The card groups

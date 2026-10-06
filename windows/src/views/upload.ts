@@ -96,6 +96,11 @@ export function buildChoose(actions: ViewActions): ViewHost {
     }),
     h("button", {
       class: "btn secondary",
+      text: "Keep on shelf",
+      onclick: () => actions.keepOnShelf(),
+    }),
+    h("button", {
+      class: "btn secondary",
       text: "Cancel",
       onclick: () => actions.setView(State.defaultView()),
     }),

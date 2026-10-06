@@ -221,7 +221,7 @@ pub fn fullscreen_app_active() -> bool {
 
 // ── Island window ─────────────────────────────────────────────────────────────
 
-fn hwnd_of(win: &WebviewWindow) -> Option<HWND> {
+pub(crate) fn hwnd_of(win: &WebviewWindow) -> Option<HWND> {
     let raw = win.hwnd().ok()?.0 as isize;
     if raw == 0 {
         return None;

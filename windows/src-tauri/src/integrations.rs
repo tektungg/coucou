@@ -73,6 +73,11 @@ pub fn start(app: AppHandle) {
     crate::personal::start(app);
 }
 
+/// Polled even with their pill off. Claude usage reads local status files
+/// only, and the session pills' context and cost, and its limit alerts, come
+/// from it.
+const ALWAYS_POLLED: &[&str] = &["integration_quota"];
+
 /// True when the user has this integration switched on in settings.
 fn enabled(app: &AppHandle, id: &str) -> bool {
     app.try_state::<crate::Shared>()
@@ -97,7 +102,7 @@ where
             // integration the user switched off, or a paused app, must make no
             // network calls at all — CLAUDE.md allows talking only to services
             // the user configured, and a disabled one is not configured.
-            if PAUSED.load(Ordering::Relaxed) || !enabled(&app, id) {
+            if PAUSED.load(Ordering::Relaxed) || !(enabled(&app, id) || ALWAYS_POLLED.contains(&id)) {
                 continue;
             }
             poll(app.clone()).await;

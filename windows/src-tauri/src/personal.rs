@@ -19,7 +19,7 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
 use crate::integrations::{emit, spawn, IntegrationEvent, IntegrationUpdate};
-use crate::{log, lyrics, media, notify, quota, space};
+use crate::{audio, log, lyrics, media, notify, quota, shelf, space};
 
 /// Messages kept for the card. In memory only: they die with the app.
 const MESSAGE_HISTORY: usize = 15;
@@ -28,17 +28,29 @@ pub fn start(app: AppHandle) {
     spawn(app.clone(), "integration_quota", 2, 5, poll_quota);
     spawn(app.clone(), "integration_media", 2, 2, poll_media);
     spawn(app.clone(), "integration_messages", 3, 3, poll_messages);
+    spawn(app.clone(), "integration_shelf", 3, 3, poll_shelf);
+    spawn(app.clone(), "integration_audio", 2, 2, poll_audio);
     // Starting uv + Python costs ~3 s: five minutes is plenty for a day plan.
     spawn(app, "integration_space", 4, 300, poll_space);
 }
 
-/// One-shot refresh; false when `id` is not a personal pill.
+/// One-shot refresh; false when `id` is not a personal pill. A refresh
+/// always reaches the island, even when nothing changed since the last poll
+/// (the island may have reloaded and lost what it had).
 pub async fn poll_once(app: AppHandle, id: &str) -> bool {
+    match id {
+        "integration_media" => *LAST_MEDIA.lock().unwrap() = None,
+        "integration_shelf" => *LAST_SHELF.lock().unwrap() = None,
+        "integration_audio" => *LAST_AUDIO.lock().unwrap() = None,
+        _ => {}
+    }
     match id {
         "integration_quota" => poll_quota(app).await,
         "integration_space" => poll_space(app).await,
         "integration_media" => poll_media(app).await,
         "integration_messages" => poll_messages(app).await,
+        "integration_shelf" => poll_shelf(app).await,
+        "integration_audio" => poll_audio(app).await,
         _ => return false,
     }
     true
@@ -221,6 +233,223 @@ pub async fn media_control(app: AppHandle, action: String) -> Result<(), String>
     *LAST_MEDIA.lock().unwrap() = None;
     poll_media(app).await;
     Ok(())
+}
+
+// ── Audio ─────────────────────────────────────────────────────────────────────
+
+static LAST_AUDIO: Mutex<Option<audio::Snapshot>> = Mutex::new(None);
+
+async fn poll_audio(app: AppHandle) {
+    let result = tokio::task::spawn_blocking(audio::snapshot).await.unwrap_or_else(|e| Err(e.to_string()));
+    // A device unplugged mid-read is not worth a red card: keep the last one.
+    let Ok(snap) = result else { return };
+    {
+        let mut last = LAST_AUDIO.lock().unwrap();
+        if last.as_ref() == Some(&snap) {
+            return;
+        }
+        *last = Some(snap.clone());
+    }
+    let data = serde_json::to_value(&snap).unwrap_or_else(|_| json!({}));
+    emit(&app, update("integration_audio", data, None, None));
+}
+
+/// Runs a blocking audio change, then shows the new state at once.
+async fn audio_then_refresh(app: AppHandle, work: impl FnOnce() -> Result<(), String> + Send + 'static) -> Result<(), String> {
+    tokio::task::spawn_blocking(work).await.map_err(|e| e.to_string())??;
+    *LAST_AUDIO.lock().unwrap() = None;
+    poll_audio(app).await;
+    Ok(())
+}
+
+pub async fn audio_set_default(app: AppHandle, id: String) -> Result<(), String> {
+    audio_then_refresh(app, move || audio::set_default(&id)).await
+}
+
+pub async fn audio_set_volume(app: AppHandle, flow: String, volume: f64) -> Result<(), String> {
+    let flow = audio::parse_flow(&flow)?;
+    let volume = audio::clamp_volume(volume);
+    audio_then_refresh(app, move || audio::set_volume(flow, volume)).await
+}
+
+pub async fn audio_set_mute(app: AppHandle, flow: String, muted: bool) -> Result<(), String> {
+    let flow = audio::parse_flow(&flow)?;
+    audio_then_refresh(app, move || audio::set_mute(flow, muted)).await
+}
+
+// ── Shelf ─────────────────────────────────────────────────────────────────────
+
+static LAST_SHELF: Mutex<Option<shelf::Snapshot>> = Mutex::new(None);
+
+async fn poll_shelf(app: AppHandle) {
+    let Ok(snap) = tokio::task::spawn_blocking(shelf::snapshot).await else { return };
+    {
+        let mut last = LAST_SHELF.lock().unwrap();
+        if last.as_ref() == Some(&snap) {
+            return;
+        }
+        *last = Some(snap.clone());
+    }
+    let data = serde_json::to_value(&snap).unwrap_or_else(|_| json!({}));
+    emit(&app, update("integration_shelf", data, None, None));
+}
+
+/// Runs a blocking shelf call, then shows the result on the card at once.
+async fn shelf_then_refresh<T: Send + 'static>(
+    app: AppHandle,
+    work: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    let out = tokio::task::spawn_blocking(work).await.map_err(|e| e.to_string())??;
+    *LAST_SHELF.lock().unwrap() = None;
+    poll_shelf(app).await;
+    Ok(out)
+}
+
+pub async fn shelf_pin(app: AppHandle, paths: Vec<String>) -> Result<(), String> {
+    shelf_then_refresh(app, move || shelf::pin_paths(&paths)).await
+}
+
+pub async fn shelf_unpin(app: AppHandle, path: String) -> Result<(), String> {
+    shelf_then_refresh(app, move || shelf::unpin_path(&path)).await
+}
+
+pub async fn shelf_clear(app: AppHandle) -> Result<(), String> {
+    shelf_then_refresh(app, shelf::clear_pins).await
+}
+
+pub async fn shelf_thumb(path: String) -> Result<Option<String>, String> {
+    tokio::task::spawn_blocking(move || shelf::thumbnail(&path)).await.map_err(|e| e.to_string())?
+}
+
+pub async fn shelf_open(path: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || shelf::open(&path)).await.map_err(|e| e.to_string())?
+}
+
+pub async fn shelf_reveal(path: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || shelf::reveal(&path)).await.map_err(|e| e.to_string())?
+}
+
+pub async fn shelf_copy(path: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || shelf::copy(&path)).await.map_err(|e| e.to_string())?
+}
+
+/// Drags shelf files out of the island as real files (OLE DoDragDrop).
+/// Resolves when the drag ends: true when they were dropped somewhere.
+///
+/// DoDragDrop runs its own modal message loop until the drop. Run inside a
+/// `run_on_main_thread` closure, that loop would pump messages from within
+/// tao's event handler and re-enter it, which crashed the app on the first
+/// drag. So the closure only arms a zero-delay Win32 timer; tao's message
+/// loop dispatches the timer like any other message, outside its handler,
+/// the way menus and window resizing run their own modal loops.
+#[cfg(windows)]
+pub async fn shelf_drag(app: AppHandle, paths: Vec<String>) -> Result<bool, String> {
+    use std::sync::atomic::AtomicBool;
+    use std::sync::Arc;
+
+    static DRAGGING: AtomicBool = AtomicBool::new(false);
+
+    shelf::check_all(&paths)?;
+    let first = paths.first().cloned().ok_or("Nothing to drag")?;
+    if DRAGGING.swap(true, Ordering::SeqCst) {
+        return Err("A drag is already under way".into());
+    }
+    let preview = tokio::task::spawn_blocking(move || shelf::drag_preview(&first)).await.ok().flatten();
+    let Some(win) = crate::island::window(&app) else {
+        DRAGGING.store(false, Ordering::SeqCst);
+        return Err("The island is not open".into());
+    };
+    let Some(hwnd) = crate::platform::hwnd_of(&win) else {
+        DRAGGING.store(false, Ordering::SeqCst);
+        return Err("The island has no window".into());
+    };
+    let hwnd = hwnd.0 as isize;
+    let (tx, rx) = tokio::sync::oneshot::channel::<bool>();
+    let tx = Arc::new(Mutex::new(Some(tx)));
+    let done = tx.clone();
+    let count = paths.len();
+    let job: drag_out::Job = Box::new(move || {
+        log::line(format!("shelf drag: start ({count} file(s))"));
+        let files = paths.iter().map(std::path::PathBuf::from).collect();
+        // An empty image leaves Windows' own drag image.
+        let image = drag::Image::Raw(preview.unwrap_or_default());
+        let sent = done.clone();
+        let started = drag::start_drag(
+            &win,
+            drag::DragItem::Files(files),
+            image,
+            move |result, _| {
+                let dropped = matches!(result, drag::DragResult::Dropped);
+                log::line(format!("shelf drag: {}", if dropped { "dropped" } else { "cancelled" }));
+                if let Some(tx) = sent.lock().unwrap().take() {
+                    let _ = tx.send(dropped);
+                }
+            },
+            drag::Options::default(),
+        );
+        if let Err(e) = started {
+            log::line(format!("shelf drag failed: {e}"));
+        }
+        // Whatever happened, the command resolves.
+        if let Some(tx) = done.lock().unwrap().take() {
+            let _ = tx.send(false);
+        }
+    });
+    let armed = app.run_on_main_thread(move || drag_out::run_outside_handler(hwnd, job));
+    drop(tx);
+    let dropped = match armed {
+        Ok(()) => rx.await.unwrap_or(false),
+        Err(e) => {
+            DRAGGING.store(false, Ordering::SeqCst);
+            return Err(e.to_string());
+        }
+    };
+    DRAGGING.store(false, Ordering::SeqCst);
+    Ok(dropped)
+}
+
+/// Runs a job on the main thread from a Win32 timer, outside tao's event handler.
+#[cfg(windows)]
+mod drag_out {
+    use std::sync::Mutex;
+
+    use ::windows::Win32::Foundation::HWND;
+    use ::windows::Win32::UI::WindowsAndMessaging::{KillTimer, SetTimer};
+
+    pub type Job = Box<dyn FnOnce() + Send>;
+
+    static PENDING: Mutex<Option<Job>> = Mutex::new(None);
+
+    unsafe extern "system" fn fire(hwnd: HWND, _: u32, id: usize, _: u32) {
+        let _ = unsafe { KillTimer(Some(hwnd), id) };
+        let job = PENDING.lock().unwrap().take();
+        if let Some(job) = job {
+            // A panic must never unwind into Windows.
+            if std::panic::catch_unwind(std::panic::AssertUnwindSafe(job)).is_err() {
+                crate::log::line("shelf drag: panicked");
+            }
+        }
+    }
+
+    /// Id of the one drag timer on the island window.
+    const TIMER_ID: usize = 0xC0C0;
+
+    /// Must be called on the main thread, which owns `hwnd`. The timer is the
+    /// island window's, with our TIMERPROC: DispatchMessage calls it directly
+    /// (a timer with no window is a thread message, which tao never dispatches).
+    pub fn run_outside_handler(hwnd: isize, job: Job) {
+        *PENDING.lock().unwrap() = Some(job);
+        let hwnd = HWND(hwnd as *mut _);
+        let id = unsafe { SetTimer(Some(hwnd), TIMER_ID, 0, Some(fire)) };
+        if id == 0 {
+            crate::log::line("shelf drag: timer failed");
+        }
+    }
+}
+
+#[cfg(not(windows))]
+pub async fn shelf_drag(_app: AppHandle, _paths: Vec<String>) -> Result<bool, String> {
+    Err("Dragging out is Windows only for now".into())
 }
 
 // ── Messages ──────────────────────────────────────────────────────────────────

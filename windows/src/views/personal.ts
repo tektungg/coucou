@@ -10,6 +10,11 @@ import { arr, get, header, listRow, timeAgo } from "./integrations";
 import { sortSpaceItems } from "./spaceTasks";
 import { ExpandedMessages, groupByApp, needsExpander, type MessageGroup } from "./messageGroups";
 import {
+  MIC_ICON, MIC_OFF_ICON, SHELF_TABS, SHELF_TAB_LABELS, SPEAKER_ICON, SPEAKER_OFF_ICON, ageLabel, audioCardKey,
+  audioLevel, defaultTab, isDrag, kindColor, micBadge, micUsers, micUsersLabel, shelfCounts, shelfItems, sizeLabel,
+  splitDeviceName, volumePct, type AudioDevice, type ShelfItem, type ShelfTab,
+} from "./shelf";
+import {
   canRomanize, currentPositionMs, defaultQuery, displayLines, displayPlain, durationMatch, formatTime, hitKind,
   lyricWindow, plainLines, progress, romanLabel,
   stripIslandWidth, stripText, timelineOf, trackKey,
@@ -18,6 +23,7 @@ import {
 
 export const PERSONAL_IDS = new Set([
   "integration_quota", "integration_space", "integration_media", "integration_messages",
+  "integration_shelf", "integration_audio",
 ]);
 
 /** Brand colours of the apps the Messages pill reads. */
@@ -1057,6 +1063,348 @@ function messagesDetail(onBack: () => void): HTMLElement {
   return detailFrame("#5865F2", "Messages", onBack, list);
 }
 
+// ── Shelf ─────────────────────────────────────────────────────────────────────
+// Tiles of files: click opens, press and move drags real files out to any app
+// (Explorer, Discord, a browser upload), the hover buttons copy, show in
+// Explorer or take a kept file off the shelf.
+
+const SHELF_COLOR = "#F5A524";
+const COPY_ICON = "M9 9h10v10H9zM5 15V5h10";
+const FOLDER_ICON = "M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z";
+const REMOVE_ICON = "M7 7l10 10M17 7 7 17";
+
+let shelfTab: ShelfTab | null = null;
+const shelfScroll: Record<ShelfTab, number> = { pinned: 0, screenshots: 0, downloads: 0 };
+/** Thumbnails by path and modification time; null = the shell had none. */
+const thumbCache = new Map<string, string | null>();
+const thumbWaiting: Array<() => void> = [];
+let thumbsRunning = 0;
+let shelfDragging = false;
+
+/** Opens the Shelf card on this tab (a drop shows what was just kept). */
+export function showShelfTab(tab: ShelfTab) {
+  shelfTab = tab;
+  shelfScroll[tab] = 0;
+}
+
+/** True while a file dragged out of the shelf is in the air: its drop back on the island is not a new drop. */
+export function shelfDragActive(): boolean {
+  return shelfDragging;
+}
+
+function thumbKey(it: ShelfItem): string {
+  return `${it.path}\u001f${it.modified}`;
+}
+
+/** Three thumbnails at a time: the shell is slow on the first video or PDF. */
+function queueThumb(job: () => Promise<void>) {
+  const run = () => {
+    thumbsRunning++;
+    void job().finally(() => {
+      thumbsRunning--;
+      thumbWaiting.shift()?.();
+    });
+  };
+  if (thumbsRunning < 3) run();
+  else thumbWaiting.push(run);
+}
+
+function paintThumb(box: HTMLElement, it: ShelfItem) {
+  const key = thumbKey(it);
+  const show = (url: string | null | undefined) => {
+    clear(box);
+    if (url) {
+      box.append(h("img", { src: url, alt: "", draggable: "false" }));
+      box.classList.remove("glyph");
+    } else {
+      const ext = it.kind === "folder" ? "DIR" : (it.name.split(".").pop() ?? "").slice(0, 4).toUpperCase();
+      box.append(h("span", { text: ext || "FILE" }));
+      box.style.setProperty("--kind", kindColor(it.kind));
+      box.classList.add("glyph");
+    }
+  };
+  if (thumbCache.has(key)) return show(thumbCache.get(key));
+  show(null);
+  // The tile is not in the DOM yet: ask once it is laid out.
+  requestAnimationFrame(() => queueThumb(async () => {
+    if (!box.isConnected) return;
+    const url = (await Bridge.shelfThumb(it.path)) ?? null;
+    thumbCache.set(key, url);
+    if (thumbCache.size > 300) thumbCache.delete(thumbCache.keys().next().value!);
+    if (box.isConnected) show(url);
+  }));
+}
+
+function flash(tile: HTMLElement, text: string) {
+  const note = h("div", { class: "shelf-flash", text });
+  tile.append(note);
+  window.setTimeout(() => note.remove(), 1100);
+}
+
+function shelfTile(it: ShelfItem, tab: ShelfTab): HTMLElement {
+  const thumb = h("div", { class: "shelf-thumb" });
+  paintThumb(thumb, it);
+  const action = (icon: string, title: string, run: () => Promise<unknown> | void): HTMLElement =>
+    h("button", {
+      class: "shelf-act",
+      title,
+      onclick: (e: Event) => {
+        e.stopPropagation();
+        void Promise.resolve(run()).catch((err: unknown) => flash(tile, String(err).slice(0, 40)));
+      },
+    }, svg(icon, 10, { stroke: 2.2 }));
+  const actions: HTMLElement = h(
+    "div",
+    { class: "shelf-acts" },
+    action(COPY_ICON, it.kind === "image" ? "Copy (as a picture too)" : "Copy", () => Bridge.shelfCopy(it.path).then(() => flash(tile, "Copied"))),
+    action(FOLDER_ICON, "Show in folder", () => Bridge.shelfReveal(it.path)),
+    tab === "pinned" ? action(REMOVE_ICON, "Take off the shelf", () => Bridge.shelfUnpin(it.path)) : null,
+  );
+  const tile: HTMLElement = h(
+    "div",
+    { class: "shelf-tile", title: `${it.name}\n${sizeLabel(it.size)} · drag it out, click to open` },
+    thumb,
+    actions,
+    h("div", { class: "shelf-name", text: it.name }),
+    h("div", { class: "shelf-age", text: ageLabel(it.modified, Date.now()) }),
+  );
+  tile.addEventListener("mousedown", (e) => {
+    // The tile handles its own press: no carousel swipe, no island click.
+    e.stopPropagation();
+    if (e.button !== 0 || (e.target as HTMLElement).closest(".shelf-act")) return;
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    let dragged = false;
+    const move = (ev: MouseEvent) => {
+      if (dragged || !isDrag(ev.clientX - x0, ev.clientY - y0)) return;
+      dragged = true;
+      done();
+      shelfDragging = true;
+      tile.classList.add("dragging");
+      void Bridge.shelfDrag([it.path]).finally(() => {
+        shelfDragging = false;
+        tile.classList.remove("dragging");
+      });
+    };
+    const up = () => {
+      done();
+      if (!dragged) void Bridge.shelfOpen(it.path).catch((err: unknown) => flash(tile, String(err).slice(0, 40)));
+    };
+    const done = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  });
+  return tile;
+}
+
+const SHELF_EMPTY: Record<ShelfTab, string> = {
+  pinned: "Drop files on Mochi to keep them here, ready to drag into any app.",
+  screenshots: "No screenshots in the last 3 days.",
+  downloads: "No downloads in the last 3 days.",
+};
+
+function shelfCard(): HTMLElement {
+  const d = get("integration_shelf");
+  shelfTab ??= defaultTab(d);
+  const counts = shelfCounts(d);
+  const row = h("div", { class: "shelf-row" });
+  const clearBtn = h("button", {
+    class: "int-clear",
+    text: "Clear",
+    title: "Take everything off the shelf (the files stay where they are)",
+    onclick: () => void Bridge.shelfClear(),
+  });
+  const tabs = h("span", { class: "shelf-tabs" });
+
+  const fill = () => {
+    const tab = shelfTab ?? "pinned";
+    clear(tabs);
+    for (const t of SHELF_TABS) {
+      tabs.append(
+        h("button", {
+          class: t === tab ? "shelf-tab on" : "shelf-tab",
+          onclick: () => {
+            shelfScroll[tab] = row.scrollLeft;
+            shelfTab = t;
+            fill();
+          },
+        }, h("span", { text: SHELF_TAB_LABELS[t] }), counts[t] ? h("i", { text: String(counts[t]) }) : null),
+      );
+    }
+    clearBtn.style.display = tab === "pinned" && counts.pinned > 0 ? "" : "none";
+    clear(row);
+    const list = shelfItems(d, tab);
+    if (list.length === 0) row.append(h("div", { class: "int-status shelf-empty", text: SHELF_EMPTY[tab] }));
+    for (const it of list) row.append(shelfTile(it, tab));
+    requestAnimationFrame(() => {
+      row.scrollLeft = shelfScroll[tab];
+    });
+  };
+  row.addEventListener("scroll", () => {
+    shelfScroll[shelfTab ?? "pinned"] = row.scrollLeft;
+  }, { passive: true });
+  // A mouse wheel scrolls the row sideways, not the pills.
+  row.addEventListener("wheel", (e) => {
+    e.stopPropagation();
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+      e.preventDefault();
+      row.scrollLeft += e.deltaY;
+    }
+  }, { passive: false });
+  fill();
+  const right = h("span", { class: "int-head-right" }, clearBtn);
+  const head = header(SHELF_COLOR, "Shelf", "", right);
+  head.insertBefore(tabs, right);
+  return h("div", { class: "int-card shelf-card" }, head, row);
+}
+
+// ── Audio ─────────────────────────────────────────────────────────────────────
+// Speaker and microphone rows: the icon mutes, the name opens the device
+// list, the slider sets the volume. Volumes are patched in place
+// (patchAudioCard) so a slider is never rebuilt under the pointer.
+
+const AUDIO_COLOR = "#A78BFA";
+
+interface AudioRowEls {
+  slider: HTMLInputElement;
+  pct: HTMLElement;
+  dragging: boolean;
+}
+
+const audioEls: Partial<Record<"output" | "input", AudioRowEls>> = {};
+const volumeTimers: Partial<Record<"output" | "input", number>> = {};
+
+function sendVolume(flow: "output" | "input", value: number) {
+  // Trailing throttle: at most one change every 60 ms while dragging.
+  if (volumeTimers[flow] != null) window.clearTimeout(volumeTimers[flow]);
+  volumeTimers[flow] = window.setTimeout(() => {
+    volumeTimers[flow] = undefined;
+    void Bridge.audioSetVolume(flow, value);
+  }, 60);
+}
+
+function audioRow(flow: "output" | "input", onDevices: () => void): HTMLElement {
+  const d = get("integration_audio");
+  const lvl = audioLevel(d, flow);
+  const devices = (Array.isArray(d[flow === "output" ? "outputs" : "inputs"]) ? d[flow === "output" ? "outputs" : "inputs"] : []) as AudioDevice[];
+  const current = devices.find((x) => x.isDefault);
+  const [name, driver] = splitDeviceName(current?.name ?? (flow === "output" ? "No speakers" : "No microphone"));
+  const muted = lvl?.muted === true;
+  const icon = flow === "output" ? (muted ? SPEAKER_OFF_ICON : SPEAKER_ICON) : muted ? MIC_OFF_ICON : MIC_ICON;
+  const mute = h("button", {
+    class: muted ? "audio-mute muted" : "audio-mute",
+    title: muted ? "Unmute" : "Mute",
+    onclick: () => void Bridge.audioSetMute(flow, !muted),
+  }, svg(icon, 13, { stroke: 1.9 }));
+  if (!lvl) mute.setAttribute("disabled", "true");
+  const slider = h("input", { type: "range", min: "0", max: "100", step: "1", class: "audio-slider" }) as HTMLInputElement;
+  slider.value = volumePct(lvl?.volume ?? 0);
+  slider.disabled = !lvl;
+  const pct = h("span", { class: "audio-pct", text: lvl ? volumePct(lvl.volume) : "" });
+  const els: AudioRowEls = { slider, pct, dragging: false };
+  audioEls[flow] = els;
+  const paintFill = () => slider.style.setProperty("--fill", `${slider.value}%`);
+  paintFill();
+  slider.addEventListener("pointerdown", () => {
+    els.dragging = true;
+  });
+  const release = () => {
+    els.dragging = false;
+  };
+  slider.addEventListener("pointerup", release);
+  slider.addEventListener("pointercancel", release);
+  slider.addEventListener("input", () => {
+    pct.textContent = slider.value;
+    paintFill();
+    sendVolume(flow, Number(slider.value) / 100);
+  });
+  // Dragging the thumb must not swipe to another pill.
+  slider.addEventListener("mousedown", (e) => e.stopPropagation());
+  const device = h(
+    "button",
+    { class: "audio-device", title: `${current?.name ?? ""}\nChoose another device`, onclick: onDevices },
+    h("b", { text: name }),
+    driver ? h("span", { text: driver }) : null,
+    svg(ICONS.chevronRight, 7, { stroke: 2.4 }),
+  );
+  return h("div", { class: "audio-row" }, mute, device, slider, pct);
+}
+
+/** New volumes from a poll, without rebuilding (a slider being dragged keeps the user's value). */
+export function patchAudioCard() {
+  const d = get("integration_audio");
+  for (const flow of ["output", "input"] as const) {
+    const els = audioEls[flow];
+    const lvl = audioLevel(d, flow);
+    if (!els || !els.slider.isConnected || !lvl || els.dragging || volumeTimers[flow] != null) continue;
+    els.slider.value = volumePct(lvl.volume);
+    els.slider.style.setProperty("--fill", `${els.slider.value}%`);
+    els.pct.textContent = volumePct(lvl.volume);
+  }
+}
+
+function audioCard(onDevices: () => void): HTMLElement {
+  const d = get("integration_audio");
+  const users = micUsers(d);
+  const badge = micBadge(d);
+  const chip = users.length
+    ? h(
+        "span",
+        { class: badge === "muted" ? "mic-chip muted" : "mic-chip", title: badge === "muted" ? "Your mic is muted" : "Your mic is live" },
+        h("i"),
+        h("span", { text: `${badge === "muted" ? "Muted" : "Live"} · ${micUsersLabel(users)}` }),
+      )
+    : null;
+  const more = h("button", { class: "int-more", title: "Devices", onclick: onDevices }, svg(ICONS.ellipsis, 8));
+  const right = h("span", { class: "int-head-right" }, chip, more);
+  return h(
+    "div",
+    { class: "int-card audio-card" },
+    header(AUDIO_COLOR, "Audio", "", right),
+    h("div", { class: "audio-rows" }, audioRow("output", onDevices), audioRow("input", onDevices)),
+  );
+}
+
+function audioDetail(onBack: () => void): HTMLElement {
+  const d = get("integration_audio");
+  const list = h("div", { class: "int-rows scroll audio-devices" });
+  for (const [flow, label] of [["outputs", "Output"], ["inputs", "Input"]] as const) {
+    const devices = (Array.isArray(d[flow]) ? d[flow] : []) as AudioDevice[];
+    list.append(h("div", { class: "audio-section", text: label }));
+    if (devices.length === 0) list.append(h("div", { class: "int-status", text: "No device." }));
+    for (const dev of devices) {
+      const [name, driver] = splitDeviceName(dev.name);
+      const row = h(
+        "button",
+        {
+          class: dev.isDefault ? "audio-pick on" : "audio-pick",
+          title: dev.isDefault ? "In use" : `Use ${dev.name}`,
+          onclick: () => {
+            if (dev.isDefault) return;
+            row.classList.add("busy");
+            void Bridge.audioSetDefault(dev.id);
+          },
+        },
+        h("i"),
+        h("b", { text: name }),
+        driver ? h("span", { text: driver }) : null,
+      );
+      list.append(row);
+    }
+  }
+  list.addEventListener("mousedown", (e) => e.stopPropagation());
+  return detailFrame(AUDIO_COLOR, "Audio devices", onBack, list);
+}
+
+/** What the overview card is rebuilt from: the Audio card ignores volume changes (patched in place). */
+export function personalDataKey(id: string, data: unknown): string {
+  const d = (data ?? {}) as Record<string, unknown>;
+  return id === "integration_audio" ? audioCardKey(d) : JSON.stringify(d);
+}
+
 // ── Shared ────────────────────────────────────────────────────────────────────
 
 function detailFrame(color: string, title: string, onBack: () => void, body: HTMLElement): HTMLElement {
@@ -1085,6 +1433,10 @@ export function personalIdleLabel(id: string): string {
       return "Nothing playing.";
     case "integration_messages":
       return "No new messages.";
+    case "integration_shelf":
+      return "Looking at your screenshots and downloads…";
+    case "integration_audio":
+      return "Looking for audio devices…";
     default:
       return "";
   }
@@ -1103,6 +1455,11 @@ export function hasPersonalData(id: string): boolean {
       return str(d.title) !== "";
     case "integration_messages":
       return arr(id, "messages").length > 0;
+    // Always a card once polled: an empty shelf says how to fill it.
+    case "integration_shelf":
+      return Array.isArray(d.pinned);
+    case "integration_audio":
+      return Array.isArray(d.outputs);
     default:
       return false;
   }
@@ -1130,6 +1487,10 @@ export function renderPersonalCard(
       return detailOpen ? mediaDetail(closeDetail, openDetail) : mediaCard(openDetail);
     case "integration_messages":
       return detailOpen ? messagesDetail(closeDetail) : messagesCard(openDetail);
+    case "integration_shelf":
+      return shelfCard();
+    case "integration_audio":
+      return detailOpen ? audioDetail(closeDetail) : audioCard(openDetail);
     default:
       return null;
   }

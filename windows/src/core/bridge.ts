@@ -100,6 +100,25 @@ export const Bridge = {
   /** Uses LRCLIB record `id` for this song from now on; null goes back to the automatic match. */
   lyricsChoose: (title: string, artist: string, album: string, durationMs: number | null, id: number | null) =>
     callOrThrow<Lyrics | null>("lyrics_choose", { title, artist, album, durationMs, id }),
+  // ── Shelf (each action only on a file the card shows) ─────────────────────
+  /** Keeps dropped files on the shelf, by reference. */
+  shelfPin: (paths: string[]) => callOrThrow<void>("shelf_pin", { paths }),
+  shelfUnpin: (path: string) => call<void>("shelf_unpin", { path }),
+  shelfClear: () => call<void>("shelf_clear"),
+  /** Explorer's thumbnail or icon as a PNG data URL. */
+  shelfThumb: (path: string) => call<string | null>("shelf_thumb", { path }),
+  shelfOpen: (path: string) => callOrThrow<void>("shelf_open", { path }),
+  shelfReveal: (path: string) => callOrThrow<void>("shelf_reveal", { path }),
+  /** As a file, and as a picture when it is one. */
+  shelfCopy: (path: string) => callOrThrow<void>("shelf_copy", { path }),
+  /** Drags real files out of the island; resolves when the drag ends (true = dropped). */
+  shelfDrag: (paths: string[]) => call<boolean>("shelf_drag", { paths }),
+
+  // ── Audio ─────────────────────────────────────────────────────────────────
+  audioSetDefault: (id: string) => call<void>("audio_set_default", { id }),
+  audioSetVolume: (flow: "output" | "input", volume: number) => call<void>("audio_set_volume", { flow, volume }),
+  audioSetMute: (flow: "output" | "input", muted: boolean) => call<void>("audio_set_mute", { flow, muted }),
+
   /** Brings a messaging app forward; Rust maps the name to its URL scheme. */
   openApp: (app: string) => call<void>("open_app", { app }),
   /** True while a fullscreen game, video or presentation is in front. */
