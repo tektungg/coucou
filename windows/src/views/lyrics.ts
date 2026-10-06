@@ -163,3 +163,20 @@ export function defaultQuery(d: Record<string, unknown>): string {
 export function hitKind(hit: LyricHit): string {
   return hit.synced ? "synced" : hit.plain ? "plain" : hit.instrumental ? "instrumental" : "";
 }
+
+/** Room kept on each side of the collapsed island's lyric line (Mochi sits on the left). */
+export const STRIP_SIDE_PX = 58;
+/** Slack for the browser drawing the line a little wider than it was measured. */
+const STRIP_SLACK_PX = 12;
+
+/**
+ * Width of the collapsed island for a lyric line `textPx` wide: wide enough
+ * to show it whole, never under `min` (short lines do not shrink it, so it
+ * does not jump on every line) nor over `max`, where the line ellipsizes.
+ * Rounded up to 8 px so a few pixels of difference do not resize it.
+ */
+export function stripIslandWidth(textPx: number, min: number, max: number): number {
+  const need = Number.isFinite(textPx) && textPx > 0 ? textPx + 2 * STRIP_SIDE_PX + STRIP_SLACK_PX : 0;
+  const rounded = Math.ceil(need / 8) * 8;
+  return Math.min(max, Math.max(min, rounded));
+}

@@ -4,7 +4,7 @@
 import { Tracked, Spring, clamp } from "../core/anim";
 import { Bridge, IS_TAURI, onDragDrop } from "../core/bridge";
 import {
-  COMPACT_LYRIC_W, COMPACT_W, EXPANDED_CORNER, EXPANDED_W, NOTCH_W, PANEL_H, PANEL_W,
+  COMPACT_W, EXPANDED_CORNER, EXPANDED_W, NOTCH_W, PANEL_H, PANEL_W,
   ROUNDED_CORNER, VIEW_LAYOUTS, botGlowColor, botGlowOpacity, botPosition, chatPromptHeight,
   islandSize,
   type IslandMode, type IslandViewName,
@@ -18,10 +18,12 @@ import { UploadCanvas } from "../upload/canvas";
 import { USC, UploadSeq } from "../upload/sequence";
 import { buildHeader, buildViews, type ViewActions, type ViewHost } from "../views/views";
 import { h } from "../views/dom";
-import { lyricStripActive, lyricStripEl } from "../views/personal";
+import { lyricStripActive, lyricStripEl, lyricStripWidth, onLyricStripResize } from "../views/personal";
 import { IslandStateMachine } from "./fsm";
 import { stepFocus } from "../views/carousel";
-import { MESSAGE_GLANCE_S, messageAlertAction } from "./messageAlert";
+import {
+  MESSAGE_GLANCE_S, focusAfterGlance, messageAlertAction, rememberGlance, type GlanceReturn,
+} from "./messageAlert";
 
 const BOT_OVERHANG = 40;
 /** Same margin as the Rust hit test (src-tauri/src/island.rs). */
@@ -102,6 +104,10 @@ export class Island {
     this.build();
     this.wireFsm();
     this.wireInput();
+    // A lyric line wider than the collapsed island grows it; a short one shrinks it back.
+    onLyricStripResize(() => {
+      if (this.lyricMode()) this.animateGeometry(lyricStripWidth() < this.width.value);
+    });
     this.engine.onDizzy = () => this.handleDizzy();
     this.greeting.onComplete = () => this.fsm.greetComplete();
     State.subscribe(() => {
@@ -299,6 +305,10 @@ export class Island {
       Sound.play("close");
       State.isPinned = false;
       void Bridge.focusWindow(false);
+      // A message's glance is over: back to the pill it interrupted.
+      const back = focusAfterGlance(this.glance, State.focusTask?.id ?? null, State.visibleTasks.map((t) => t.id));
+      this.glance = null;
+      if (back) State.setFocus(back);
     }
     if (mode !== "expanded") {
       this.engine.resetMorph();
@@ -404,6 +414,8 @@ export class Island {
       if (!fullscreen) this.fsm.reveal();
       return;
     }
+    // Remember where the message took the island from, to go back on close.
+    this.glance = rememberGlance(this.glance, State.focusTask?.id ?? null, taskId);
     State.setFocus(taskId);
     if (action === "open") {
       // home → expand(overview), then mouseLeft() schedules the auto-close.
@@ -536,7 +548,7 @@ export class Island {
   // ── Geometry ────────────────────────────────────────────────────────────────
 
   private targetSize(): { w: number; h: number; r: number } {
-    const compactW = this.lyricMode() ? COMPACT_LYRIC_W : COMPACT_W;
+    const compactW = this.lyricMode() ? lyricStripWidth() : COMPACT_W;
     const { w, h } = islandSize(State.mode, State.view, State.chatHistory.length, compactW);
     const r = State.mode === "expanded" ? EXPANDED_CORNER : ROUNDED_CORNER;
     return { w, h, r };
@@ -1018,6 +1030,8 @@ export class Island {
   }
 
   private lastLyricMode = false;
+  /** Set while a new message holds the island on the Messages pill. */
+  private glance: GlanceReturn | null = null;
 
   /** Collapsed on a playing Music pill: the island sings instead of showing the other pills. */
   private lyricMode(): boolean {

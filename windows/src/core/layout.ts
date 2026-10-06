@@ -60,6 +60,8 @@ export const NOTCH_H = 32;
 export const COMPACT_W = 288; // NOTCH_W + 104
 /** Collapsed while a song plays on the Music pill: wide enough for a lyric line. */
 export const COMPACT_LYRIC_W = 420;
+/** It grows to fit a long line, up to this (the window is PANEL_W wide). */
+export const COMPACT_LYRIC_MAX_W = 700;
 export const EXPANDED_W = 640;
 
 export const ROUNDED_CORNER = 14; // hidden / compact

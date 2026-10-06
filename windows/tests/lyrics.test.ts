@@ -12,6 +12,7 @@ import {
   lyricWindow,
   plainLines,
   progress,
+  stripIslandWidth,
   stripText,
   subtitle,
   timelineOf,
@@ -154,4 +155,17 @@ test("search rows name what kind of lyrics they hold", () => {
   assert.equal(hitKind({ ...hit, synced: false }), "plain");
   assert.equal(hitKind({ ...hit, synced: false, plain: false, instrumental: true }), "instrumental");
   assert.equal(hitKind({ ...hit, synced: false, plain: false }), "");
+});
+
+test("the collapsed island grows to fit a long line, within bounds", () => {
+  // Short lines keep the minimum.
+  assert.equal(stripIslandWidth(40, 420, 700), 420);
+  assert.equal(stripIslandWidth(0, 420, 700), 420);
+  assert.equal(stripIslandWidth(NaN, 420, 700), 420);
+  // A long line: its width, both sides of room and some slack, on an 8 px step.
+  assert.equal(stripIslandWidth(330, 420, 700), 464);
+  assert.equal(stripIslandWidth(333, 420, 700) % 8, 0);
+  assert.ok(stripIslandWidth(333, 420, 700) >= 333 + 2 * 58);
+  // Longer than the window: capped, the line ellipsizes.
+  assert.equal(stripIslandWidth(2_000, 420, 700), 700);
 });

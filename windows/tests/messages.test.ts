@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { groupByApp } from "../src/views/messageGroups.ts";
-import { messageAlertAction, type MessageAlertContext } from "../src/island/messageAlert.ts";
+import { focusAfterGlance, messageAlertAction, rememberGlance, type MessageAlertContext } from "../src/island/messageAlert.ts";
 
 test("messages are grouped by app, the app with the newest message first", () => {
   const history = [
@@ -68,4 +68,34 @@ test("the chevron shows for long or multi-line messages only", async () => {
   assert.equal(needsExpander("oke", false), false);
   assert.equal(needsExpander("a long line cut by the card", true), true);
   assert.equal(needsExpander("line one\nline two", false), true);
+});
+
+test("a message's glance remembers the pill it came from", () => {
+  assert.deepEqual(rememberGlance(null, "integration_media", "integration_messages"), {
+    to: "integration_media", from: "integration_messages",
+  });
+  // A second message during the glance keeps the first pill.
+  const first = { to: "integration_media", from: "integration_messages" };
+  assert.equal(rememberGlance(first, "integration_messages", "integration_messages"), first);
+  // Already on Messages, or nothing focused: nothing to give back.
+  assert.equal(rememberGlance(null, "integration_messages", "integration_messages"), null);
+  assert.equal(rememberGlance(null, null, "integration_messages"), null);
+});
+
+test("closing after the glance goes back to that pill", () => {
+  const glance = { to: "integration_media", from: "integration_messages" };
+  const visible = ["integration_media", "integration_messages", "integration_space"];
+  assert.equal(focusAfterGlance(glance, "integration_messages", visible), "integration_media");
+});
+
+test("a pill the user picked during the glance stays", () => {
+  const glance = { to: "integration_media", from: "integration_messages" };
+  const visible = ["integration_media", "integration_messages", "integration_space"];
+  assert.equal(focusAfterGlance(glance, "integration_space", visible), null);
+  assert.equal(focusAfterGlance(null, "integration_messages", visible), null);
+});
+
+test("a pill that is gone is not brought back", () => {
+  const glance = { to: "cc_1234abcd", from: "integration_messages" };
+  assert.equal(focusAfterGlance(glance, "integration_messages", ["integration_messages"]), null);
 });

@@ -188,7 +188,10 @@ network call is the Music pill's lyrics (lrclib.net), which Settings can turn of
   itself with a 250 ms timer that only runs while a song plays on screen.
   Collapsed with the Music pill in focus and a song playing, the island widens
   and sings the current line, centred, instead of showing the other pills (the
-  song's title and artist during the intro and the gaps).
+  song's title and artist during the intro and the gaps). A line longer than
+  the island grows it to fit, up to the window's width, where it ellipsizes;
+  short lines leave it at its base width so it does not jump on every line
+  (`stripIslandWidth` in `views/lyrics.ts`).
 - **Lyrics.** `lyrics.rs` asks LRCLIB's exact match (title, artist, album,
   length) and stops there only when it is synced and within 2 s of the song.
   Otherwise it searches (as reported, with "feat."/"Remastered" noise
@@ -216,6 +219,9 @@ network call is the Music pill's lyrics (lrclib.net), which Settings can turn of
   and collapses it (the state survives the card's refreshes). A new
   message opens the island on the Messages pill for a 3-second glance (the
   countdown bar shows it) and then collapses; hovering keeps it open to read.
+  When the island closes, the focus goes back to the pill the message took it
+  from, unless you moved to another pill yourself meanwhile
+  (`focusAfterGlance` in `island/messageAlert.ts`).
   It never takes the island from an approval, a question, the chat or a
   pointer already in it (`island/messageAlert.ts`). Clicking a message (or an
   app's heading) opens the app and takes those messages off the card; **Clear

@@ -31,3 +31,40 @@ export function messageAlertAction(c: MessageAlertContext): MessageAlertAction {
   if (c.mode !== "expanded") return "open";
   return c.view === "overview" ? "focus" : "none";
 }
+
+/** The pill a message took the island from, so it can be given back. */
+export interface GlanceReturn {
+  /** Focused before the message: where to go back to. */
+  to: string;
+  /** The Messages pill the message switched to. */
+  from: string;
+}
+
+/**
+ * Where a message's glance remembers to go back to. A second message during
+ * the glance keeps the first pill (not the Messages pill it is already on);
+ * nothing to remember when Messages already had the focus.
+ */
+export function rememberGlance(
+  current: GlanceReturn | null,
+  focusBefore: string | null,
+  messagesPill: string,
+): GlanceReturn | null {
+  if (current && current.from === messagesPill) return current;
+  if (focusBefore == null || focusBefore === messagesPill) return null;
+  return { to: focusBefore, from: messagesPill };
+}
+
+/**
+ * The pill to focus when the island closes after a message's glance, or null
+ * to leave the focus alone: the user moved to another pill themselves, or
+ * the pill they were on is gone.
+ */
+export function focusAfterGlance(
+  glance: GlanceReturn | null,
+  focusNow: string | null,
+  visible: readonly string[],
+): string | null {
+  if (!glance || focusNow !== glance.from) return null;
+  return visible.includes(glance.to) ? glance.to : null;
+}

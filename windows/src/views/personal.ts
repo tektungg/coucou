@@ -4,13 +4,14 @@
 import { h, svg, dot, clear } from "./dom";
 import { ICONS } from "./icons";
 import { State, type AgentTask } from "../core/state";
+import { COMPACT_LYRIC_MAX_W, COMPACT_LYRIC_W } from "../core/layout";
 import { Bridge } from "../core/bridge";
 import { arr, get, header, listRow, timeAgo } from "./integrations";
 import { sortSpaceItems } from "./spaceTasks";
 import { ExpandedMessages, groupByApp, needsExpander, type MessageGroup } from "./messageGroups";
 import {
   currentPositionMs, defaultQuery, durationMatch, formatTime, hitKind, lyricWindow, plainLines, progress,
-  stripText, timelineOf, trackKey,
+  stripIslandWidth, stripText, timelineOf, trackKey,
   type LyricHit, type LyricLine, type Lyrics, type Timeline,
 } from "./lyrics";
 
@@ -420,6 +421,28 @@ export function lyricStripEl(): HTMLElement {
   return strip;
 }
 
+/** How wide the collapsed island wants to be for the line on show. */
+let stripWidth = COMPACT_LYRIC_W;
+let onStripResize: () => void = () => {};
+let measureCtx: CanvasRenderingContext2D | null = null;
+
+export function lyricStripWidth(): number {
+  return stripWidth;
+}
+
+/** island.ts resizes the collapsed island when a line needs another width. */
+export function onLyricStripResize(fn: () => void) {
+  onStripResize = fn;
+}
+
+/** The line's width in the strip's own font, without laying anything out. */
+function measureLine(text: string): number {
+  measureCtx ??= document.createElement("canvas").getContext("2d");
+  if (!measureCtx) return 0;
+  measureCtx.font = getComputedStyle(stripLine).font || "600 12px sans-serif";
+  return measureCtx.measureText(text).width;
+}
+
 /** True while the collapsed island should sing: the Music pill has the focus and a song plays. */
 export function lyricStripActive(): boolean {
   if (State.focusTask?.id !== "integration_media" || !hasPersonalData("integration_media")) return false;
@@ -434,6 +457,11 @@ function paintStrip(nowMs: number) {
   if (stripLine.textContent === text) return;
   stripLine.textContent = text;
   stripLine.title = text;
+  const width = stripIslandWidth(measureLine(text), COMPACT_LYRIC_W, COMPACT_LYRIC_MAX_W);
+  if (width !== stripWidth) {
+    stripWidth = width;
+    onStripResize();
+  }
   stripLine.classList.remove("enter");
   void stripLine.offsetWidth; // restart the animation
   stripLine.classList.add("enter");
