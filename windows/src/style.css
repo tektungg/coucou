@@ -2443,11 +2443,12 @@ input[type="range"]::-webkit-slider-thumb {
   animation: media-fade 0.15s ease;
 }
 
-/* A file dragged over the island while the Shelf pill is open. */
-body.shelf-drop .shelf-card {
-  box-shadow: inset 0 0 0 1.5px rgba(245, 165, 36, 0.55);
-  border-radius: 14px;
-  background: rgba(245, 165, 36, 0.05);
+/* A file dragged over the island while the Shelf pill is open: the whole
+   card (its own rounded edge) lights up. */
+body.shelf-drop .card:has(.shelf-card) {
+  border-color: rgba(245, 165, 36, 0.7);
+  box-shadow: inset 0 0 0 1px rgba(245, 165, 36, 0.35), inset 0 0 28px rgba(245, 165, 36, 0.12);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 /* ── Audio (views/personal.ts) ─────────────────────────────────────────────── */
@@ -2606,9 +2607,18 @@ body.shelf-drop .shelf-card {
 }
 
 .int-rows.scroll.audio-devices {
-  max-height: 80px;
+  /* Ends inside the card: the last row is never cut by its edge. */
+  max-height: 62px;
+  margin-bottom: 8px;
   gap: 1px;
   padding-right: 8px;
+}
+
+/* Rows of a scrolling flex column keep their height (overflow: hidden would
+   let them shrink to nothing). */
+.audio-section,
+.audio-pick {
+  flex: 0 0 auto;
 }
 
 .audio-section {
@@ -2622,6 +2632,7 @@ body.shelf-drop .shelf-card {
 .audio-pick {
   display: flex;
   align-items: baseline;
+  min-height: 20px;
   gap: 7px;
   border: 0;
   border-radius: 6px;

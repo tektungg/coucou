@@ -33,6 +33,9 @@ drag = "2.1"
 [target.'cfg(windows)'.dependencies]
 # The #[interface] macro (audio.rs IPolicyConfig) names windows_core directly.
 windows-core = "0.61"
+# Dropped files reach us through WebView2 (webdrop.rs); its bindings use windows 0.62.
+webview2-com = "0.39"
+windows-core-wv2 = { package = "windows-core", version = "0.62" }
 keyring = { version = "3", features = ["windows-native"] }
 windows = { version = "0.61", features = [
   "ApplicationModel",
@@ -56,6 +59,7 @@ windows = { version = "0.61", features = [
   "Win32_System_Memory",
   "Win32_System_Ole",
   "Win32_System_Registry",
+  "Win32_System_SystemServices",
   "Win32_System_Variant",
   "Win32_UI_Shell_Common",
   "Win32_UI_Shell_PropertiesSystem",

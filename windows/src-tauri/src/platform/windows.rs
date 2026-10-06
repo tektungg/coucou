@@ -27,7 +27,6 @@ use ::windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use super::LocalTime;
-use crate::island::WINDOW_LABEL;
 
 /// File name of the Claude Code relay.
 pub const HOOK_EXE: &str = "coucou-hook.exe";
@@ -241,7 +240,10 @@ pub(crate) fn hwnd_of(win: &WebviewWindow) -> Option<HWND> {
 ///
 /// Cheap and idempotent, so it is simply re-run whenever a drag might be starting.
 pub fn unblock_webview_drops(app: &AppHandle) {
-    for label in [WINDOW_LABEL, "settings"] {
+    // The island takes drops through WebView2 itself now (webdrop.rs): its
+    // render widget's target is the one that must stay. Only the settings
+    // window still gets the old treatment.
+    for label in ["settings"] {
         let Some(win) = app.get_webview_window(label) else { continue };
         let Some(hwnd) = hwnd_of(&win) else { continue };
         unsafe {

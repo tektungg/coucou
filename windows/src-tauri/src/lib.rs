@@ -2,6 +2,8 @@
 
 mod audio;
 mod claude;
+#[cfg(windows)]
+mod webdrop;
 mod claude_cli;
 mod files;
 mod hooks;
@@ -581,6 +583,8 @@ pub fn run() {
             create_settings_window(&handle);
 
             if let Some(win) = island::window(&handle) {
+                #[cfg(windows)]
+                webdrop::install(&handle, &win);
                 platform::make_non_activating(&win);
                 island::apply_geometry(&handle, &loaded.screen, false);
                 let _ = win.show();

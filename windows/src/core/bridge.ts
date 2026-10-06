@@ -192,12 +192,67 @@ export interface DragDropPayload {
   paths?: string[];
 }
 
-/** Files dragged onto the island. Only reaches us when the window takes the mouse. */
+interface WebView2Bridge {
+  postMessageWithAdditionalObjects?(message: string, objects: FileList): void;
+}
+
+function webview2(): WebView2Bridge | null {
+  return (window as unknown as { chrome?: { webview?: WebView2Bridge } }).chrome?.webview ?? null;
+}
+
+/**
+ * On Windows WebView2 takes the drop (src-tauri/src/webdrop.rs): the page
+ * sees ordinary HTML5 drag events, and on drop hands the files to Rust, which
+ * answers with their paths as `island-drop`. Only drags that carry files count.
+ */
+function watchPageDrops(handler: (e: DragDropPayload) => void) {
+  const bridge = webview2();
+  if (!bridge?.postMessageWithAdditionalObjects) return;
+  const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes("Files");
+  // dragenter/dragleave fire for every element crossed: count them.
+  let depth = 0;
+  document.addEventListener("dragenter", (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    if (depth++ === 0) handler({ type: "enter" });
+  });
+  document.addEventListener("dragover", (e) => {
+    if (!hasFiles(e)) return;
+    // Without this the page refuses the drop.
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    handler({ type: "over" });
+  });
+  document.addEventListener("dragleave", (e) => {
+    if (!hasFiles(e)) return;
+    if (depth > 0 && --depth === 0) handler({ type: "leave" });
+  });
+  document.addEventListener("drop", (e) => {
+    if (!hasFiles(e)) return;
+    e.preventDefault();
+    depth = 0;
+    const files = e.dataTransfer?.files;
+    if (files && files.length) bridge.postMessageWithAdditionalObjects?.("coucou-drop", files);
+    else handler({ type: "leave" });
+  });
+}
+
+/**
+ * Files dragged onto the island. Only reaches us when the window takes the
+ * mouse. On Windows they come from the island's own drop target
+ * (droptarget.rs, `island-drop`), which replaced wry's; elsewhere from Tauri.
+ */
 export async function onDragDrop(handler: (e: DragDropPayload) => void) {
   if (!IS_TAURI) return () => {};
-  return getCurrentWebview().onDragDropEvent((event) => {
+  watchPageDrops(handler);
+  const own = await listen<DragDropPayload>("island-drop", (e) => handler(e.payload));
+  const tauri = await getCurrentWebview().onDragDropEvent((event) => {
     handler(event.payload as DragDropPayload);
   });
+  return () => {
+    own();
+    tauri();
+  };
 }
 
 export async function onEvent<T>(name: string, handler: (payload: T) => void) {

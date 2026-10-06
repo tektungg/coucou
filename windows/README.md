@@ -239,7 +239,17 @@ network call is the Music pill's lyrics (lrclib.net), which Settings can turn of
   its modal loop never runs inside tao's event handler, which crashed);
   hover buttons copy it (as a file, and as a picture for images), show it in
   Explorer, or take it off the shelf. Every action only accepts a path the
-  card shows.
+  card shows. While a file is dragged over the open Shelf pill, the card's
+  edge lights up.
+- **Dropping files on the island.** WebView2 takes the drop, like Edge does
+  (`webdrop.rs`): external drops are allowed on its controller, the page sees
+  plain HTML5 drag events (`core/bridge.ts` watchPageDrops), and on drop
+  posts the File objects with `chrome.webview.postMessageWithAdditionalObjects`;
+  Rust reads each `ICoreWebView2File`'s real path and sends them back as
+  `island-drop`. A drag from File Explorer never reached an OLE drop target in
+  Coucou's own process on Windows 11 (wry's, or one of ours), even with the
+  target found under the cursor, which is why dropping on Mochi used to show
+  the "no entry" cursor.
 - **Audio.** Speaker and microphone rows: the icon mutes, the name opens the
   device list (sets the default for every role through `IPolicyConfig`, the
   Sound control panel's own interface), the slider sets the volume (patched in
