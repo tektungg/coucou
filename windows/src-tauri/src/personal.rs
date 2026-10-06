@@ -173,6 +173,42 @@ pub async fn media_lyrics(
     })
 }
 
+/// Err when nothing may reach lrclib.net: the Lyrics preference is off or Coucou is paused.
+fn lyrics_allowed(app: &AppHandle) -> Result<(), String> {
+    if !pref(app, |s| s.lyrics_enabled).unwrap_or(false) {
+        return Err("Lyrics are off in Settings".into());
+    }
+    if crate::integrations::PAUSED.load(Ordering::Relaxed) {
+        return Err("Coucou is paused".into());
+    }
+    Ok(())
+}
+
+/// The manual lyrics search typed in the lyrics detail.
+pub async fn lyrics_search(app: AppHandle, query: String, duration_ms: Option<u64>) -> Result<Vec<lyrics::Hit>, String> {
+    lyrics_allowed(&app)?;
+    lyrics::search(&query, duration_ms).await.map_err(|err| {
+        log::line(format!("lyrics search failed: {err}"));
+        err
+    })
+}
+
+/// Uses the LRCLIB record picked in the search for this song (None = back to automatic).
+pub async fn lyrics_choose(
+    app: AppHandle,
+    title: String,
+    artist: String,
+    album: String,
+    duration_ms: Option<u64>,
+    id: Option<i64>,
+) -> Result<Option<lyrics::Lyrics>, String> {
+    lyrics_allowed(&app)?;
+    lyrics::choose(&title, &artist, &album, duration_ms, id).await.map_err(|err| {
+        log::line(format!("lyrics choice failed: {err}"));
+        err
+    })
+}
+
 /// Play/pause, next or previous on the session the Music pill shows.
 pub async fn media_control(app: AppHandle, action: String) -> Result<(), String> {
     if !["play_pause", "next", "prev"].contains(&action.as_str()) {

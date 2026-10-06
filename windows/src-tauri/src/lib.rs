@@ -331,6 +331,25 @@ async fn media_lyrics(
     personal::media_lyrics(app, title, artist, album, duration_ms).await
 }
 
+/// The lyrics detail's manual search on lrclib.net.
+#[tauri::command]
+async fn lyrics_search(app: AppHandle, query: String, duration_ms: Option<u64>) -> Result<Vec<lyrics::Hit>, String> {
+    personal::lyrics_search(app, query, duration_ms).await
+}
+
+/// Picks a search result for the playing song, remembered across runs; id null = automatic again.
+#[tauri::command]
+async fn lyrics_choose(
+    app: AppHandle,
+    title: String,
+    artist: String,
+    album: String,
+    duration_ms: Option<u64>,
+    id: Option<i64>,
+) -> Result<Option<lyrics::Lyrics>, String> {
+    personal::lyrics_choose(app, title, artist, album, duration_ms, id).await
+}
+
 /// Whether a fullscreen app (game, video, presentation) is in front: hovering
 /// the island then leaves it shut.
 #[tauri::command]
@@ -474,6 +493,8 @@ pub fn run() {
             media_control,
             media_art,
             media_lyrics,
+            lyrics_search,
+            lyrics_choose,
             open_app,
             dismiss_messages,
             fullscreen_active,

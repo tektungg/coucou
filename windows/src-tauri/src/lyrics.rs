@@ -3,10 +3,16 @@
 // album and length leave the machine, and only while the "Lyrics" toggle in
 // Settings is on. Neither the request nor the lyrics reach the log.
 //
+// Matching prefers synced lyrics whose length is the song's. When it still
+// gets a song wrong, the lyrics detail lets the user search LRCLIB and pick
+// a record; that choice is remembered per song in lyrics-choices.json.
+//
 // Everything that decides something (parsing LRC, which search result fits
-// the song) is a pure function tested below; `fetch` only does the I/O.
+// the song, the choices list) is a pure function tested below; `fetch`,
+// `search` and `choose` only do the I/O.
 
 use std::collections::{HashMap, VecDeque};
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -19,9 +25,16 @@ const USER_AGENT: &str = concat!("Coucou/", env!("CARGO_PKG_VERSION"), " (https:
 /// A result whose length is further off than this is another recording
 /// (a live take, a sped-up edit, a 3 s fan upload), not this song.
 const DURATION_TOLERANCE_MS: i64 = 3_000;
+/// Within this, a record is the same length as the song: an exact match
+/// with synced lyrics this close is taken without searching further.
+const SAME_DURATION_MS: i64 = 2_000;
 /// Songs kept in memory. A "not found" is kept too, so a song LRCLIB lacks is
 /// asked for once per run, not on every card rebuild.
 const CACHE_SIZE: usize = 64;
+/// Results the manual search shows.
+const HITS_MAX: usize = 30;
+/// Songs whose manual choice is remembered; the oldest go first.
+const CHOICES_MAX: usize = 500;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Line {
@@ -33,16 +46,28 @@ pub struct Line {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Lyrics {
+    /// The LRCLIB record these come from, so the search can mark it.
+    pub id: Option<i64>,
     /// Time-stamped lines, sorted. Empty when LRCLIB only has plain text.
     pub synced: Vec<Line>,
     pub plain: Option<String>,
     pub instrumental: bool,
+    /// Picked by hand in the search rather than matched.
+    pub chosen: bool,
 }
 
 /// One LRCLIB record, as `/api/get` and `/api/search` return it.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Record {
+    #[serde(default)]
+    pub id: Option<i64>,
+    #[serde(default)]
+    pub track_name: Option<String>,
+    #[serde(default)]
+    pub artist_name: Option<String>,
+    #[serde(default)]
+    pub album_name: Option<String>,
     #[serde(default)]
     pub duration: Option<f64>,
     #[serde(default)]
@@ -62,14 +87,82 @@ impl Record {
         self.plain_lyrics.as_deref().is_some_and(|s| !s.trim().is_empty())
     }
 
-    fn into_lyrics(self) -> Option<Lyrics> {
+    fn into_lyrics(self, chosen: bool) -> Option<Lyrics> {
         let synced = self.synced_lyrics.as_deref().map(parse_lrc).unwrap_or_default();
         let plain = self.plain_lyrics.filter(|s| !s.trim().is_empty());
         if synced.is_empty() && plain.is_none() && !self.instrumental {
             return None;
         }
-        Some(Lyrics { synced, plain, instrumental: self.instrumental })
+        Some(Lyrics { id: self.id, synced, plain, instrumental: self.instrumental, chosen })
     }
+
+    /// How far the record's length is from the song's; None when either is unknown.
+    fn off_ms(&self, duration_ms: Option<u64>) -> Option<i64> {
+        match (duration_ms, self.duration) {
+            (Some(want), Some(have)) => Some((have * 1000.0 - want as f64).abs() as i64),
+            _ => None,
+        }
+    }
+}
+
+/// One row of the manual search.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Hit {
+    pub id: i64,
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    pub duration_ms: Option<u64>,
+    pub synced: bool,
+    pub plain: bool,
+    pub instrumental: bool,
+}
+
+/// Sort key of a record for this song, smaller is better: a length that
+/// fits (or is unknown) first, then synced over plain over instrumental over
+/// empty, then the closest length. `.0 == 0 && .1 < 3` means usable.
+fn score(r: &Record, duration_ms: Option<u64>) -> (u8, u8, i64) {
+    let off = r.off_ms(duration_ms);
+    let fits = off.is_none_or(|o| o <= DURATION_TOLERANCE_MS);
+    let kind = if r.has_synced() {
+        0
+    } else if r.has_plain() {
+        1
+    } else if r.instrumental {
+        2
+    } else {
+        3
+    };
+    (u8::from(!fits), kind, off.unwrap_or(0))
+}
+
+/// The search's rows, best first by the same rules the automatic match uses,
+/// so the right one is usually on top. Records without an id cannot be
+/// picked and are dropped, as are duplicates.
+pub(crate) fn hits(records: Vec<Record>, duration_ms: Option<u64>) -> Vec<Hit> {
+    let mut seen = std::collections::HashSet::new();
+    let mut scored: Vec<((u8, u8, i64), usize, Record)> = records
+        .into_iter()
+        .enumerate()
+        .filter(|(_, r)| r.id.is_some_and(|id| seen.insert(id)))
+        .map(|(i, r)| (score(&r, duration_ms), i, r))
+        .collect();
+    scored.sort_by_key(|(s, i, _)| (*s, *i));
+    scored
+        .into_iter()
+        .take(HITS_MAX)
+        .map(|(_, _, r)| Hit {
+            id: r.id.unwrap_or_default(),
+            synced: r.has_synced(),
+            plain: r.has_plain(),
+            instrumental: r.instrumental,
+            title: r.track_name.unwrap_or_default(),
+            artist: r.artist_name.unwrap_or_default(),
+            album: r.album_name.unwrap_or_default(),
+            duration_ms: r.duration.filter(|d| *d > 0.0).map(|d| (d * 1000.0).round() as u64),
+        })
+        .collect()
 }
 
 /// "mm:ss", "mm:ss.x", "mm:ss.xx", "mm:ss.xxx" or "mm:ss:xx" → milliseconds.
@@ -153,30 +246,23 @@ pub fn parse_lrc(text: &str) -> Vec<Line> {
         .collect()
 }
 
-/// Index of the search result that is this song: within the length
-/// tolerance (when the length is known), synced lyrics over plain ones over
-/// an instrumental flag, then the closest length, then LRCLIB's own order.
+/// Index of the record that is this song: within the length tolerance (when
+/// the length is known), synced lyrics over plain ones over an instrumental
+/// flag, then the closest length, then the order given. None rather than
+/// another recording's lyrics.
 pub(crate) fn pick_best(results: &[Record], duration_ms: Option<u64>) -> Option<usize> {
     results
         .iter()
         .enumerate()
-        .filter(|(_, r)| r.has_synced() || r.has_plain() || r.instrumental)
-        .filter_map(|(i, r)| {
-            let off = match (duration_ms, r.duration) {
-                (Some(want), Some(have)) => {
-                    let off = (have * 1000.0 - want as f64).abs() as i64;
-                    if off > DURATION_TOLERANCE_MS {
-                        return None;
-                    }
-                    off
-                }
-                _ => 0,
-            };
-            let rank = if r.has_synced() { 0 } else if r.has_plain() { 1 } else { 2 };
-            Some(((rank, off, i), i))
-        })
-        .min_by_key(|(key, _)| *key)
+        .map(|(i, r)| (score(r, duration_ms), i))
+        .filter(|((fits, kind, _), _)| *fits == 0 && *kind < 3)
+        .min()
         .map(|(_, i)| i)
+}
+
+/// Whether `r` settles the search on its own: synced and the song's length.
+fn is_sure(r: &Record, duration_ms: Option<u64>) -> bool {
+    r.has_synced() && r.off_ms(duration_ms).map_or(true, |o| o <= SAME_DURATION_MS)
 }
 
 /// "Song (feat. X) - Remastered 2011" → "Song". Players add these, LRCLIB
@@ -281,17 +367,32 @@ async fn get_exact(
     res.json::<Record>().await.map(Some).map_err(net)
 }
 
-async fn search(client: &reqwest::Client, title: &str, artist: &str) -> Result<Vec<Record>, String> {
-    let res = client
-        .get(format!("{API}/search"))
-        .query(&[("track_name", title), ("artist_name", artist)])
-        .send()
-        .await
-        .map_err(net)?;
+/// `/api/get/{id}`: one record, as picked in the manual search.
+async fn get_by_id(client: &reqwest::Client, id: i64) -> Result<Option<Record>, String> {
+    let res = client.get(format!("{API}/get/{id}")).send().await.map_err(net)?;
+    if res.status() == reqwest::StatusCode::NOT_FOUND {
+        return Ok(None);
+    }
+    if !res.status().is_success() {
+        return Err(format!("lrclib answered {}", res.status()));
+    }
+    res.json::<Record>().await.map(Some).map_err(net)
+}
+
+async fn search_with(client: &reqwest::Client, query: &[(&str, &str)]) -> Result<Vec<Record>, String> {
+    let res = client.get(format!("{API}/search")).query(query).send().await.map_err(net)?;
     if !res.status().is_success() {
         return Err(format!("lrclib answered {}", res.status()));
     }
     res.json::<Vec<Record>>().await.map_err(net)
+}
+
+fn forget(key: &str) {
+    let mut guard = CACHE.lock().unwrap();
+    if let Some(cache) = guard.as_mut() {
+        cache.map.remove(key);
+        cache.order.retain(|k| k != key);
+    }
 }
 
 /// Lyrics for this song, or None when LRCLIB has none. Err is a network or
@@ -308,31 +409,142 @@ pub async fn fetch(title: &str, artist: &str, album: &str, duration_ms: Option<u
     }
     let client = client()?;
 
-    // The exact match first: one request, and right for most songs.
-    if let Some(record) = get_exact(&client, title, artist.trim(), album.trim(), duration_ms).await? {
-        if record.has_synced() || record.has_plain() || record.instrumental {
-            let lyrics = record.into_lyrics();
+    // A record the user picked for this song wins over any match.
+    if let Some(id) = choices::get(&key) {
+        if let Some(record) = get_by_id(&client, id).await? {
+            let lyrics = record.into_lyrics(true);
             remember(key, lyrics.clone());
             return Ok(lyrics);
         }
     }
 
-    // Then a search, as reported and then with the noise stripped.
-    let mut tries = vec![(title.to_string(), artist.trim().to_string())];
-    let simpler = (clean_title(title), primary_artist(artist));
-    if simpler != tries[0] && !simpler.0.is_empty() {
-        tries.push(simpler);
-    }
-    for (t, a) in tries {
-        let results = search(&client, &t, &a).await?;
-        if let Some(i) = pick_best(&results, duration_ms) {
-            let lyrics = results.into_iter().nth(i).and_then(Record::into_lyrics);
+    // The exact match first: one request, and enough when it is synced and
+    // the song's length. Otherwise it only joins the pool below, where a
+    // synced record of the right length can still beat it.
+    let mut pool: Vec<Record> = Vec::new();
+    if let Some(record) = get_exact(&client, title, artist.trim(), album.trim(), duration_ms).await? {
+        if is_sure(&record, duration_ms) {
+            let lyrics = record.into_lyrics(false);
             remember(key, lyrics.clone());
             return Ok(lyrics);
         }
+        pool.push(record);
     }
-    remember(key, None);
-    Ok(None)
+
+    // Then searches, widest last, until one gives a sure record: as reported,
+    // with the noise stripped, then free text (another spelling of the artist).
+    let simpler = (clean_title(title), primary_artist(artist));
+    let free = format!("{} {}", simpler.0, simpler.1);
+    let mut tries: Vec<Vec<(&str, &str)>> = vec![vec![("track_name", title), ("artist_name", artist.trim())]];
+    if (simpler.0.as_str(), simpler.1.as_str()) != (title, artist.trim()) && !simpler.0.is_empty() {
+        tries.push(vec![("track_name", &simpler.0), ("artist_name", &simpler.1)]);
+    }
+    tries.push(vec![("q", free.trim())]);
+    for query in tries {
+        match search_with(&client, &query).await {
+            Ok(results) => pool.extend(results),
+            // A later search failing does not waste what the earlier ones found.
+            Err(err) if pool.is_empty() => return Err(err),
+            Err(_) => break,
+        }
+        if pool.iter().any(|r| is_sure(r, duration_ms)) {
+            break;
+        }
+    }
+    let lyrics = pick_best(&pool, duration_ms).and_then(|i| pool.swap_remove(i).into_lyrics(false));
+    remember(key, lyrics.clone());
+    Ok(lyrics)
+}
+
+/// The manual search: LRCLIB's free-text search, best rows for this song first.
+pub async fn search(query: &str, duration_ms: Option<u64>) -> Result<Vec<Hit>, String> {
+    let query = query.trim();
+    if query.is_empty() {
+        return Ok(Vec::new());
+    }
+    let client = client()?;
+    let records = search_with(&client, &[("q", query)]).await?;
+    Ok(hits(records, duration_ms.filter(|d| *d > 0)))
+}
+
+/// Uses record `id` for this song from now on, remembered across runs.
+/// `None` forgets the choice and goes back to the automatic match.
+pub async fn choose(
+    title: &str,
+    artist: &str,
+    album: &str,
+    duration_ms: Option<u64>,
+    id: Option<i64>,
+) -> Result<Option<Lyrics>, String> {
+    let duration_ms = duration_ms.filter(|d| *d > 0);
+    let key = cache_key(title.trim(), artist, album, duration_ms);
+    let Some(id) = id else {
+        choices::set(&key, None)?;
+        forget(&key);
+        return fetch(title, artist, album, duration_ms).await;
+    };
+    let client = client()?;
+    let record = get_by_id(&client, id).await?.ok_or("That record is gone from LRCLIB")?;
+    let lyrics = record.into_lyrics(true).ok_or("That record has no lyrics")?;
+    choices::set(&key, Some(id))?;
+    remember(key, Some(lyrics.clone()));
+    Ok(Some(lyrics))
+}
+
+/// The songs whose lyrics were picked by hand, in lyrics-choices.json next to
+/// settings.json: `[{ "key": "<cache_key>", "id": <lrclib id> }]`, newest last.
+mod choices {
+    use super::*;
+
+    #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+    pub(crate) struct Choice {
+        pub key: String,
+        pub id: i64,
+    }
+
+    /// Puts or removes the choice for `key`, keeping the newest CHOICES_MAX.
+    pub(crate) fn apply(list: &mut Vec<Choice>, key: &str, id: Option<i64>) {
+        list.retain(|c| c.key != key);
+        if let Some(id) = id {
+            list.push(Choice { key: key.to_string(), id });
+        }
+        if list.len() > CHOICES_MAX {
+            let extra = list.len() - CHOICES_MAX;
+            list.drain(..extra);
+        }
+    }
+
+    pub(crate) fn load(path: &Path) -> Vec<Choice> {
+        std::fs::read(path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+    }
+
+    pub(crate) fn save(path: &Path, list: &[Choice]) -> Result<(), String> {
+        if let Some(dir) = path.parent() {
+            crate::platform::ensure_private_dir(dir).map_err(|e| e.to_string())?;
+        }
+        let json = serde_json::to_vec_pretty(list).map_err(|e| e.to_string())?;
+        std::fs::write(path, json).map_err(|e| e.to_string())
+    }
+
+    fn path() -> PathBuf {
+        crate::settings::config_dir().join("lyrics-choices.json")
+    }
+
+    /// Read once, then kept in memory.
+    static LIST: Mutex<Option<Vec<Choice>>> = Mutex::new(None);
+
+    pub(crate) fn get(key: &str) -> Option<i64> {
+        let mut guard = LIST.lock().unwrap();
+        let list = guard.get_or_insert_with(|| load(&path()));
+        list.iter().find(|c| c.key == key).map(|c| c.id)
+    }
+
+    pub(crate) fn set(key: &str, id: Option<i64>) -> Result<(), String> {
+        let mut guard = LIST.lock().unwrap();
+        let list = guard.get_or_insert_with(|| load(&path()));
+        apply(list, key, id);
+        save(&path(), list)
+    }
 }
 
 #[cfg(test)]
@@ -345,7 +557,12 @@ mod tests {
             instrumental,
             plain_lyrics: plain.then(|| "la la".to_string()),
             synced_lyrics: synced.then(|| "[00:01.00]la la".to_string()),
+            ..Record::default()
         }
+    }
+
+    fn with_id(id: i64, r: Record) -> Record {
+        Record { id: Some(id), track_name: Some(format!("t{id}")), ..r }
     }
 
     fn times(lines: &[Line]) -> Vec<u32> {
@@ -468,12 +685,14 @@ mod tests {
     #[test]
     fn record_to_lyrics() {
         let r = rec(161.0, true, true, false);
-        let l = r.into_lyrics().unwrap();
+        let l = r.into_lyrics(false).unwrap();
         assert_eq!(l.synced.len(), 1);
         assert_eq!(l.plain.as_deref(), Some("la la"));
-        let l = rec(161.0, false, false, true).into_lyrics().unwrap();
+        let l = rec(161.0, false, false, true).into_lyrics(true).unwrap();
+        assert!(l.chosen);
         assert!(l.instrumental && l.synced.is_empty() && l.plain.is_none());
-        assert_eq!(rec(161.0, false, false, false).into_lyrics(), None);
+        assert_eq!(rec(161.0, false, false, false).into_lyrics(false), None);
+        assert_eq!(with_id(7, rec(161.0, true, false, false)).into_lyrics(false).unwrap().id, Some(7));
     }
 
     #[test]
@@ -517,11 +736,108 @@ mod tests {
 
     #[test]
     fn lyrics_serialize_for_the_island() {
-        let l = Lyrics { synced: vec![Line { t: 1500, text: "Baby".into() }], plain: None, instrumental: false };
+        let l = Lyrics {
+            id: Some(3),
+            synced: vec![Line { t: 1500, text: "Baby".into() }],
+            plain: None,
+            instrumental: false,
+            chosen: true,
+        };
         let json = serde_json::to_value(&l).unwrap();
         assert_eq!(json["synced"][0]["t"], 1500);
         assert_eq!(json["synced"][0]["text"], "Baby");
         assert_eq!(json["instrumental"], false);
+        assert_eq!(json["id"], 3);
+        assert_eq!(json["chosen"], true);
+    }
+
+    /// The exact match only had plain lyrics; a synced record of the same
+    /// length from the search must win over it.
+    #[test]
+    fn synced_same_length_beats_an_exact_plain_match() {
+        let pool = vec![rec(161.0, false, true, false), rec(240.0, true, true, false), rec(161.4, true, true, false)];
+        assert_eq!(pick_best(&pool, Some(161_000)), Some(2));
+    }
+
+    #[test]
+    fn sure_means_synced_and_the_same_length() {
+        assert!(is_sure(&rec(161.0, true, false, false), Some(162_500)));
+        assert!(!is_sure(&rec(161.0, true, false, false), Some(163_500)));
+        assert!(!is_sure(&rec(161.0, false, true, false), Some(161_000)));
+        // Length unknown: synced is all there is to check.
+        assert!(is_sure(&rec(161.0, true, false, false), None));
+    }
+
+    #[test]
+    fn hits_rank_like_the_automatic_match() {
+        let records = vec![
+            with_id(1, rec(240.0, true, true, false)),
+            with_id(2, rec(161.0, false, true, false)),
+            with_id(3, rec(161.5, true, true, false)),
+            with_id(4, rec(161.0, false, false, true)),
+            with_id(5, rec(3.0, true, false, false)),
+        ];
+        let ids: Vec<i64> = hits(records, Some(161_000)).iter().map(|h| h.id).collect();
+        // Fitting ones first (synced, plain, instrumental), then the rest, closest length first.
+        assert_eq!(ids, vec![3, 2, 4, 1, 5]);
+    }
+
+    #[test]
+    fn hits_drop_unpickable_and_duplicate_records() {
+        let records = vec![
+            rec(161.0, true, true, false),
+            with_id(9, rec(161.0, true, true, false)),
+            with_id(9, rec(161.0, true, true, false)),
+        ];
+        let h = hits(records, Some(161_000));
+        assert_eq!(h.len(), 1);
+        assert_eq!(h[0].id, 9);
+        assert_eq!(h[0].title, "t9");
+        assert_eq!(h[0].duration_ms, Some(161_000));
+        assert!(h[0].synced && h[0].plain && !h[0].instrumental);
+    }
+
+    #[test]
+    fn hits_are_capped_and_serialize_camel_case() {
+        let records: Vec<Record> = (0..50).map(|i| with_id(i, rec(161.0, true, false, false))).collect();
+        let h = hits(records, None);
+        assert_eq!(h.len(), HITS_MAX);
+        let json = serde_json::to_value(&h[0]).unwrap();
+        assert_eq!(json["durationMs"], 161_000);
+        assert_eq!(json["synced"], true);
+    }
+
+    #[test]
+    fn choices_replace_remove_and_stay_bounded() {
+        let mut list = Vec::new();
+        choices::apply(&mut list, "a", Some(1));
+        choices::apply(&mut list, "b", Some(2));
+        choices::apply(&mut list, "a", Some(3));
+        assert_eq!(list.iter().map(|c| (c.key.as_str(), c.id)).collect::<Vec<_>>(), vec![("b", 2), ("a", 3)]);
+        choices::apply(&mut list, "b", None);
+        assert_eq!(list.len(), 1);
+        for i in 0..CHOICES_MAX + 5 {
+            choices::apply(&mut list, &format!("k{i}"), Some(i as i64));
+        }
+        assert_eq!(list.len(), CHOICES_MAX);
+        // The oldest went first.
+        assert!(!list.iter().any(|c| c.key == "a"));
+        assert_eq!(list.last().unwrap().key, format!("k{}", CHOICES_MAX + 4));
+    }
+
+    #[test]
+    fn choices_survive_a_restart() {
+        let dir = std::env::temp_dir().join(format!("coucou-lyrics-test-{}", std::process::id()));
+        let path = dir.join("lyrics-choices.json");
+        let mut list = Vec::new();
+        choices::apply(&mut list, "magnetic", Some(7_424_652));
+        choices::save(&path, &list).unwrap();
+        assert_eq!(choices::load(&path), list);
+        // A broken or missing file is an empty list, not an error.
+        std::fs::write(&path, b"{nope").unwrap();
+        assert!(choices::load(&path).is_empty());
+        assert!(choices::load(&dir.join("missing.json")).is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Live eval against lrclib.net. Prints counts only, never lyrics.
@@ -537,5 +853,11 @@ mod tests {
         assert!(found.synced.windows(2).all(|w| w[0].t <= w[1].t));
         let missing = rt.block_on(fetch("zzqx no such song 93847", "nobody 2938", "", Some(123_000))).unwrap();
         assert!(missing.is_none());
+        // The manual search puts a synced record of the right length on top.
+        let rows = rt.block_on(search("Magnetic ILLIT", Some(160_900))).unwrap();
+        println!("lyrics_live: search rows={}", rows.len());
+        let top = rows.first().expect("rows");
+        assert!(top.synced);
+        assert!(top.duration_ms.is_some_and(|d| d.abs_diff(160_900) <= 3_000));
     }
 }

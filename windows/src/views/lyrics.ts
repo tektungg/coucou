@@ -9,9 +9,13 @@ export interface LyricLine {
 
 /** What `media_lyrics` returns (lyrics.rs). */
 export interface Lyrics {
+  /** The LRCLIB record these come from. */
+  id: number | null;
   synced: LyricLine[];
   plain: string | null;
   instrumental: boolean;
+  /** Picked by hand in the search, remembered for this song. */
+  chosen: boolean;
 }
 
 export interface Timeline {
@@ -126,4 +130,36 @@ export function plainLines(plain: string | null): string[] {
   }
   while (out.length && out[out.length - 1] === "") out.pop();
   return out;
+}
+
+/** One row of the manual search (`lyrics_search`, lyrics.rs `Hit`). */
+export interface LyricHit {
+  id: number;
+  title: string;
+  artist: string;
+  album: string;
+  durationMs: number | null;
+  synced: boolean;
+  plain: boolean;
+  instrumental: boolean;
+}
+
+/** Same thresholds as lyrics.rs: ≤ 2 s is this recording, ≤ 3 s still fits. */
+export type DurationMatch = "same" | "near" | "off" | "unknown";
+
+export function durationMatch(hitMs: number | null, songMs: number): DurationMatch {
+  if (hitMs == null || !(hitMs > 0) || !(songMs > 0)) return "unknown";
+  const off = Math.abs(hitMs - songMs);
+  return off <= 2_000 ? "same" : off <= 3_000 ? "near" : "off";
+}
+
+/** What the manual search starts with: the title and the first artist. */
+export function defaultQuery(d: Record<string, unknown>): string {
+  const artist = str(d.artist).split(/,|;|\/| & | feat\.? | ft\. /i)[0].trim();
+  return [str(d.title).trim(), artist].filter(Boolean).join(" ");
+}
+
+/** "synced", "plain", "instrumental" or "" for a search row. */
+export function hitKind(hit: LyricHit): string {
+  return hit.synced ? "synced" : hit.plain ? "plain" : hit.instrumental ? "instrumental" : "";
 }

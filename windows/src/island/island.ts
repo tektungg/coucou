@@ -568,9 +568,10 @@ export class Island {
     // the state-driven DOM sync.
     this.miniGrid.style.left = `${w - 40 - 14.5}px`;
     this.miniGrid.style.top = `${hh / 2 - 14.5}px`;
-    // Right of the compact Mochi (cx 40, 20 px wide) to the right edge.
+    // Clear of the compact Mochi (cx 40, 20 px wide) on both sides, so the
+    // line is centred on the island itself.
     const strip = lyricStripEl();
-    strip.style.width = `${Math.max(0, w - 62 - 18)}px`;
+    strip.style.width = `${Math.max(0, w - 2 * 58)}px`;
     strip.style.height = `${hh}px`;
     this.greetingCanvas.style.left = `${(w - EXPANDED_W) / 2}px`;
     this.uploadCanvas.el.style.left = `${(w - EXPANDED_W) / 2}px`;

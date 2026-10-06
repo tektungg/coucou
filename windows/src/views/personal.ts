@@ -9,8 +9,9 @@ import { arr, get, header, listRow, timeAgo } from "./integrations";
 import { sortSpaceItems } from "./spaceTasks";
 import { ExpandedMessages, groupByApp, needsExpander, type MessageGroup } from "./messageGroups";
 import {
-  currentPositionMs, formatTime, lyricWindow, plainLines, progress, stripText, timelineOf, trackKey,
-  type LyricLine, type Lyrics, type Timeline,
+  currentPositionMs, defaultQuery, durationMatch, formatTime, hitKind, lyricWindow, plainLines, progress,
+  stripText, timelineOf, trackKey,
+  type LyricHit, type LyricLine, type Lyrics, type Timeline,
 } from "./lyrics";
 
 export const PERSONAL_IDS = new Set([
@@ -209,6 +210,7 @@ let live: LiveMedia | null = null;
 let timer: ReturnType<typeof setInterval> | null = null;
 
 const LYRICS_ICON = "M5 7h14M5 12h14M5 17h8";
+const SEARCH_ICON = "M10.5 17a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13zM15.5 15.5 20 20";
 const NOTE_ICON = "M9 18V6l10-2v12M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm10-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0z";
 
 function lyricsOn(): boolean {
@@ -583,13 +585,247 @@ function fillLyricList(l: LiveMedia) {
   } else {
     l.list.append(h("div", { class: "int-status", text: status ?? "No lyrics on LRCLIB" }));
   }
-  l.list.append(h("div", { class: "lyr-credit", text: "Lyrics from lrclib.net" }));
+  if (!lyrics || lyrics.synced.length === 0) {
+    l.list.append(
+      h("button", { class: "lyr-btn find", text: "Search lyrics by hand", onclick: () => openSearch() }),
+    );
+  }
+  const credit = lyrics?.chosen ? "Lyrics from lrclib.net · picked by you" : "Lyrics from lrclib.net";
+  l.list.append(h("div", { class: "lyr-credit", text: credit }));
 }
 
-function mediaDetail(onBack: () => void): HTMLElement {
+// ── Manual lyrics search ──────────────────────────────────────────────────────
+// Opened from the lyrics detail when the match is wrong or missing: LRCLIB's
+// free-text search, best rows for this song first; a click uses that record
+// for this song from now on (lyrics.rs remembers it).
+
+interface SearchState {
+  /** The song the search is for; a new song closes it. */
+  key: string;
+  query: string;
+  status: "idle" | "loading" | "done" | "error";
+  hits: LyricHit[];
+  error: string;
+  /** Row being applied. */
+  choosing: number | null;
+  /** Survives the card's rebuilds, so typing is not cut off by a poll. */
+  focused: boolean;
+  caret: number;
+  /** Bumped per search: a slow answer to an older query is dropped. */
+  seq: number;
+}
+
+let search: SearchState | null = null;
+/** Rebuilds the card (the hooks' openDetail): set by every media render. */
+let rebuild: () => void = () => {};
+let searchList: HTMLElement | null = null;
+
+function openSearch() {
+  const d = get("integration_media");
+  search = {
+    key: trackKey(d), query: defaultQuery(d), status: "idle", hits: [], error: "",
+    choosing: null, focused: false, caret: 0, seq: 0,
+  };
+  rebuild();
+  runSearch();
+}
+
+function closeSearch() {
+  if (search?.focused) void Bridge.focusWindow(false);
+  search = null;
+  searchList = null;
+  rebuild();
+}
+
+function runSearch() {
+  const s = search;
+  if (!s) return;
+  const seq = ++s.seq;
+  s.status = "loading";
+  s.error = "";
+  renderHits();
+  const duration = num(get("integration_media").durationMs);
+  Bridge.lyricsSearch(s.query, duration && duration > 0 ? duration : null)
+    .then((hits) => {
+      if (search !== s || s.seq !== seq) return;
+      s.hits = hits;
+      s.status = "done";
+    })
+    .catch((e: unknown) => {
+      if (search !== s || s.seq !== seq) return;
+      s.status = "error";
+      s.error = String(e);
+    })
+    .finally(renderHits);
+}
+
+/** Uses record `id` (null = the automatic match again) for the song the search is for. */
+function choose(id: number | null) {
+  const s = search;
+  if (!s || s.choosing != null) return;
+  const d = get("integration_media");
+  if (trackKey(d) !== s.key) return closeSearch();
+  s.choosing = id ?? -1;
+  renderHits();
+  const duration = num(d.durationMs);
+  Bridge.lyricsChoose(str(d.title), str(d.artist), str(d.album), duration && duration > 0 ? duration : null, id)
+    .then((lyrics) => {
+      lyricsByTrack.set(s.key, { status: "done", lyrics });
+      if (search === s) closeSearch();
+    })
+    .catch((e: unknown) => {
+      if (search !== s) return;
+      s.choosing = null;
+      s.status = "error";
+      s.error = String(e);
+      renderHits();
+    });
+}
+
+const MATCH_COLORS: Record<string, string> = {
+  same: "#22C55E", near: "#F5A524", off: "#5f646d", unknown: "#8e939c",
+};
+const MATCH_TITLES: Record<string, string> = {
+  same: "Same length as the song",
+  near: "Within 3 s of the song",
+  off: "Another length: likely another recording",
+  unknown: "Length unknown",
+};
+
+function hitRow(hit: LyricHit, songMs: number, currentId: number | null, s: SearchState): HTMLElement {
+  const match = durationMatch(hit.durationMs, songMs);
+  const kind = hitKind(hit);
+  const row = h(
+    "div",
+    {
+      class: "lyr-hit",
+      title: [hit.album, MATCH_TITLES[match]].filter(Boolean).join(" · "),
+      onclick: () => choose(hit.id),
+    },
+    dot(MATCH_COLORS[match], 5),
+    h(
+      "span",
+      { class: "lyr-hit-name" },
+      h("b", { text: hit.title || "Untitled" }),
+      hit.artist ? h("span", { text: ` · ${hit.artist}` }) : null,
+      hit.album ? h("i", { text: ` · ${hit.album}` }) : null,
+    ),
+    h("span", { class: `lyr-hit-time ${match}`, text: hit.durationMs != null ? formatTime(hit.durationMs) : "" }),
+    kind ? h("span", { class: `lyr-badge ${kind}`, text: kind }) : null,
+  );
+  if (hit.id === currentId) {
+    row.classList.add("current");
+    row.append(h("span", { class: "space-check", title: "Showing now" }, svg(ICONS.check, 10, { stroke: 2.6 })));
+  }
+  if (s.choosing === hit.id) row.classList.add("busy");
+  return row;
+}
+
+function renderHits() {
+  const s = search;
+  const list = searchList;
+  if (!s || !list || !list.isConnected) return;
+  clear(list);
+  const d = get("integration_media");
+  const songMs = num(d.durationMs) ?? 0;
+  const known = lyricsFor(s.key);
+  const currentId = known?.status === "done" ? (known.lyrics?.id ?? null) : null;
+  if (s.status === "loading") list.append(h("div", { class: "int-status", text: "Searching lrclib.net…" }));
+  if (s.status === "error") list.append(h("div", { class: "int-status", style: "color:#F4505E", text: s.error }));
+  if (s.status === "done" && s.hits.length === 0) {
+    list.append(h("div", { class: "int-status", text: "Nothing found. Try fewer words or another spelling." }));
+  }
+  for (const hit of s.hits) list.append(hitRow(hit, songMs, currentId, s));
+  if (s.choosing === -1) list.prepend(h("div", { class: "int-status", text: "Going back to the automatic match…" }));
+}
+
+function searchPanel(): HTMLElement {
+  const s = search!;
+  const input = h("input", {
+    class: "lyr-input",
+    type: "text",
+    spellcheck: "false",
+    placeholder: "Title and artist",
+  }) as HTMLInputElement;
+  input.value = s.query;
+  input.addEventListener("input", () => {
+    s.query = input.value;
+    s.caret = input.selectionStart ?? input.value.length;
+  });
+  // The island never takes the keyboard on its own: ask for it on a click.
+  input.addEventListener("mousedown", () => {
+    void Bridge.focusWindow(true);
+    window.setTimeout(() => input.focus(), 30);
+  });
+  input.addEventListener("focus", () => {
+    s.focused = true;
+  });
+  input.addEventListener("blur", () => {
+    // Removed by a rebuild: the new field takes the focus back.
+    if (!input.isConnected || search !== s) return;
+    s.focused = false;
+    s.caret = input.selectionStart ?? input.value.length;
+    void Bridge.focusWindow(false);
+  });
+  input.addEventListener("keydown", (e) => {
+    // ← → move the caret here, not the pills; Escape leaves the search, not the island.
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight") e.stopPropagation();
+    if (e.key === "Enter") {
+      e.preventDefault();
+      runSearch();
+    }
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      closeSearch();
+    }
+  });
+
+  const known = lyricsFor(s.key);
+  const chosen = known?.status === "done" && known.lyrics?.chosen === true;
+  const list = h("div", { class: "int-rows scroll lyr-hits" });
+  searchList = list;
+  const panel = h(
+    "div",
+    { class: "int-card detail media-detail lyr-search" },
+    h(
+      "div",
+      { class: "int-detail-head" },
+      h("button", { class: "int-back", title: "Back to the lyrics", onclick: closeSearch }, svg(ICONS.chevronLeft, 10, { stroke: 2.4 })),
+      input,
+      h("button", { class: "lyr-btn", title: "Search (Enter)", onclick: runSearch }, svg(SEARCH_ICON, 10, { stroke: 2.4 })),
+      chosen
+        ? h("button", { class: "lyr-btn ghost", title: "Forget the pick and match automatically", text: "Auto", onclick: () => choose(null) })
+        : null,
+    ),
+    list,
+  );
+  // Selecting text must not swipe to another pill (carousel drag).
+  panel.addEventListener("mousedown", (e) => e.stopPropagation());
+  requestAnimationFrame(() => {
+    renderHits();
+    if (s.focused && search === s) {
+      input.focus();
+      input.setSelectionRange(s.caret, s.caret);
+    }
+  });
+  return panel;
+}
+
+function mediaDetail(onBack: () => void, onRebuild: () => void): HTMLElement {
   const d = get("integration_media");
   const key = trackKey(d);
   const timeline = timelineOf(d);
+  rebuild = onRebuild;
+  // A new song ends a search meant for the last one.
+  if (search && search.key !== key) {
+    if (search.focused) void Bridge.focusWindow(false);
+    search = null;
+  }
+  if (search && lyricsOn()) {
+    live = null;
+    syncTimer();
+    return searchPanel();
+  }
   ensureLyrics(d, key);
 
   const list = h("div", { class: "int-rows scroll lyr-list" });
@@ -603,6 +839,9 @@ function mediaDetail(onBack: () => void): HTMLElement {
   if (head) {
     if (artist) head.append(h("span", { class: "media-detail-artist", text: artist }));
     head.append(h("div", { class: "media-progress mini" }, elapsed, h("div", { class: "media-bar" }, fill), total));
+    if (lyricsOn()) {
+      head.append(h("button", { class: "int-more", title: "Wrong lyrics? Search by hand", onclick: openSearch }, svg(SEARCH_ICON, 10, { stroke: 2.4 })));
+    }
   }
 
   const l = emptyLive(key, frame, timeline);
@@ -802,7 +1041,12 @@ export function renderPersonalCard(
     case "integration_space":
       return detailOpen ? spaceDetail(closeDetail) : spaceCard(openDetail);
     case "integration_media":
-      return detailOpen ? mediaDetail(closeDetail) : mediaCard(openDetail);
+      if (!detailOpen && search) {
+        // The detail was closed (back button, another pill): so is its search.
+        if (search.focused) void Bridge.focusWindow(false);
+        search = null;
+      }
+      return detailOpen ? mediaDetail(closeDetail, openDetail) : mediaCard(openDetail);
     case "integration_messages":
       return detailOpen ? messagesDetail(closeDetail) : messagesCard(openDetail);
     default:

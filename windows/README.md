@@ -187,12 +187,23 @@ network call is the Music pill's lyrics (lrclib.net), which Settings can turn of
   player re-reporting its position); the island moves the bar and the lyrics
   itself with a 250 ms timer that only runs while a song plays on screen.
   Collapsed with the Music pill in focus and a song playing, the island widens
-  and sings the current line instead of showing the other pills (the song's
-  title and artist during the intro and the gaps).
+  and sings the current line, centred, instead of showing the other pills (the
+  song's title and artist during the intro and the gaps).
 - **Lyrics.** `lyrics.rs` asks LRCLIB's exact match (title, artist, album,
-  length), then its search, picking the result within 3 s of the song's length
-  (synced lyrics first). Results, "not found" included, are cached for the run;
-  network errors are retried 30 s later. Only the title, artist, album and
+  length) and stops there only when it is synced and within 2 s of the song.
+  Otherwise it searches (as reported, with "feat."/"Remastered" noise
+  stripped, then free text) until a record is, and picks from everything it
+  saw: a length within 3 s first, then synced over plain over instrumental,
+  then the closest length. Results, "not found" included, are cached for the
+  run; network errors are retried 30 s later.
+- **Wrong lyrics.** The 🔍 button in the lyrics detail (or "Search lyrics by
+  hand" when none were found) opens a search box prefilled with the title and
+  first artist. Rows come best first, with the length in green (same, ≤ 2 s),
+  amber (≤ 3 s) or grey (another recording) and a synced/plain badge. Clicking
+  one uses it for this song from now on, remembered in `lyrics-choices.json`
+  next to `settings.json` (newest 500 songs); **Auto** forgets the pick. The
+  box takes the keyboard only when clicked; ← → and Esc act on it, not on the
+  island. Only the title, artist, album and
   length leave the PC, nothing reaches the log, and nothing is sent while
   **Settings → Integrations → Music → Lyrics** is off or Coucou is paused.
 - **Messages.** Reads Action Center toasts through `UserNotificationListener`

@@ -4,6 +4,9 @@ import assert from "node:assert/strict";
 import {
   activeLine,
   currentPositionMs,
+  defaultQuery,
+  durationMatch,
+  hitKind,
   formatTime,
   LYRIC_LEAD_MS,
   lyricWindow,
@@ -125,4 +128,30 @@ test("plain lyrics squeeze blank runs and trim the edges", () => {
   assert.deepEqual(plainLines("\n\nBaby\r\n I want you \n\n\n\nWait\n\n"), ["Baby", "I want you", "", "Wait"]);
   assert.deepEqual(plainLines(null), []);
   assert.deepEqual(plainLines(""), []);
+});
+
+test("search rows say how well the length fits", () => {
+  assert.equal(durationMatch(161_000, 161_000), "same");
+  assert.equal(durationMatch(163_000, 161_000), "same");
+  assert.equal(durationMatch(158_500, 161_000), "near");
+  assert.equal(durationMatch(165_000, 161_000), "off");
+  assert.equal(durationMatch(null, 161_000), "unknown");
+  assert.equal(durationMatch(161_000, 0), "unknown");
+});
+
+test("the manual search starts from the title and the first artist", () => {
+  assert.equal(defaultQuery({ title: "Love Shot", artist: "EXO" }), "Love Shot EXO");
+  assert.equal(defaultQuery({ title: "Stay", artist: "The Kid LAROI, Justin Bieber" }), "Stay The Kid LAROI");
+  assert.equal(defaultQuery({ title: "Song", artist: "A feat. B" }), "Song A");
+  assert.equal(defaultQuery({ title: "Song", artist: "Simon & Garfunkel" }), "Song Simon");
+  assert.equal(defaultQuery({ title: "Song" }), "Song");
+  assert.equal(defaultQuery({}), "");
+});
+
+test("search rows name what kind of lyrics they hold", () => {
+  const hit = { id: 1, title: "t", artist: "a", album: "", durationMs: 1, synced: true, plain: true, instrumental: false };
+  assert.equal(hitKind(hit), "synced");
+  assert.equal(hitKind({ ...hit, synced: false }), "plain");
+  assert.equal(hitKind({ ...hit, synced: false, plain: false, instrumental: true }), "instrumental");
+  assert.equal(hitKind({ ...hit, synced: false, plain: false }), "");
 });
