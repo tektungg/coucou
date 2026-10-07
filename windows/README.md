@@ -364,6 +364,20 @@ The 28 sounds are the macOS app's own files; they are never duplicated in this
 folder. The path is declared once, in `SOUNDS_DIR` at the top of
 `vite.config.ts` — when they move to `shared/sounds/`, change that one line.
 
+### Patched Tauri runtime
+
+`patches/tauri-runtime-wry/` is Tauri's `tauri-runtime-wry` 2.12.0 with a single
+change, swapped in through `[patch.crates-io]` in `Cargo.toml`. Stock Tauri clones
+a non-thread-safe `Rc` whenever an `AppHandle` or a webview is cloned off the main
+thread, which the pollers and the cursor thread do all the time. Debug builds
+aborted on it (`unsafe precondition(s) violated` in `Rc::inc_strong`); release
+builds corrupted memory quietly (tauri-apps/tauri#15408, still open in 2.12.1).
+`tauri` is pinned to `=2.12.0` to match, and `src-tauri/src/rc_guard.rs` refuses
+to compile if the patch is ever left out. `scripts/rc-stress.ps1` checks it at
+runtime: 4 threads clone the `AppHandle` while the debug build runs (stock: crash;
+patched: survives). Before upgrading Tauri, read
+`patches/tauri-runtime-wry/PATCH.md`.
+
 The app icon and the tray icon are drawn in code, like Mochi itself:
 
 ```powershell
@@ -381,7 +395,9 @@ windows/
     settings/          the settings window
   src-tauri/           Rust backend: window, named pipe, Claude API, pollers
   hook/                coucou-hook.exe, the Claude Code relay
-  scripts/             icon generator
+  patches/             vendored tauri-runtime-wry with the Rc race fix
+  scripts/             icon generator, packaging, rc-stress.ps1
+  dev/                 browser previews: upload, Mochi acts, Music card
 ```
 
 ### Log

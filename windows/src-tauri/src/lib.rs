@@ -18,6 +18,7 @@ mod personal;
 mod pipe;
 mod platform;
 mod quota;
+mod rc_guard;
 mod romanize;
 mod shelf;
 mod secrets;
@@ -597,6 +598,8 @@ pub fn run() {
             }
             gate.set_active(true);
             island::spawn_cursor_poll(handle.clone(), gate.clone());
+            #[cfg(debug_assertions)]
+            rc_guard::maybe_stress(&handle);
 
             log::line(format!("--- Coucou {} started ---", env!("CARGO_PKG_VERSION")));
             hooks::ensure_hook_exe(&handle);

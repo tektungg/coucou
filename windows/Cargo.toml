@@ -15,3 +15,10 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
+
+# Fixes an off-main-thread Rc race in Tauri on Windows (tauri-apps/tauri#15408):
+# see patches/tauri-runtime-wry/PATCH.md. Applies to tauri 2.12.0 only, which is
+# why src-tauri pins tauri to =2.12.0; src-tauri/src/rc_guard.rs fails the build
+# if the patch ever stops being used.
+[patch.crates-io]
+tauri-runtime-wry = { path = "patches/tauri-runtime-wry" }
