@@ -2,6 +2,7 @@
 
 import type { BotEmoteName, BotStateName, IslandMode, IslandViewName } from "./layout";
 import type { EyeShape } from "../mochi/engine";
+import type { Act } from "../mochi/acts";
 import type { AskAnswer, AskItem } from "../island/askQuestion";
 import { compareSessions, isSessionPill, sessionColor, staleSessions } from "../island/sessions";
 
@@ -28,6 +29,8 @@ export interface AgentTask {
   /** Context use and cost of that session, from the statusline's status file. */
   ctxPct?: number;
   costUsd?: number;
+  /** One-shot act a pill event started (mochi/acts.ts); continuous acts are derived each frame. */
+  act?: Act | null;
 }
 
 export interface ApprovalInfo {

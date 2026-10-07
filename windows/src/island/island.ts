@@ -12,7 +12,7 @@ import {
 import { Sound } from "../core/sound";
 import { State } from "../core/state";
 import { BotEngine, hexToRGB } from "../mochi/engine";
-import { isDancing } from "../mochi/dance";
+import { actFor } from "../mochi/acts";
 import { Greeting } from "../mochi/greeting";
 import { createMiniBot, pruneMiniBots, syncMiniBotStates, tickMiniBots } from "../mochi/minibots";
 import { UploadCanvas } from "../upload/canvas";
@@ -1008,7 +1008,7 @@ export class Island {
 
     const focus = State.focusTask;
     this.engine.bodyColor = focus?.isIntegration ? hexToRGB(focus.color) : null;
-    this.engine.dancing = isDancing(focus);
+    this.engine.act = actFor(focus, focus ? State.integrations[focus.id]?.data : null, performance.now());
     this.engine.particleOverhang = BOT_OVERHANG;
     this.engine.lookX = this.lookX();
     this.engine.lookY = this.lookY();

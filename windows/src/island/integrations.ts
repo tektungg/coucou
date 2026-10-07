@@ -3,6 +3,7 @@
 // the pill isn't focused, plays a sound, and clears itself after 60 s.
 
 import { alertTarget } from "./quotaAlert";
+import { detectAct } from "../mochi/acts";
 import { patchAudioCard } from "../views/personal";
 import { onEvent, Bridge, type IntegrationUpdate } from "../core/bridge";
 import { Sound } from "../core/sound";
@@ -53,7 +54,13 @@ function handle(island: Island, update: IntegrationUpdate) {
     configured: previous?.configured ?? true,
   };
 
-  if (!update.error) applyPersonal(update);
+  if (!update.error) {
+    applyPersonal(update);
+    // Mochi's act for this pill's news (a new message, file, Space item done).
+    const act = detectAct(update.id, previous?.loaded ? previous.data : null, update.data, update.event);
+    const actTask = act ? State.tasks.find((t) => t.id === update.id) : null;
+    if (act && actTask) actTask.act = { ...act, at: performance.now() };
+  }
   if (update.id === "integration_audio") patchAudioCard();
 
   const event = update.event;
@@ -87,6 +94,7 @@ function handle(island: Island, update: IntegrationUpdate) {
           t.steps = [];
           t.stepIndex = 0;
           t.pillBadge = null;
+          t.act = null;
           // Back to whatever the pill's data says (music playing, quota high).
           applyPersonal({ id: targetId, data: State.integrations[targetId]?.data ?? {}, error: null, event: null });
           State.notify();

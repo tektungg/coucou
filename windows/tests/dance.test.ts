@@ -1,7 +1,7 @@
 // Mochi's music groove (headphones + dance while the Music pill plays). Run with `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { BEAT, MEDIA_PILL_ID, dancePose, isDancing, noteDue } from "../src/mochi/dance.ts";
+import { BEAT, MEDIA_PILL_ID, dancePose, isDancing, noteDue } from "../src/mochi/acts.ts";
 
 const near = (a: number, b: number, eps = 1e-9) => Math.abs(a - b) <= eps;
 

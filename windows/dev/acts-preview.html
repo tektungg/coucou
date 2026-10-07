@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Coucou — Mochi acts preview</title>
+    <style>
+      body { margin: 0; background: #1b1b1f; font: 12px system-ui; color: #ddd; }
+      #stage { display: grid; grid-template-columns: repeat(4, 150px); gap: 8px 18px; justify-content: center;
+               margin: 16px auto; width: 680px; padding: 12px 0; background: #000; border-radius: 22px; }
+      .cell { display: flex; flex-direction: column; align-items: center; }
+      .cell span { color: #9aa; margin-top: -6px; }
+    </style>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <script type="module" src="./acts-preview.ts"></script>
+  </body>
+</html>

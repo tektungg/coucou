@@ -2,8 +2,8 @@
 // Each canvas owns a BotEngine; the island's frame loop ticks every live one.
 
 import { BotEngine, hexToRGB } from "./engine";
-import { isDancing } from "./dance";
-import type { AgentTask } from "../core/state";
+import { actFor } from "./acts";
+import { State, type AgentTask } from "../core/state";
 
 interface MiniBot {
   canvas: HTMLCanvasElement;
@@ -42,9 +42,8 @@ export function createMiniBot(task: AgentTask, bodySize: number): HTMLElement {
   engine.isMini = true;
   engine.bodyColor = hexToRGB(task.color);
   engine.setState(task.state, true);
-  engine.dancing = isDancing(task);
-  // Already playing when the view is built: start mid-groove, no fade-in.
-  if (engine.dancing) engine.groove = 1;
+  // Views are rebuilt wholesale: an act already playing carries on, no fade-in.
+  engine.setActNow(actFor(task, State.integrations[task.id]?.data, performance.now()));
   if (task.emote) engine.setPermanentEmote(task.emote);
   if (task.miniEye) {
     engine.permanentEye = task.miniEye;
@@ -72,16 +71,19 @@ export function syncMiniBotStates(tasks: AgentTask[]) {
     const task = tasks.find((t) => t.id === mb.taskId);
     if (!task) continue;
     mb.engine.setState(task.state);
-    mb.engine.dancing = isDancing(task);
     mb.engine.bodyColor = hexToRGB(task.color);
   }
 }
 
 export function tickMiniBots(dt: number) {
   const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const nowMs = performance.now();
   for (const mb of live.values()) {
     const ctx = mb.canvas.getContext("2d");
     if (!ctx) continue;
+    // Re-read every frame: one-shot acts end by time, not by a state change.
+    const task = State.tasks.find((t) => t.id === mb.taskId);
+    mb.engine.act = actFor(task, task ? State.integrations[task.id]?.data : null, nowMs);
     mb.engine.update(dt);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, mb.cssSize, mb.cssSize);

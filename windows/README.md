@@ -197,20 +197,38 @@ network call is the Music pill's lyrics (lrclib.net), which Settings can turn of
   island does not auto-hide (the FSM's `keepPetit`), except over a fullscreen
   game, video or presentation, and a song starting on the Music pill brings
   it back if it had hidden.
-- **Mochi's groove.** While the Music pill plays (`isDancing` in
-  `mochi/dance.ts`: the pill is `working`, so a pause or an event card stops
-  it), Mochi wears headphones and dances: one hop per beat at a fixed 112 BPM
-  (the real tempo is not available since Spotify closed its audio features),
-  a lean to alternating sides every other beat, a squash on each landing, the
-  hand opposite the lean raised, happy eyes, and a music note every two beats.
-  The pose is a pure function of time (`dancePose`, tested in
-  `tests/dance.test.ts`); `BotEngine` fades it in and out over about a second
-  (`groove`) and adds it on top of its own animation, so a slap or an emote
-  still plays over it. The headphones replace the state badge, which would sit
-  under the headband. Pill minis wear the headphones and dance too, without
-  hands or notes. Nothing runs while the island is hidden (the frame loop's
-  hidden gate). `dev/dance-preview.html` shows it in a plain browser with
-  `npm run dev` (`?paused`, `?t=<seconds>` to freeze a pose).
+- **Mochi's acts.** Each personal pill has a themed animation, played only
+  on a real event (`mochi/acts.ts`, tested in `tests/acts.test.ts` and
+  `tests/dance.test.ts`):
+
+  | Pill | Trigger | Act |
+  |---|---|---|
+  | Music | the pill is `working` (a song plays) | headphones, dances at a fixed 112 BPM (Spotify closed its tempo API), music notes |
+  | Audio | `micUsers` is not empty (an app uses the mic) | call headset with a boom mic, nods as if talking, sound waves; red mic, no waves, while the mic is muted |
+  | Messages | the pill's `event` (a new toast, never the backlog) | an envelope pops up, surprised hop, the flap opens on a letter, hearts (3.2 s) |
+  | Shelf | a file not on the shelf before, or saved again (screenshots, downloads, pins) | a box on the head, looks up, a sheet falls in, wobble, sparks (2.6 s) |
+  | Space | the done count goes up (one poll every 5 minutes) | hard hat and clipboard, the check mark draws itself, proud hop; star eyes and confetti when every item is done (2.8 s / 3.6 s) |
+
+  Only Messages sends an `event`, so `detectAct` compares each update with the
+  pill's previous data in `island/integrations.ts`. The first data after a
+  launch is the backlog and never plays, and files leaving the shelf (the
+  3-day window, an unpin) never count. A one-shot is stored on the pill
+  (`AgentTask.act`, with its start time); `actFor` gives a live one-shot
+  priority, then a continuous act (Music, Audio). The island and the pill
+  minis ask it every frame, so a one-shot ends on time.
+  `BotEngine` draws every prop in code and adds the act's pose on top of its
+  own animation, so a slap or an emote still plays over it. A one-shot drops
+  the "finished" eye roll it arrives with. Swapping acts fades the old one
+  out, then the new one in. The Music groove eases in and out over about a
+  second. One-shots pop their props in and fade their pose back to neutral at
+  the end. The props replace the state badge, which would sit under them.
+  Minis play the acts too, without hands or particles. Nothing runs while the
+  island is hidden (the frame loop's hidden gate). `dev/acts-preview.html`
+  shows every act side by side with `npm run dev`; one-shots loop, and
+  `?t=<seconds>` freezes them at that age (the page title then lists each
+  engine's act and age). In dev, a Vite page reload wipes the pills' data and
+  Rust only re-sends a pill when it changes, so the first change after a
+  reload counts as a first load and plays nothing.
 - **Lyrics.** `lyrics.rs` asks LRCLIB's exact match (title, artist, album,
   length) and stops there only when it is synced and within 2 s of the song.
   Otherwise it searches (as reported, with "feat."/"Remastered" noise

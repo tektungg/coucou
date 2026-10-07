@@ -7,7 +7,7 @@
 import { Ease, lerp, type EaseFn } from "../core/anim";
 import { Sound } from "../core/sound";
 import type { BotEmoteName, BotStateName } from "../core/layout";
-import { dancePose, noteDue } from "./dance";
+import { ACT_HANDS, isOneShot, noteDue, actBursts, actEye, actKey, actPose, actProps, type Act, type Props } from "./acts";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -69,6 +69,7 @@ const BASE_TOP: RGB = [0.929, 0.929, 0.937]; // #EDEDEF
 const BASE_BOTTOM: RGB = [0.769, 0.773, 0.792]; // #C4C5CA
 const INK = "rgb(26,20,18)"; // #1A1412
 const MINI_INK = "rgb(16,19,26)"; // #10131A
+const GRAPHITE = "rgb(54,58,69)"; // act props: headband, boom mic
 
 const C = {
   idle: [0.902, 0.914, 0.933] as RGB,
@@ -218,14 +219,26 @@ export class BotEngine {
   private miniLookTarget = { x: 0, y: 0 };
   private miniLookNextTime = 0;
 
-  /** Music groove (mochi/dance.ts): headphones + dance while the Music pill plays. */
-  dancing = false;
-  /** 0…1 fade of the groove, so play/pause never snaps. */
-  groove = 0;
-  // Dance pose × groove, added on top of the regular animation at draw time.
-  private dOx = 0; private dOy = 0; private dTilt = 0; private dYaw = 0;
+  /** The pill's act (mochi/acts.ts), set by the island and the mini bots every frame. */
+  act: Act | null = null;
+  /** The act being drawn, which lags `act` so a swap fades out then in, and its 0…1 fade. */
+  private shown: Act | null = null;
+  actAmt = 0;
+  // Act pose × actAmt, added on top of the regular animation at draw time.
+  private dOx = 0; private dOy = 0; private dTilt = 0; private dYaw = 0; private dPitch = 0;
   private dSx = 1; private dSy = 1; private dHandL = 0; private dHandR = 0;
+  private actEyeShape: EyeShape | null = null;
+  private props: Props = { show: 1, flap: 0, fall: 0, stroke: 0 };
   private lastDanceT = 0;
+  private lastActAge = 0;
+
+  /** Plays `act` at full strength right away (a view rebuilt in the middle of it). */
+  setActNow(act: Act | null) {
+    this.act = act;
+    this.shown = act;
+    this.actAmt = act ? 1 : 0;
+    this.lastActAge = act && isOneShot(act.name) ? (performance.now() - act.at) / 1000 : 0;
+  }
 
   /** Fired when three slaps land inside 1.7 s (→ dizzy + confused view). */
   onDizzy: (() => void) | null = null;
@@ -468,7 +481,7 @@ export class BotEngine {
       this.tweens.size > 0 ||
       this.particles.length > 0 ||
       this.cfg.bounces || this.cfg.scans || this.cfg.breathes || this.cfg.zz || this.cfg.sweat ||
-      this.isMini || this.dancing || this.groove > 0.001 ||
+      this.isMini || this.act != null || this.actAmt > 0.001 ||
       Math.abs(this.tgYaw - this.yaw) > 0.002 ||
       Math.abs(this.tgPitch - this.pitch) > 0.002 ||
       Math.abs(this.tgTilt - this.tilt) > 0.002 ||
@@ -597,7 +610,7 @@ export class BotEngine {
       if (!this.isMini && this.cfg.sweat && Math.random() < 0.5) this.emit("sweat", 1);
     }
 
-    this.updateDance(dt, t);
+    this.updateAct(dt, t);
 
     for (const p of this.particles) p.age += dt;
     this.particles = this.particles.filter((p) => p.age < p.life);
@@ -612,21 +625,59 @@ export class BotEngine {
     this.lastTime = n;
   }
 
-  private updateDance(dt: number, t: number) {
-    this.groove += ((this.dancing ? 1 : 0) - this.groove) * (1 - Math.pow(0.02, dt));
-    if (!this.dancing && this.groove < 0.001) this.groove = 0;
-    const g = this.groove;
-    if (g > 0) {
-      const p = dancePose(t);
-      this.dOx = p.ox * g; this.dOy = p.oy * g; this.dTilt = p.tilt * g; this.dYaw = p.yaw * g;
+  private updateAct(dt: number, t: number) {
+    const target = this.act;
+    const same = actKey(target) === actKey(this.shown);
+    if (!same && this.actAmt <= 0.02) {
+      // A one-shot owns the eyes: drop the "finished" eye roll it arrives with.
+      if (target && isOneShot(target.name)) this.cancelRoll();
+      this.shown = target;
+      this.lastActAge = 0;
+    } else if (same && target) {
+      this.shown = target; // live variant (the mic muted mid-call)
+    }
+    const shown = this.shown;
+    const want = shown && actKey(shown) === actKey(target) ? 1 : 0;
+    // The Music groove eases in and out over about a second; other acts swap fast
+    // (one-shots pop their props and fade their own pose out at the end).
+    const slow = shown?.name === "dance" && (want === 1 || target == null);
+    this.actAmt += (want - this.actAmt) * (1 - Math.pow(slow ? 0.02 : 0.0005, dt));
+    if (want === 0 && this.actAmt < 0.001) {
+      this.actAmt = 0;
+      this.shown = null;
+    }
+
+    const g = this.actAmt;
+    if (this.shown && g > 0) {
+      const a = this.shown;
+      const oneShot = isOneShot(a.name);
+      const age = oneShot ? (performance.now() - a.at) / 1000 : t;
+      const p = actPose(a.name, a.variant, age, t);
+      this.dOx = p.ox * g; this.dOy = p.oy * g; this.dTilt = p.tilt * g;
+      this.dYaw = p.yaw * g; this.dPitch = p.pitch * g;
       this.dSx = lerp(1, p.sx, g); this.dSy = lerp(1, p.sy, g);
       this.dHandL = p.handL * g; this.dHandR = p.handR * g;
+      this.actEyeShape = g > 0.5 ? actEye(a.name, a.variant, age) : null;
+      this.props = actProps(a.name, a.variant, age);
+      if (oneShot && !this.isMini) {
+        for (const b of actBursts(a.name, a.variant, this.lastActAge, age)) this.emit(b.type, b.count);
+      }
+      this.lastActAge = age;
     } else {
-      this.dOx = this.dOy = this.dTilt = this.dYaw = this.dHandL = this.dHandR = 0;
+      this.dOx = this.dOy = this.dTilt = this.dYaw = this.dPitch = this.dHandL = this.dHandR = 0;
       this.dSx = this.dSy = 1;
+      this.actEyeShape = null;
     }
-    if (this.dancing && !this.isMini && g > 0.6 && noteDue(this.lastDanceT, t)) this.emit("note", 1);
+    if (this.shown?.name === "dance" && want && !this.isMini && g > 0.6 && noteDue(this.lastDanceT, t)) {
+      this.emit("note", 1);
+    }
     this.lastDanceT = t;
+  }
+
+  private cancelRoll() {
+    this.tweens.delete("roll");
+    this.locks.delete("roll");
+    this.roll = 0;
   }
 
   private doMiniBehaviorLoop() {
@@ -705,13 +756,13 @@ export class BotEngine {
 
     this.drawEyes(x, body, R, rx, ry);
     if (this.morph > 0.05) this.drawMouth(x, body, R);
-    const phones = this.groove * Math.max(0, 1 - this.morph * 2);
-    if (phones > 0.01) this.drawHeadphones(x, R, rx, ry, phones);
+    const propAmt = this.actAmt * Math.max(0, 1 - this.morph * 2);
+    if (this.shown && propAmt > 0.01) this.drawProps(x, R, rx, ry, this.shown, propAmt);
 
     x.restore();
 
-    // The badge sits where the headband goes; the headphones say "music" instead.
-    if (this.badge && this.badgeS > 0.01 && this.morph < 0.25 && this.groove < 0.5) {
+    // The badge sits where the props go (headband, hat, box); the act says it instead.
+    if (this.badge && this.badgeS > 0.01 && this.morph < 0.25 && this.actAmt < 0.5) {
       this.drawBadge(x, this.badge, R, cx, cy);
     }
     this.drawParticles(x, R, cx, cy);
@@ -782,7 +833,7 @@ export class BotEngine {
   }
 
   private drawEyes(x: CanvasRenderingContext2D, body: Path2D, R: number, rx: number, ry: number) {
-    let shape: EyeShape = this.eyeOverride ?? (this.groove > 0.5 ? "happy" : this.cfg.eye);
+    let shape: EyeShape = this.eyeOverride ?? this.actEyeShape ?? this.cfg.eye;
     if (this.morph > 0.5) {
       if (this.isChewing) shape = "happy";
       else if (this.slotHTarget > 0.05 || this.slotH > 0.1) shape = "cup";
@@ -796,7 +847,7 @@ export class BotEngine {
 
     for (const sd of [-1, 1]) {
       const eyeYaw = sd * EYE_SP + this.yaw + this.dYaw;
-      let eyePitch = EYE_P + this.pitch + this.roll;
+      let eyePitch = EYE_P + this.pitch + this.dPitch + this.roll;
       eyePitch = (((eyePitch + Math.PI) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
       const cp = Math.cos(eyePitch);
       if (Math.cos(eyeYaw) * cp <= 0.04) continue;
@@ -966,16 +1017,32 @@ export class BotEngine {
     x.restore();
   }
 
-  /** Headphones, in body space so they follow the hop and sway. Drawn in code. */
-  private drawHeadphones(x: CanvasRenderingContext2D, R: number, rx: number, ry: number, alpha: number) {
+  // ── Act props: all drawn in code, in body space so they follow the pose ──────
+
+  private drawProps(x: CanvasRenderingContext2D, R: number, rx: number, ry: number, act: Act, alpha: number) {
+    const p = this.props;
+    x.save();
+    x.globalAlpha = alpha;
+    switch (act.name) {
+      case "dance": this.drawHeadphones(x, R, rx, ry); break;
+      case "mic": this.drawMicHeadset(x, R, rx, ry, act.variant === "muted"); break;
+      case "mail": this.drawEnvelope(x, R, ry, p.show, p.flap); break;
+      case "catch": this.drawBox(x, R, ry, p.show, p.fall); break;
+      case "check":
+        this.drawHardHat(x, R, rx, ry, p.show);
+        this.drawClipboard(x, R, rx, ry, p.show, p.stroke);
+        break;
+    }
+    x.restore();
+  }
+
+  /** Headband over the head; returns the sideways shift that follows the head turn. */
+  private drawHeadband(x: CanvasRenderingContext2D, R: number, rx: number, ry: number): number {
     const shift = Math.sin(this.yaw + this.dYaw) * rx * 0.1;
     const bandY = -ry * 0.08;
     const bandW = Math.max(1.2, R * 0.12);
-
-    x.save();
-    x.globalAlpha = alpha;
     x.lineCap = "round";
-    x.strokeStyle = "rgb(54,58,69)";
+    x.strokeStyle = GRAPHITE;
     x.lineWidth = bandW;
     x.beginPath();
     x.ellipse(shift * 0.5, bandY, rx * 0.98, ry * 1.12, 0, Math.PI * 1.04, Math.PI * 1.96);
@@ -985,23 +1052,276 @@ export class BotEngine {
     x.beginPath();
     x.ellipse(shift * 0.5, bandY, rx * 0.98, ry * 1.12, 0, Math.PI * 1.25, Math.PI * 1.6);
     x.stroke();
+    return shift;
+  }
 
-    const w = R * 0.3;
-    const h = R * 0.58;
-    for (const sd of [-1, 1]) {
-      x.save();
-      x.translate(sd * rx * 0.97 + shift, -ry * 0.04);
-      const g = x.createLinearGradient(0, -h / 2, 0, h / 2);
-      g.addColorStop(0, "rgb(84,89,103)");
-      g.addColorStop(1, "rgb(36,39,47)");
-      roundRectPath(x, -w / 2, -h / 2, w, h, w * 0.45);
-      x.fillStyle = g;
-      x.fill();
-      x.strokeStyle = "rgba(255,255,255,0.18)";
+  private drawEarCup(x: CanvasRenderingContext2D, R: number, cx: number, cy: number, scale = 1) {
+    const w = R * 0.3 * scale;
+    const h = R * 0.58 * scale;
+    x.save();
+    x.translate(cx, cy);
+    const g = x.createLinearGradient(0, -h / 2, 0, h / 2);
+    g.addColorStop(0, "rgb(84,89,103)");
+    g.addColorStop(1, "rgb(36,39,47)");
+    roundRectPath(x, -w / 2, -h / 2, w, h, w * 0.45);
+    x.fillStyle = g;
+    x.fill();
+    x.strokeStyle = "rgba(255,255,255,0.18)";
+    x.lineWidth = Math.max(0.8, R * 0.03);
+    roundRectPath(x, -w * 0.32, -h * 0.36, w * 0.64, h * 0.72, w * 0.3);
+    x.stroke();
+    x.restore();
+  }
+
+  /** Music: headphones. */
+  private drawHeadphones(x: CanvasRenderingContext2D, R: number, rx: number, ry: number) {
+    const shift = this.drawHeadband(x, R, rx, ry);
+    for (const sd of [-1, 1]) this.drawEarCup(x, R, sd * rx * 0.97 + shift, -ry * 0.04);
+  }
+
+  /** Audio: a call headset, boom mic to the mouth; sound waves, or a red muted mic. */
+  private drawMicHeadset(x: CanvasRenderingContext2D, R: number, rx: number, ry: number, muted: boolean) {
+    const shift = this.drawHeadband(x, R, rx, ry);
+    this.drawEarCup(x, R, rx * 0.97 + shift, -ry * 0.04, 0.8);
+    const lx = -rx * 0.97 + shift;
+    const ly = -ry * 0.04;
+    const mx = -rx * 0.32 + shift * 1.5;
+    const my = ry * 0.52;
+    x.lineCap = "round";
+    x.strokeStyle = GRAPHITE;
+    x.lineWidth = Math.max(1, R * 0.07);
+    x.beginPath();
+    x.moveTo(lx, ly + R * 0.1);
+    x.quadraticCurveTo(lx + rx * 0.05, my + ry * 0.08, mx, my);
+    x.stroke();
+    this.drawEarCup(x, R, lx, ly);
+
+    x.beginPath();
+    x.ellipse(mx, my, R * 0.11, R * 0.085, 0, 0, Math.PI * 2);
+    x.fillStyle = muted ? "rgb(244,80,94)" : "rgb(84,89,103)";
+    x.fill();
+    x.fillStyle = "rgba(255,255,255,0.3)";
+    x.beginPath();
+    x.ellipse(mx - R * 0.03, my - R * 0.03, R * 0.04, R * 0.025, 0, 0, Math.PI * 2);
+    x.fill();
+
+    if (muted) {
+      x.strokeStyle = "#fff";
       x.lineWidth = Math.max(0.8, R * 0.03);
-      roundRectPath(x, -w * 0.32, -h * 0.36, w * 0.64, h * 0.72, w * 0.3);
+      x.beginPath();
+      x.moveTo(mx - R * 0.07, my + R * 0.055);
+      x.lineTo(mx + R * 0.07, my - R * 0.055);
       x.stroke();
+      return;
+    }
+    const t = now();
+    x.lineWidth = Math.max(1, R * 0.055);
+    for (let i = 0; i < 3; i++) {
+      const ph = (t * 1.4 + i / 3) % 1;
+      x.strokeStyle = `rgba(255,255,255,${0.95 * (1 - ph)})`;
+      x.beginPath();
+      x.arc(mx, my, R * (0.2 + 0.32 * ph), Math.PI * 0.5, Math.PI * 1.1);
+      x.stroke();
+    }
+  }
+
+  /** Messages: an envelope pops up in front; the flap opens on a letter. */
+  private drawEnvelope(x: CanvasRenderingContext2D, R: number, ry: number, show: number, flap: number) {
+    if (show <= 0.01) return;
+    const w = R * 1.0;
+    const h = R * 0.64;
+    const edge = "rgba(0,0,0,0.18)";
+    x.save();
+    x.translate(0, ry * 0.62);
+    x.rotate(-0.06);
+    x.scale(show, show);
+    x.lineWidth = 1;
+    x.lineJoin = "round";
+    const apex = lerp(h * 0.08, -h / 2 - h * 0.6, flap);
+    const flapPath = () => {
+      x.beginPath();
+      x.moveTo(-w / 2, -h / 2);
+      x.lineTo(w / 2, -h / 2);
+      x.lineTo(0, apex);
+      x.closePath();
+    };
+    if (flap > 0.5) {
+      // Open: flap behind, the letter rising out of the pocket.
+      flapPath();
+      x.fillStyle = "rgb(232,228,218)";
+      x.fill();
+      x.strokeStyle = edge;
+      x.stroke();
+      const ly = -h / 2 - h * 0.38 * ((flap - 0.5) * 2);
+      roundRectPath(x, -w * 0.36, ly, w * 0.72, h * 0.7, R * 0.04);
+      x.fillStyle = "#fff";
+      x.fill();
+      x.stroke();
+      x.strokeStyle = "rgba(0,0,0,0.25)";
+      x.lineWidth = Math.max(0.6, R * 0.025);
+      for (let i = 0; i < 2; i++) {
+        x.beginPath();
+        x.moveTo(-w * 0.26, ly + h * (0.14 + i * 0.14));
+        x.lineTo(w * (0.2 - i * 0.12), ly + h * (0.14 + i * 0.14));
+        x.stroke();
+      }
+      x.lineWidth = 1;
+    }
+    roundRectPath(x, -w / 2, -h / 2, w, h, R * 0.06);
+    x.fillStyle = "rgb(252,250,244)";
+    x.fill();
+    x.strokeStyle = edge;
+    x.stroke();
+    x.strokeStyle = "rgba(0,0,0,0.12)";
+    x.beginPath();
+    x.moveTo(-w / 2, h / 2);
+    x.lineTo(0, -h * 0.02);
+    x.lineTo(w / 2, h / 2);
+    x.stroke();
+    if (flap <= 0.5) {
+      flapPath();
+      x.fillStyle = "rgb(240,236,227)";
+      x.fill();
+      x.strokeStyle = edge;
+      x.stroke();
+      x.save();
+      x.translate(0, apex - h * 0.06);
+      heartPath(x, R * 0.13);
+      x.fillStyle = "#FF4D6D";
+      x.fill();
       x.restore();
+    }
+    x.restore();
+  }
+
+  /** Shelf: a cardboard box on the head; a file sheet falls into it. */
+  private drawBox(x: CanvasRenderingContext2D, R: number, ry: number, show: number, fall: number) {
+    if (show <= 0.01) return;
+    const w = R * 0.95;
+    const h = R * 0.52;
+    const baseY = -ry * 0.8; // sunk a little into the head
+    const top = baseY - h;
+    x.save();
+    x.translate(0, baseY);
+    x.scale(show, show);
+    x.translate(0, -baseY);
+
+    // The sheet goes behind the front face, so once in it only peeks out.
+    const sw = R * 0.42;
+    const sh = R * 0.54;
+    const y = lerp(top - R * 2.4, top - sh * 0.12, fall * fall);
+    x.save();
+    x.translate(R * 0.04, y);
+    x.rotate((1 - fall) * 0.5);
+    roundRectPath(x, -sw / 2, -sh / 2, sw, sh, R * 0.03);
+    x.fillStyle = "#fff";
+    x.fill();
+    x.strokeStyle = "rgba(0,0,0,0.18)";
+    x.lineWidth = 1;
+    x.stroke();
+    x.fillStyle = "rgb(220,224,232)";
+    x.beginPath();
+    x.moveTo(sw / 2 - sw * 0.3, -sh / 2);
+    x.lineTo(sw / 2, -sh / 2 + sw * 0.3);
+    x.lineTo(sw / 2 - sw * 0.3, -sh / 2 + sw * 0.3);
+    x.closePath();
+    x.fill();
+    x.strokeStyle = "rgba(0,0,0,0.22)";
+    x.lineWidth = Math.max(0.6, R * 0.025);
+    for (let i = 0; i < 3; i++) {
+      x.beginPath();
+      x.moveTo(-sw * 0.3, -sh * 0.12 + i * sh * 0.16);
+      x.lineTo(sw * (0.3 - (i === 2 ? 0.2 : 0)), -sh * 0.12 + i * sh * 0.16);
+      x.stroke();
+    }
+    x.restore();
+
+    const g = x.createLinearGradient(0, top, 0, baseY);
+    g.addColorStop(0, "rgb(214,163,104)");
+    g.addColorStop(1, "rgb(176,128,76)");
+    roundRectPath(x, -w / 2, top, w, h, R * 0.05);
+    x.fillStyle = g;
+    x.fill();
+    x.fillStyle = "rgba(255,236,200,0.45)";
+    x.fillRect(-w * 0.09, top, w * 0.18, h);
+    x.fillStyle = "rgb(196,146,90)";
+    for (const sd of [-1, 1]) {
+      x.beginPath();
+      x.moveTo(sd * w / 2, top);
+      x.lineTo(sd * (w / 2 + w * 0.2), top - h * 0.38);
+      x.lineTo(sd * w * 0.08, top - h * 0.3);
+      x.lineTo(sd * w * 0.04, top);
+      x.closePath();
+      x.fill();
+    }
+    x.restore();
+  }
+
+  /** Space: a hard hat. */
+  private drawHardHat(x: CanvasRenderingContext2D, R: number, rx: number, ry: number, show: number) {
+    if (show <= 0.01) return;
+    x.save();
+    x.translate(0, -ry * 0.72);
+    x.scale(show, show);
+    const g = x.createLinearGradient(0, -ry * 0.62, 0, 0);
+    g.addColorStop(0, "rgb(255,214,92)");
+    g.addColorStop(1, "rgb(232,160,30)");
+    x.beginPath();
+    x.ellipse(0, 0, rx * 0.74, ry * 0.62, 0, Math.PI, Math.PI * 2);
+    x.closePath();
+    x.fillStyle = g;
+    x.fill();
+    x.fillStyle = "rgba(255,255,255,0.35)";
+    roundRectPath(x, -R * 0.07, -ry * 0.6, R * 0.14, ry * 0.58, R * 0.07);
+    x.fill();
+    roundRectPath(x, -rx * 0.98, -R * 0.04, rx * 1.96, R * 0.12, R * 0.06);
+    x.fillStyle = "rgb(226,150,24)";
+    x.fill();
+    x.restore();
+  }
+
+  /** Space: a clipboard at the side; the check mark draws itself. */
+  private drawClipboard(
+    x: CanvasRenderingContext2D, R: number, rx: number, ry: number, show: number, stroke: number,
+  ) {
+    if (show <= 0.01) return;
+    const w = R * 0.62;
+    const h = R * 0.8;
+    x.save();
+    x.translate(rx * 0.98, ry * 0.3);
+    x.rotate(-0.16);
+    x.scale(show, show);
+    roundRectPath(x, -w / 2, -h / 2, w, h, R * 0.07);
+    x.fillStyle = "rgb(176,125,76)";
+    x.fill();
+    roundRectPath(x, -w * 0.38, -h * 0.38, w * 0.76, h * 0.8, R * 0.03);
+    x.fillStyle = "#fff";
+    x.fill();
+    roundRectPath(x, -w * 0.2, -h / 2 - R * 0.05, w * 0.4, R * 0.13, R * 0.04);
+    x.fillStyle = "rgb(84,89,103)";
+    x.fill();
+    x.strokeStyle = "rgba(0,0,0,0.2)";
+    x.lineWidth = Math.max(0.6, R * 0.025);
+    x.beginPath();
+    x.moveTo(-w * 0.26, -h * 0.22);
+    x.lineTo(w * 0.26, -h * 0.22);
+    x.stroke();
+    if (stroke > 0) {
+      const pts: [number, number][] = [[-0.2 * w, 0.08 * h], [-0.04 * w, 0.24 * h], [0.24 * w, -0.06 * h]];
+      const seg = [Math.hypot(pts[1][0] - pts[0][0], pts[1][1] - pts[0][1]), Math.hypot(pts[2][0] - pts[1][0], pts[2][1] - pts[1][1])];
+      let left = stroke * (seg[0] + seg[1]);
+      x.strokeStyle = "rgb(52,212,153)";
+      x.lineWidth = R * 0.09;
+      x.lineCap = "round";
+      x.lineJoin = "round";
+      x.beginPath();
+      x.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 0; i < 2 && left > 0; i++) {
+        const k = Math.min(1, left / seg[i]);
+        x.lineTo(lerp(pts[i][0], pts[i + 1][0], k), lerp(pts[i][1], pts[i + 1][1], k));
+        left -= seg[i];
+      }
+      x.stroke();
     }
     x.restore();
   }
@@ -1013,8 +1333,8 @@ export class BotEngine {
     tilt: number, sx: number, sy: number,
   ) {
     if (this.isMini) return;
-    // Dancing brings the hands out too, independent of the greet's own tween.
-    const amount = Math.max(this.hands, this.groove);
+    // Some acts bring the hands out too, independent of the greet's own tween.
+    const amount = Math.max(this.hands, this.shown && ACT_HANDS.has(this.shown.name) ? this.actAmt : 0);
     if (amount <= 0.01) return;
     if (R <= 14) return; // meaningless at compact/peek sizes
 
