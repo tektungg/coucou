@@ -197,6 +197,20 @@ network call is the Music pill's lyrics (lrclib.net), which Settings can turn of
   island does not auto-hide (the FSM's `keepPetit`), except over a fullscreen
   game, video or presentation, and a song starting on the Music pill brings
   it back if it had hidden.
+- **Mochi's groove.** While the Music pill plays (`isDancing` in
+  `mochi/dance.ts`: the pill is `working`, so a pause or an event card stops
+  it), Mochi wears headphones and dances: one hop per beat at a fixed 112 BPM
+  (the real tempo is not available since Spotify closed its audio features),
+  a lean to alternating sides every other beat, a squash on each landing, the
+  hand opposite the lean raised, happy eyes, and a music note every two beats.
+  The pose is a pure function of time (`dancePose`, tested in
+  `tests/dance.test.ts`); `BotEngine` fades it in and out over about a second
+  (`groove`) and adds it on top of its own animation, so a slap or an emote
+  still plays over it. The headphones replace the state badge, which would sit
+  under the headband. Pill minis wear the headphones and dance too, without
+  hands or notes. Nothing runs while the island is hidden (the frame loop's
+  hidden gate). `dev/dance-preview.html` shows it in a plain browser with
+  `npm run dev` (`?paused`, `?t=<seconds>` to freeze a pose).
 - **Lyrics.** `lyrics.rs` asks LRCLIB's exact match (title, artist, album,
   length) and stops there only when it is synced and within 2 s of the song.
   Otherwise it searches (as reported, with "feat."/"Remastered" noise

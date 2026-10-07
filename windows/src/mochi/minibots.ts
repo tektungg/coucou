@@ -2,6 +2,7 @@
 // Each canvas owns a BotEngine; the island's frame loop ticks every live one.
 
 import { BotEngine, hexToRGB } from "./engine";
+import { isDancing } from "./dance";
 import type { AgentTask } from "../core/state";
 
 interface MiniBot {
@@ -41,6 +42,9 @@ export function createMiniBot(task: AgentTask, bodySize: number): HTMLElement {
   engine.isMini = true;
   engine.bodyColor = hexToRGB(task.color);
   engine.setState(task.state, true);
+  engine.dancing = isDancing(task);
+  // Already playing when the view is built: start mid-groove, no fade-in.
+  if (engine.dancing) engine.groove = 1;
   if (task.emote) engine.setPermanentEmote(task.emote);
   if (task.miniEye) {
     engine.permanentEye = task.miniEye;
@@ -68,6 +72,7 @@ export function syncMiniBotStates(tasks: AgentTask[]) {
     const task = tasks.find((t) => t.id === mb.taskId);
     if (!task) continue;
     mb.engine.setState(task.state);
+    mb.engine.dancing = isDancing(task);
     mb.engine.bodyColor = hexToRGB(task.color);
   }
 }

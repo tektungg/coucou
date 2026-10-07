@@ -7,6 +7,7 @@
 import { Ease, lerp, type EaseFn } from "../core/anim";
 import { Sound } from "../core/sound";
 import type { BotEmoteName, BotStateName } from "../core/layout";
+import { dancePose, noteDue } from "./dance";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -53,7 +54,7 @@ interface BotStateCfg {
 }
 
 interface Particle {
-  type: "heart" | "star" | "spark" | "sweat" | "z";
+  type: "heart" | "star" | "spark" | "sweat" | "z" | "note";
   x: number; y: number; vx: number; vy: number;
   age: number; life: number; rot: number; size: number;
 }
@@ -216,6 +217,15 @@ export class BotEngine {
   private slapTimes: number[] = [];
   private miniLookTarget = { x: 0, y: 0 };
   private miniLookNextTime = 0;
+
+  /** Music groove (mochi/dance.ts): headphones + dance while the Music pill plays. */
+  dancing = false;
+  /** 0…1 fade of the groove, so play/pause never snaps. */
+  groove = 0;
+  // Dance pose × groove, added on top of the regular animation at draw time.
+  private dOx = 0; private dOy = 0; private dTilt = 0; private dYaw = 0;
+  private dSx = 1; private dSy = 1; private dHandL = 0; private dHandR = 0;
+  private lastDanceT = 0;
 
   /** Fired when three slaps land inside 1.7 s (→ dizzy + confused view). */
   onDizzy: (() => void) | null = null;
@@ -458,7 +468,7 @@ export class BotEngine {
       this.tweens.size > 0 ||
       this.particles.length > 0 ||
       this.cfg.bounces || this.cfg.scans || this.cfg.breathes || this.cfg.zz || this.cfg.sweat ||
-      this.isMini ||
+      this.isMini || this.dancing || this.groove > 0.001 ||
       Math.abs(this.tgYaw - this.yaw) > 0.002 ||
       Math.abs(this.tgPitch - this.pitch) > 0.002 ||
       Math.abs(this.tgTilt - this.tilt) > 0.002 ||
@@ -587,6 +597,8 @@ export class BotEngine {
       if (!this.isMini && this.cfg.sweat && Math.random() < 0.5) this.emit("sweat", 1);
     }
 
+    this.updateDance(dt, t);
+
     for (const p of this.particles) p.age += dt;
     this.particles = this.particles.filter((p) => p.age < p.life);
 
@@ -598,6 +610,23 @@ export class BotEngine {
     this.slotH = Math.max(0, this.slotH + this.slotHVel * dt);
 
     this.lastTime = n;
+  }
+
+  private updateDance(dt: number, t: number) {
+    this.groove += ((this.dancing ? 1 : 0) - this.groove) * (1 - Math.pow(0.02, dt));
+    if (!this.dancing && this.groove < 0.001) this.groove = 0;
+    const g = this.groove;
+    if (g > 0) {
+      const p = dancePose(t);
+      this.dOx = p.ox * g; this.dOy = p.oy * g; this.dTilt = p.tilt * g; this.dYaw = p.yaw * g;
+      this.dSx = lerp(1, p.sx, g); this.dSy = lerp(1, p.sy, g);
+      this.dHandL = p.handL * g; this.dHandR = p.handR * g;
+    } else {
+      this.dOx = this.dOy = this.dTilt = this.dYaw = this.dHandL = this.dHandR = 0;
+      this.dSx = this.dSy = 1;
+    }
+    if (this.dancing && !this.isMini && g > 0.6 && noteDue(this.lastDanceT, t)) this.emit("note", 1);
+    this.lastDanceT = t;
   }
 
   private doMiniBehaviorLoop() {
@@ -644,15 +673,18 @@ export class BotEngine {
     const R = W * 0.3;
     const rx = R * 1.14;
     const ry = R * 0.88;
-    const cx = W / 2 + this.ox * R;
-    const cy = H / 2 + this.particleOverhang / 2 + this.oy * R + R * 0.06;
+    const cx = W / 2 + (this.ox + this.dOx) * R;
+    const cy = H / 2 + this.particleOverhang / 2 + (this.oy + this.dOy) * R + R * 0.06;
+    const tilt = this.tilt + this.dTilt;
+    const sx = this.sx * this.dSx;
+    const sy = this.sy * this.dSy;
 
-    this.drawHandsBehind(x, R, rx, ry, cx, cy);
+    this.drawHandsBehind(x, R, rx, ry, cx, cy, tilt, sx, sy);
 
     x.save();
     x.translate(cx, cy);
-    if (this.tilt !== 0) x.rotate(this.tilt);
-    x.scale(this.sx, this.sy);
+    if (tilt !== 0) x.rotate(tilt);
+    x.scale(sx, sy);
 
     const body = this.bodyPath(rx, ry, R);
     this.drawBody(x, body, R, rx, ry);
@@ -661,7 +693,7 @@ export class BotEngine {
     if (blushVal > 0.01) {
       x.save();
       x.clip(body);
-      const yOffset = Math.sin(this.yaw) * rx * 0.8;
+      const yOffset = Math.sin(this.yaw + this.dYaw) * rx * 0.8;
       x.fillStyle = `rgba(255,120,150,${0.5 * blushVal})`;
       for (const sd of [-1, 1]) {
         x.beginPath();
@@ -673,10 +705,13 @@ export class BotEngine {
 
     this.drawEyes(x, body, R, rx, ry);
     if (this.morph > 0.05) this.drawMouth(x, body, R);
+    const phones = this.groove * Math.max(0, 1 - this.morph * 2);
+    if (phones > 0.01) this.drawHeadphones(x, R, rx, ry, phones);
 
     x.restore();
 
-    if (this.badge && this.badgeS > 0.01 && this.morph < 0.25) {
+    // The badge sits where the headband goes; the headphones say "music" instead.
+    if (this.badge && this.badgeS > 0.01 && this.morph < 0.25 && this.groove < 0.5) {
       this.drawBadge(x, this.badge, R, cx, cy);
     }
     this.drawParticles(x, R, cx, cy);
@@ -747,7 +782,7 @@ export class BotEngine {
   }
 
   private drawEyes(x: CanvasRenderingContext2D, body: Path2D, R: number, rx: number, ry: number) {
-    let shape: EyeShape = this.eyeOverride ?? this.cfg.eye;
+    let shape: EyeShape = this.eyeOverride ?? (this.groove > 0.5 ? "happy" : this.cfg.eye);
     if (this.morph > 0.5) {
       if (this.isChewing) shape = "happy";
       else if (this.slotHTarget > 0.05 || this.slotH > 0.1) shape = "cup";
@@ -760,7 +795,7 @@ export class BotEngine {
     x.strokeStyle = ink;
 
     for (const sd of [-1, 1]) {
-      const eyeYaw = sd * EYE_SP + this.yaw;
+      const eyeYaw = sd * EYE_SP + this.yaw + this.dYaw;
       let eyePitch = EYE_P + this.pitch + this.roll;
       eyePitch = (((eyePitch + Math.PI) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
       const cp = Math.cos(eyePitch);
@@ -931,20 +966,64 @@ export class BotEngine {
     x.restore();
   }
 
+  /** Headphones, in body space so they follow the hop and sway. Drawn in code. */
+  private drawHeadphones(x: CanvasRenderingContext2D, R: number, rx: number, ry: number, alpha: number) {
+    const shift = Math.sin(this.yaw + this.dYaw) * rx * 0.1;
+    const bandY = -ry * 0.08;
+    const bandW = Math.max(1.2, R * 0.12);
+
+    x.save();
+    x.globalAlpha = alpha;
+    x.lineCap = "round";
+    x.strokeStyle = "rgb(54,58,69)";
+    x.lineWidth = bandW;
+    x.beginPath();
+    x.ellipse(shift * 0.5, bandY, rx * 0.98, ry * 1.12, 0, Math.PI * 1.04, Math.PI * 1.96);
+    x.stroke();
+    x.strokeStyle = "rgba(255,255,255,0.22)";
+    x.lineWidth = bandW * 0.3;
+    x.beginPath();
+    x.ellipse(shift * 0.5, bandY, rx * 0.98, ry * 1.12, 0, Math.PI * 1.25, Math.PI * 1.6);
+    x.stroke();
+
+    const w = R * 0.3;
+    const h = R * 0.58;
+    for (const sd of [-1, 1]) {
+      x.save();
+      x.translate(sd * rx * 0.97 + shift, -ry * 0.04);
+      const g = x.createLinearGradient(0, -h / 2, 0, h / 2);
+      g.addColorStop(0, "rgb(84,89,103)");
+      g.addColorStop(1, "rgb(36,39,47)");
+      roundRectPath(x, -w / 2, -h / 2, w, h, w * 0.45);
+      x.fillStyle = g;
+      x.fill();
+      x.strokeStyle = "rgba(255,255,255,0.18)";
+      x.lineWidth = Math.max(0.8, R * 0.03);
+      roundRectPath(x, -w * 0.32, -h * 0.36, w * 0.64, h * 0.72, w * 0.3);
+      x.stroke();
+      x.restore();
+    }
+    x.restore();
+  }
+
   /** Hands sit behind the body — drawn before it, in world coordinates. */
   private drawHandsBehind(
     x: CanvasRenderingContext2D,
     R: number, rx: number, ry: number, cx: number, cy: number,
+    tilt: number, sx: number, sy: number,
   ) {
-    if (this.hands <= 0.01 || this.isMini) return;
+    if (this.isMini) return;
+    // Dancing brings the hands out too, independent of the greet's own tween.
+    const amount = Math.max(this.hands, this.groove);
+    if (amount <= 0.01) return;
     if (R <= 14) return; // meaningless at compact/peek sizes
 
     const n = now();
     const bodyH = 2 * ry;
-    const hew = 0.3 * ry * this.hands;
-    const heh = 0.26 * ry * this.hands;
-    const hwB = rx * this.sx;
-    const hhB = ry * this.sy;
+    const hew = 0.3 * ry * amount;
+    const heh = 0.26 * ry * amount;
+    const hwB = rx * sx;
+    const hhB = ry * sy;
     const isWaving = n >= this.waveStart && this.waveStart > 0 && n < this.waveUntil;
 
     for (const sd of [-1, 1]) {
@@ -970,12 +1049,15 @@ export class BotEngine {
         localX = -hwB * 1.08;
         localY = hhB * 0.7 + Math.sin(6 * wt) * 0.04 * bodyH;
       } else {
-        localX = sd * hwB * 1.08;
-        localY = hhB * 0.7;
+        // Dance: hands take turns going up, opposite to the lean (0 when not dancing).
+        const up = sd < 0 ? this.dHandL : this.dHandR;
+        localX = sd * hwB * lerp(1.08, 1.18, up);
+        localY = lerp(hhB * 0.7, -hhB * 0.3, up);
+        handRot = -sd * 0.45 * up;
       }
 
-      const cosT = Math.cos(this.tilt);
-      const sinT = Math.sin(this.tilt);
+      const cosT = Math.cos(tilt);
+      const sinT = Math.sin(tilt);
       const worldX = cx + cosT * localX - sinT * localY;
       const worldY = cy + sinT * localX + cosT * localY;
 
@@ -1107,6 +1189,24 @@ export class BotEngine {
           x.quadraticCurveTo(-sz * 0.8, sz * 0.2, 0, -sz);
           x.fill();
           break;
+        case "note": {
+          if (R <= 14) break; // just noise at compact size
+          const s = sz * 1.15;
+          x.rotate(Math.sin(p.age * 5) * 0.25);
+          x.fillStyle = "rgba(255,255,255,0.92)";
+          x.strokeStyle = "rgba(255,255,255,0.92)";
+          x.beginPath();
+          x.ellipse(-s * 0.22, s * 0.45, s * 0.3, s * 0.22, -0.4, 0, Math.PI * 2);
+          x.fill();
+          x.lineWidth = s * 0.13;
+          x.lineCap = "round";
+          x.beginPath();
+          x.moveTo(s * 0.05, s * 0.42);
+          x.lineTo(s * 0.05, -s * 0.6);
+          x.quadraticCurveTo(s * 0.5, -s * 0.35, s * 0.42, s * 0.02);
+          x.stroke();
+          break;
+        }
         case "z":
           x.fillStyle = "rgb(209,219,235)";
           x.font = `700 ${sz * 1.9}px ${FONT}`;
