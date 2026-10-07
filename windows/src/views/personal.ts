@@ -608,28 +608,30 @@ function mediaCard(onDetail: () => void): HTMLElement {
     { class: timeline.playing ? "int-card media-card playing" : "int-card media-card" },
     glow,
     header(MUSIC_GREEN, "Music", str(d.app) || "Now playing", right),
+    // Two columns: the song (cover, names, controls, progress) on the left,
+    // the lyrics on the right. The album stays off the card.
     h(
       "div",
       { class: "media-main" },
-      art,
       h(
         "div",
-        { class: "media-info" },
+        { class: "media-left" },
         h(
           "div",
-          { class: "media-top" },
-          // "Title · Artist" on one line; the album stays off the card.
+          { class: "media-row" },
+          art,
           h(
             "div",
-            { class: "media-names", title: names },
-            h("span", { class: "media-title", text: title }),
-            artist ? h("span", { class: "media-artist", text: ` · ${artist}` }) : null,
+            { class: "media-info", title: names },
+            h("div", { class: "media-title", text: title }),
+            artist ? h("div", { class: "media-artist", text: artist }) : null,
+            mediaButtons(d),
           ),
-          mediaButtons(d),
         ),
-        lyricBox,
         h("div", { class: "media-progress" }, elapsed, h("div", { class: "media-bar" }, fill), total),
       ),
+      h("div", { class: "media-divider" }),
+      lyricBox,
     ),
   );
   // Clicking the lyrics opens them all.

@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Coucou — Music card preview</title>
+    <style>
+      body { margin: 0; background: #1b1b1f; font: 12px system-ui; color: #ddd; }
+      .frame { position: relative; width: 640px; height: 108px; margin: 18px auto; background: #000;
+               border-radius: 22px; overflow: hidden; isolation: isolate; }
+      .frame > * { height: 100%; box-sizing: border-box; }
+      .mochi { position: absolute; left: 30px; top: 26px; width: 56px; height: 46px; border-radius: 22px;
+               background: #1db954; opacity: 0.85; z-index: 2; }
+    </style>
+  </head>
+  <body>
+    <div id="cards"></div>
+    <script type="module" src="./music-card-preview.ts"></script>
+  </body>
+</html>

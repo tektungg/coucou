@@ -179,9 +179,14 @@ network call is the Music pill's lyrics (lrclib.net), which Settings can turn of
   Login stays with space-timebox (`space-timebox login`); its errors are shown as is.
   The folder is set in **Settings → Integrations → Space** (empty = default).
 - **Music.** Prefers a playing session, then Spotify. ⏮ ⏯ ⏭ act on the same
-  session. The card shows the cover (with a soft glow of it behind), "Title ·
-  Artist", the progress with times, and three synced lyric lines: the one
-  being sung in the middle, the one before and the one after. The lyrics button
+  session. The card has two columns, in the same height as every other card.
+  On the left: the cover (with a soft glow of it behind), the title and the
+  artist on their own lines, the controls under them, and the progress with
+  its times. On the right, past a thin divider: three synced lyric lines, the
+  one being sung in the middle (larger, wrapping once before it ellipsizes),
+  the one before and the one after, dimmed. With lyrics off in Settings the
+  left column takes the whole card. `dev/music-card-preview.html` renders it in
+  a plain browser with a fake song (`?long`, `?nolyrics`). The lyrics button
   (or a click on the lines) opens every line, the sung one centred. The cover
   is read once per song (a few times more to catch Spotify's late swap) and
   fetched with `media_art`, never resent with the 2 s poll. The poll only

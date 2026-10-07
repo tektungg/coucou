@@ -1637,10 +1637,11 @@ input[type="range"]::-webkit-slider-thumb {
   text-align: right;
 }
 
-/* Music card (views/personal.ts): cover, names and controls, the line being
-   sung with the next one under it, progress. Fits the 108 px card. */
+/* Music card (views/personal.ts), two columns in the 108 px card: the song on
+   the left (cover, title, artist, controls, progress), the lyrics on the right
+   (the line before, the line being sung, the line after). */
 .media-card {
-  padding-bottom: 4px;
+  padding-bottom: 7px;
 }
 
 .media-glow {
@@ -1660,17 +1661,40 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .media-main {
-  display: flex;
-  gap: 11px;
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: 228px 1px minmax(0, 1fr);
+  gap: 14px;
   padding-top: 4px;
   min-height: 0;
 }
 
+/* Cover row (52) + gap + progress fit the ~70 px left under the header. */
+.media-left {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.media-row {
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+}
+
+.media-divider {
+  align-self: stretch;
+  margin: 2px 0;
+  background: rgba(255, 255, 255, 0.08);
+}
+
 .media-art {
   flex: 0 0 auto;
-  width: 70px;
-  height: 70px;
-  border-radius: 10px;
+  width: 52px;
+  height: 52px;
+  border-radius: 9px;
   overflow: hidden;
   background: #1e2024;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.06);
@@ -1701,44 +1725,35 @@ input[type="range"]::-webkit-slider-thumb {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  padding-right: 4px;
 }
 
-.media-top {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  min-width: 0;
-}
-
-.media-names {
-  flex: 1 1 auto;
-  min-width: 0;
-  font: 600 12.5px/22px var(--font);
+.media-title,
+.media-artist {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .media-title {
+  font: 600 12.5px/16px var(--font);
   color: var(--ink);
 }
 
 .media-artist {
-  font-weight: 400;
+  font: 400 11px/14px var(--font);
   color: var(--dim-2);
 }
 
 .media-controls {
-  flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+  margin-top: auto;
+  margin-left: -8px; /* lines the first icon up with the title, not the button's edge */
 }
 
 .media-btn {
-  width: 24px;
+  width: 26px;
   height: 22px;
   border: 0;
   border-radius: 7px;
@@ -1781,22 +1796,31 @@ input[type="range"]::-webkit-slider-thumb {
 
 .media-lyrics {
   min-width: 0;
-  padding: 1px 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding-right: 4px;
   cursor: default;
 }
 
+/* The sung line may wrap once; longer ones ellipsize on the second line. */
 .media-line {
-  font: 600 11.5px/15px var(--font);
+  font: 600 13px/17px var(--font);
   color: var(--ink);
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .media-line.side {
-  font: 400 10.5px/12px var(--font);
+  font: 400 11px/14px var(--font);
   color: var(--dim-3);
-  min-height: 12px;
+  min-height: 14px;
+  display: block;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .media-line.rest {
@@ -1857,8 +1881,13 @@ input[type="range"]::-webkit-slider-thumb {
   background: #1db954;
 }
 
-.media-card.no-lyrics .media-info {
-  justify-content: space-around;
+/* Lyrics off in Settings: the song takes the whole card. */
+.media-card.no-lyrics .media-main {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.media-card.no-lyrics .media-divider {
+  display: none;
 }
 
 /* Lyrics detail: every line, the sung one bright and centred. */
