@@ -4,6 +4,7 @@
 // With `npm run dev`, open http://127.0.0.1:1420/dev/pop-preview.html
 //   ?view=overview|prompt|approval|question|settings|plan|finished|error|empty
 //   &focus=<pill id>   (overview only; default: the session pill)
+//   &many              four agent sessions instead of two (the board's +N)
 // Mochi still animates; screenshots are taken after it has settled.
 
 import type { AskItem } from "../src/island/askQuestion";
@@ -35,6 +36,14 @@ State.upsertSession("cc_preview", "preview-session", "coucou", "D:/Personal Proj
 State.updateTask("cc_preview", "working");
 State.appendStep("cc_preview", "Editing engine.ts");
 State.upsertSession("cc_api", "api-session", "venturo-api", "D:/Work/api");
+State.updateTask("cc_api", "finished");
+Object.assign(State.tasks.find((t) => t.id === "cc_preview")!, { ctxPct: 41, costUsd: 1.2 });
+// ?many: two more sessions, one waiting on you, so the board folds into +N.
+if (params.has("many")) {
+  State.upsertSession("cc_web", "web-session", "landing-page", "D:/Work/web");
+  State.updateTask("cc_web", "approval");
+  State.upsertSession("cc_docs", "docs-session", "docs", "D:/Work/docs");
+}
 State.setPillBadge("integration_messages", null);
 
 const ok = (data: Record<string, unknown>) => ({ loaded: true, configured: true, error: null, data });
@@ -95,6 +104,7 @@ switch (view) {
 
 const focus = params.get("focus");
 if (focus) State.setFocus(focus);
+else State.setFocus("cc_preview");
 
 // Pinned, so the auto-close timer never shuts it before the screenshot.
 State.isPinned = true;

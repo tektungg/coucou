@@ -6,7 +6,7 @@ import { personalDataKey } from "./personal";
 import { h, svg, clear, dot } from "./dom";
 import { API_KEY_SECRET, Bridge } from "../core/bridge";
 import { ICONS } from "./icons";
-import { Ticker } from "./ticker";
+import { buildBoardView } from "./boardView";
 import { State, type AgentTask } from "../core/state";
 import { washRGBA, type IslandViewName, type Wash } from "../core/layout";
 import { buildPrompt } from "./chat";
@@ -94,25 +94,36 @@ function stack(padLeft: number, padRight: number, ...children: Node[]): HTMLElem
 
 // ── Overview ──────────────────────────────────────────────────────────────────
 
-function buildOverview(actions: ViewActions): ViewHost {
-  const ticker = new Ticker();
-  const who = h("div", { class: "who" });
-  const tickerBody = h("div", { class: "card-body" }, who, ticker.el);
-  const leftBody = h("div", { class: "left-body" });
-  const jump = h(
-    "button",
-    { class: "icon-btn jump", title: "Open", onclick: () => actions.openTarget() },
-    svg(ICONS.arrowUpRight, 8),
-  );
-  const left = card(null, leftBody, jump);
-  // One pill at a time, full width; the dots in the header say which, and a
-  // swipe moves to the next (views/carousel.ts).
-  const slot = h("div", { class: "left" }, left);
-  const el = h("div", { class: "view overview" }, slot);
+/** A pill that is an agent session: what Home's board shows. */
+function isBoardSession(t: AgentTask): boolean {
+  if (isSessionPill(t.id) || t.id.startsWith("agent_")) return true;
+  // The Claude Code catch-all, while a session without its own pill runs.
+  return t.id === "integration_claude" && (t.state !== "idle" || t.steps.length > 0);
+}
 
-  const ids = () => State.visibleTasks.map((t) => t.id);
+/** What the overview keeps between syncs. */
+interface Overview {
+  slot: HTMLElement;
+  leftBody: HTMLElement;
+  board: ReturnType<typeof buildBoardView>;
+  detailOpen: boolean;
+  lastFocus: string | null;
+  mode: "board" | "card" | null;
+  /** What the shown card was built from; a change rebuilds it. */
+  cardKey: string;
+  /** Pending re-sync that moves the board's "3 min" labels along. */
+  clockTimer: number | null;
+}
+
+/** The board's times read in minutes: re-sync once a minute while it is on screen. */
+const BOARD_CLOCK_MS = 60_000;
+
+const focusIds = () => State.visibleTasks.map((t) => t.id);
+
+/** Wheel, tilt and drag move to the next or previous pill (views/carousel.ts). */
+function wireCarousel(el: HTMLElement, actions: ViewActions) {
   const go = (dir: -1 | 1) => {
-    const next = stepFocus(ids(), State.focusTask?.id ?? null, dir);
+    const next = stepFocus(focusIds(), State.focusTask?.id ?? null, dir);
     if (next && next !== State.focusTask?.id) actions.setFocus(next);
   };
   const swipe = new SwipeAccumulator();
@@ -130,104 +141,93 @@ function buildOverview(actions: ViewActions): ViewHost {
     dragFrom = null;
     if (dir !== 0) go(dir);
   });
+}
 
-  let detailOpen = false;
-  let lastFocus: string | null = null;
-  let mode: "ticker" | "card" | null = null;
-  let cardKey = "";
-
-  const hooks: IntegrationCardHooks = {
+/** A pill card's detail view opens and closes through these. */
+function cardHooks(o: Overview, actions: ViewActions): IntegrationCardHooks {
+  const setDetail = (open: boolean) => {
+    o.detailOpen = open;
+    o.cardKey = "";
+    State.notify();
+  };
+  return {
     get detailOpen() {
-      return detailOpen;
+      return o.detailOpen;
     },
-    openDetail() {
-      detailOpen = true;
-      cardKey = "";
-      State.notify();
-    },
-    closeDetail() {
-      detailOpen = false;
-      cardKey = "";
-      State.notify();
-    },
+    openDetail: () => setDetail(true),
+    closeDetail: () => setDetail(false),
     openSettings: () => actions.openSettingsWindow(),
   };
+}
 
+/** A new pill in focus: slide it in from the side its chip lives on, start afresh. */
+function onFocusChange(o: Overview, id: string | null) {
+  const dir = slideDirection(focusIds(), o.lastFocus, id);
+  if (dir !== 0) {
+    o.slot.classList.remove("slide-next", "slide-prev");
+    void o.slot.offsetWidth; // restart the animation
+    o.slot.classList.add(dir > 0 ? "slide-next" : "slide-prev");
+  }
+  o.lastFocus = id;
+  o.detailOpen = false;
+  o.cardKey = "";
+  o.mode = null;
+}
+
+function syncBoard(o: Overview, task: AgentTask) {
+  if (o.mode !== "board") {
+    clear(o.leftBody);
+    o.leftBody.append(o.board.el);
+    o.mode = "board";
+    o.cardKey = "";
+  }
+  o.board.sync(State.visibleTasks.filter(isBoardSession), task.id, performance.now());
+  // Only while the open island shows the board, so a hidden island stays at 0 % CPU.
+  if (o.clockTimer === null && State.mode === "expanded" && State.view === "overview") {
+    o.clockTimer = window.setTimeout(() => {
+      o.clockTimer = null;
+      State.notify();
+    }, BOARD_CLOCK_MS);
+  }
+}
+
+/** Every other pill shows its own card, exactly like IntegrationCardView. */
+function syncCard(o: Overview, task: AgentTask, hooks: IntegrationCardHooks) {
+  const info = State.integrations[task.id];
+  const key = [
+    task.id, o.detailOpen, task.state, task.steps.join("|"),
+    info?.loaded, info?.error, info?.configured,
+    personalDataKey(task.id, info?.data ?? {}),
+  ].join("~");
+  if (key === o.cardKey) return;
+  o.cardKey = key;
+  o.mode = "card";
+  clear(o.leftBody);
+  o.leftBody.append(renderIntegrationCard(task, hooks));
+}
+
+function buildOverview(actions: ViewActions): ViewHost {
+  const leftBody = h("div", { class: "left-body" });
+  const jump = h("button", { class: "icon-btn jump", title: "Open", onclick: () => actions.openTarget() },
+    svg(ICONS.arrowUpRight, 8));
+  // One pill at a time, full width; the chips in the header say which.
+  const slot = h("div", { class: "left" }, card(null, leftBody, jump));
+  const el = h("div", { class: "view overview" }, slot);
+  wireCarousel(el, actions);
+  const o: Overview = {
+    slot, leftBody, board: buildBoardView((id) => actions.setFocus(id)),
+    detailOpen: false, lastFocus: null, mode: null, cardKey: "", clockTimer: null,
+  };
+  const hooks = cardHooks(o, actions);
   return {
     el,
-    tick(nowMs: number) {
-      if (mode === "ticker") ticker.tick(nowMs);
-    },
-    busy: () => mode === "ticker" && ticker.animating,
     sync() {
       const task = State.focusTask;
-      if (task?.id !== lastFocus) {
-        // Slide the new pill in from the side the dots say it lives on.
-        const dir = slideDirection(ids(), lastFocus, task?.id ?? null);
-        if (dir !== 0) {
-          slot.classList.remove("slide-next", "slide-prev");
-          void slot.offsetWidth; // restart the animation
-          slot.classList.add(dir > 0 ? "slide-next" : "slide-prev");
-        }
-        lastFocus = task?.id ?? null;
-        detailOpen = false;
-        cardKey = "";
-        mode = null;
-      }
-
-      // VS Code with a live Claude Code session keeps the ticker; every other
-      // pill shows its own card, exactly like IntegrationCardView.
-      // A session pill always shows its ticker: it exists because a session does.
-      const sessionActive =
-        task != null &&
-        (isSessionPill(task.id) ||
-          (task.id === "integration_claude" && (task.state !== "idle" || task.steps.length > 0)));
-
-      if (task && sessionActive) {
-        if (mode !== "ticker") {
-          clear(leftBody);
-          leftBody.append(tickerBody);
-          mode = "ticker";
-          cardKey = "";
-        }
-        clear(who);
-        who.append(
-          dot(task.color, 7),
-          h("span", { class: "name", text: task.name }),
-        );
-        // A session pill is Claude Code by definition: its context and cost
-        // (from the statusline's status file) say more than the tool name.
-        const usage = [
-          task.ctxPct != null ? `ctx ${Math.round(task.ctxPct)}%` : "",
-          task.costUsd != null ? `$${task.costUsd.toFixed(2)}` : "",
-        ].filter(Boolean);
-        const label = usage.length
-          ? usage.join(" · ")
-          : task.source === "claudeCode" ? "Claude Code" : "n8n";
-        who.append(h("span", { class: "tool", text: label }));
-        if (task.steps.length > 1) {
-          who.append(h("span", {
-            class: "count",
-            text: `${Math.min(task.stepIndex + 1, task.steps.length)}/${task.steps.length}`,
-          }));
-        }
-        ticker.sync(task);
-      } else if (task) {
-        const info = State.integrations[task.id];
-        const key = [
-          task.id, detailOpen, task.state, task.steps.join("|"),
-          info?.loaded, info?.error, info?.configured,
-          personalDataKey(task.id, info?.data ?? {}),
-        ].join("~");
-        if (key !== cardKey) {
-          cardKey = key;
-          mode = "card";
-          clear(leftBody);
-          leftBody.append(renderIntegrationCard(task, hooks));
-        }
-      }
-
-      jump.style.display = detailOpen ? "none" : "";
+      if ((task?.id ?? null) !== o.lastFocus) onFocusChange(o, task?.id ?? null);
+      // An agent session shows the board of every session.
+      if (task && isBoardSession(task)) syncBoard(o, task);
+      else if (task) syncCard(o, task, hooks);
+      jump.style.display = o.detailOpen ? "none" : "";
     },
   };
 }

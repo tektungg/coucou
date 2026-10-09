@@ -32,7 +32,7 @@ installs for the current user only — no admin prompt.
 ## Using it
 
 <img src="screenshots/compact.png" width="292" alt="The compact island, with the integration pills as mini Mochis">
-<img src="screenshots/overview.png" width="640" alt="The overview: the Messages pill open, every pill as a chip in the header">
+<img src="screenshots/overview.png" width="640" alt="Home: Mochi sums up the agent sessions, one tile per session">
 <img src="screenshots/approval.png" width="640" alt="A Claude Code permission request, with Deny and Allow">
 <img src="screenshots/chat.png" width="640" alt="Chatting with Claude from the island">
 <img src="screenshots/drop.png" width="640" alt="Mochi turned into a box, waiting for a file">
@@ -157,11 +157,15 @@ network call is the Music pill's lyrics (lrclib.net), which Settings can turn of
 | **Audio** | Core Audio (devices, volume, mute) and the microphone privacy registry | 2 s |
 
 - **One pill at a time.** The overview shows a single pill, full width. The
-  header shows one dot per pill in that pill's colour, a ring on any with news,
-  and the active pill's name. Two-finger swipe (or tilt wheel), drag the card
-  left/right, ← →, or tap a dot to move between pills.
-- **Sessions.** Every Claude Code session gets its own pill with its ticker,
-  context % and cost. A permission request, plan or question focuses the
+  header shows one chip per pill, a mini Mochi in that pill's colour, a ring on
+  any with news, and the active pill's name. Two-finger swipe (or tilt wheel),
+  drag the card left/right, ← →, or tap a chip to move between pills.
+- **Sessions.** Every Claude Code session gets its own pill. On one of them,
+  Home shows the session board: Mochi says what the sessions are up to, and a
+  tile per session gives its step or state, the time since it last moved,
+  context % and cost, with sessions that need you first (`views/board.ts`,
+  `tests/board.test.ts`). Past 3 sessions the last tile reads "+N more". A
+  click on a tile focuses that session. A permission request, plan or question focuses the
   session that asked. `SessionEnd` removes the pill after 5 s, and sessions
   quiet for 2 h are swept. The catch-all Claude Code pill only shows while no
   session exists.
@@ -409,6 +413,11 @@ identity. It is Windows-only: the Mac app keeps the App Store look.
   (`tests/pager.test.ts`, including 6 pills plus 2 sessions with a long name).
   The header stays 34 px tall: `core/layout.ts` places Mochi under it, so a
   taller header would push the cards off Mochi.
+- **Home.** With an agent session in focus, Home is the session board
+  (`views/boardView.ts`): the speech bubble, then pastel tiles in each
+  session's colour with a ✓, ! or × mark. The focused tile has a pink ring.
+  It starts at the same 108 px gutter as the cards. Any other pill keeps its
+  own card.
 - **Cards, alerts, chat.** Shared classes only (`.card`, `.btn`, `.int-card`,
   `.int-row`, `.msg-item`, `.bubble`, `.reply`, `.ask-chip`), so every pill card
   follows. Primary buttons are pink, but the approval's Allow is green (`btn`

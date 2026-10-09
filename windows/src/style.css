@@ -517,41 +517,6 @@ body {
   padding: 0 8px;
 }
 
-.card-body {
-  position: relative;
-  z-index: 1;
-  padding-top: 10px;
-}
-
-.who {
-  padding: 0 36px 0 108px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.who .name {
-  font: 700 12.5px var(--font);
-  color: var(--ink);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.who .tool {
-  font: 400 11px var(--font);
-  color: var(--dim-2);
-  white-space: nowrap;
-}
-
-.who .count {
-  font: 400 11px var(--font);
-  color: var(--dim-3);
-  margin-left: auto;
-  flex: 0 0 auto;
-}
-
 .jump {
   position: absolute;
   top: 8px;
@@ -559,74 +524,134 @@ body {
   z-index: 2;
 }
 
-/* Ticker */
-
-.ticker {
+/* Home's session board (views/boardView.ts): Mochi's speech bubble, then one
+   pastel tile per agent session. Starts at the 108 px gutter, like every card,
+   so Mochi's canvas stays beside it (core/layout.ts). */
+.board {
   position: relative;
-  height: 44px;
-  margin: 6px 12px 0 108px;
-  overflow: hidden;
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    transparent 0%,
-    #000 12%,
-    #000 85%,
-    transparent 100%
-  );
-  mask-image: linear-gradient(to bottom, transparent 0%, #000 12%, #000 85%, transparent 100%);
-}
-
-.ticker-row {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 22px;
+  z-index: 1;
+  height: 100%;
   display: flex;
-  align-items: center;
-  gap: 6px;
-  transform-origin: left center;
-  will-change: transform, opacity;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 14px 0 108px;
 }
 
-.ticker-row .tick-icon {
-  width: 12px;
-  display: grid;
-  place-items: center;
-  flex: 0 0 12px;
-  color: var(--dim-2);
-}
-
-.ticker-row .tick-text {
-  /* Block, so the shimmer copy and the absolute dim copy share one top edge. */
-  display: block;
-  font: 500 13px var(--font);
+.board-bubble {
+  align-self: flex-start;
+  max-width: 100%;
+  background: var(--soft-2);
+  border-radius: 5px 16px 16px 16px; /* the tail points at Mochi */
+  padding: 6px 13px;
+  font: 500 12.5px var(--font);
+  color: var(--ink-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* Shimmer sweep, 2.2 s — same as TickerShimmerText / ShimmeringText */
-.shimmer {
-  background: linear-gradient(
-    90deg,
-    #7c818a 0%,
-    #f2f3f5 40%,
-    #7c818a 70%
-  );
-  background-size: 260% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: shimmer 2.2s linear infinite;
+.board-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: 8px;
 }
 
-@keyframes shimmer {
-  from {
-    background-position: 130% 0;
-  }
-  to {
-    background-position: -130% 0;
-  }
+.btile {
+  --tc: #ffffff;
+  position: relative;
+  height: 50px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 12px 0 10px;
+  border: 0;
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--tc) 42%, #ffffff);
+  color: #241d2e;
+  text-align: left;
+  cursor: default;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.btile:hover {
+  transform: translateY(-1px);
+}
+
+/* Pink, not white: a white session tile would hide a white ring. */
+.btile.on {
+  box-shadow: 0 0 0 2px var(--acc);
+}
+
+.btile-text {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.btile-top {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* The name keeps its room; the ctx/cost note beside it gives way first. */
+.btile b {
+  flex: 0 1 auto;
+  min-width: 0;
+  font: 700 12.5px var(--font);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.btile small {
+  flex: 1 1 0;
+  min-width: 0;
+  font: 500 10px var(--font);
+  opacity: 0.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.btile span {
+  font: 500 11px var(--font);
+  opacity: 0.72;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.btile-mark {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font: 800 11px var(--font);
+  font-style: normal;
+  background: #241d2e;
+  color: #ffffff;
+}
+
+.btile-mark.ask {
+  background: var(--amber);
+  color: #2a1a00;
+}
+
+.btile-mark.error {
+  background: var(--red);
+}
+
+.btile.more {
+  justify-content: center;
+  background: var(--soft-2);
+  color: var(--ink-2);
 }
 
 /* ── Generic text blocks ────────────────────────────────────────────────── */
@@ -1336,18 +1361,6 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 /* ── Personal pills (views/personal.ts) ─────────────────────────────────── */
-
-/* Session pills: the project name must survive the ctx/cost line beside it. */
-.who .name {
-  flex: 0 0 auto;
-  max-width: 45%;
-}
-
-.who .tool {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 
 .int-row.first .int-name {
   flex: 0 0 auto;
