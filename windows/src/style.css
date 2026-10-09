@@ -244,52 +244,89 @@ body {
   transition: opacity 0.2s ease-in-out;
 }
 
+/* Capsule tabs (views/header.ts): a mini Mochi, and the label while on. */
 .tabs {
   display: flex;
+  align-items: center;
   gap: 5px;
   padding-left: 14px;
+  flex: 0 0 auto;
 }
 
 .tab {
-  width: 30px;
-  height: 22px;
-  display: grid;
-  place-items: center;
+  height: 26px;
+  min-width: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 5px;
   border: 0;
-  background: transparent;
-  border-radius: 11px;
+  border-radius: var(--r-pill);
+  background: var(--soft);
   color: var(--dim-2);
+  font: 650 12px var(--font);
   cursor: default;
+  transition: background 0.15s, color 0.15s, padding 0.15s;
 }
 
 .tab:hover {
-  background: rgba(255, 255, 255, 0.07);
-  color: #b0b5be;
+  background: var(--soft-3);
+  color: var(--ink-2);
+}
+
+.tab .tab-label {
+  display: none;
 }
 
 .tab.on {
-  background: var(--tab-on);
-  color: var(--ink);
+  background: #ffffff;
+  color: #241d2e;
+  padding: 0 11px 0 5px;
+}
+
+.tab.on .tab-label {
+  display: inline;
+}
+
+/* A white face on the white capsule still needs an edge. */
+.tab.on .face {
+  box-shadow: inset 0 0 0 1.5px rgba(36, 29, 46, 0.22);
+}
+
+.tab.round.on {
+  padding: 0 5px;
 }
 
 .header-actions {
-  margin-left: auto;
   display: flex;
-  gap: 14px;
-  padding-right: 16px;
+  align-items: center;
+  gap: 6px;
+  padding-right: 14px;
+  flex: 0 0 auto;
 }
 
-.header-actions button {
+.header-actions .hbtn {
+  width: 26px;
+  height: 26px;
   border: 0;
-  background: transparent;
+  border-radius: 50%;
+  background: var(--soft);
   color: var(--dim-2);
   display: grid;
   place-items: center;
   cursor: default;
+  transition: background 0.15s, color 0.15s;
 }
 
-.header-actions button.on {
-  color: var(--ink);
+.header-actions .hbtn:hover {
+  background: var(--soft-3);
+  color: var(--ink-2);
+}
+
+.header-actions .hbtn.on {
+  background: #ffffff;
+  color: #241d2e;
 }
 
 #views {
@@ -487,55 +524,57 @@ body {
   to { transform: none; opacity: 1; }
 }
 
-/* Header pager: a dot per pill, the active one larger and named. */
-#header {
-  position: relative;
-}
-
+/* Pill chips (views/header.ts, views/pager.ts): a mini Mochi per pill, the
+   active one named. Fills the room between the tabs and the buttons. */
 .pager {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
-  max-width: 340px;
+  justify-content: center;
+  gap: 4px; /* pager.ts CHIP_GAP */
+  padding: 0 8px;
 }
 
-.pager-dot {
-  width: 6px;
-  height: 6px;
-  padding: 0;
+.pchip {
+  height: 24px;
+  min-width: 24px; /* pager.ts CHIP_W */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 5px;
   border: 0;
-  border-radius: 50%;
-  background: var(--dot);
-  opacity: 0.45;
-  cursor: default;
-  flex: 0 0 auto;
-  box-shadow: 0 0 0 2px var(--ring, transparent);
-  transition: opacity 0.15s, transform 0.15s;
-}
-
-.pager-dot:hover {
-  opacity: 0.85;
-  transform: scale(1.25);
-}
-
-.pager-dot.on {
-  width: 8px;
-  height: 8px;
-  opacity: 1;
-}
-
-.pager-label {
-  font: 600 11px var(--font);
+  border-radius: var(--r-pill);
+  background: var(--soft);
   color: var(--ink-2);
+  font: 650 11.5px var(--font);
+  flex: 0 0 auto;
+  cursor: default;
+  box-shadow: 0 0 0 2px var(--ring, transparent);
+  transition: background 0.15s, transform 0.15s;
+}
+
+.pchip:hover {
+  background: var(--soft-3);
+  transform: translateY(-1px);
+}
+
+.pchip.on {
+  background: var(--soft-3);
+  padding-right: 10px;
+}
+
+.pchip-label {
+  max-width: 100px; /* pager.ts LABEL_MAX_W */
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 130px;
-  margin: 0 4px 0 -1px;
+}
+
+.pchip.more {
+  color: var(--dim);
+  padding: 0 8px;
 }
 
 .card-body {
@@ -2679,15 +2718,15 @@ body.shelf-drop .card:has(.shelf-card) {
 }
 
 /* The open island's header: mute the mic from any pill while an app records. */
-.header-actions button.mic-btn {
+.header-actions .hbtn.mic-btn {
   color: #f4505e;
 }
 
-.header-actions button.mic-btn:not(.live) {
+.header-actions .hbtn.mic-btn:not(.live) {
   color: var(--dim-2);
 }
 
-.header-actions button.mic-btn.live svg {
+.header-actions .hbtn.mic-btn.live svg {
   animation: pulse 1.6s ease-in-out infinite;
 }
 

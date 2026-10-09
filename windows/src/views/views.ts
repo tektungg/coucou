@@ -1,10 +1,8 @@
-// Island views — DOM ports of IslandViewContent.swift. Paddings, font sizes,
-// colours and wording are copied from the Swift views so both platforms read
-// identically.
+// Island views — DOM ports of IslandViewContent.swift. Paddings, font sizes
+// and wording are copied from the Swift views so both platforms read the same;
+// colours and shapes are the Windows "Mochi Pop" look (style.css).
 
-import { MIC_ICON, MIC_OFF_ICON, micBadge, micUsers, micUsersLabel } from "./shelf";
 import { personalDataKey } from "./personal";
-import { Bridge } from "../core/bridge";
 import { h, svg, clear, dot } from "./dom";
 import { ICONS } from "./icons";
 import { Ticker } from "./ticker";
@@ -16,6 +14,9 @@ import { renderIntegrationCard, type IntegrationCardHooks } from "./integrations
 import { buildAnswers, type AskAnswer } from "../island/askQuestion";
 import { isSessionPill } from "../island/sessions";
 import { SwipeAccumulator, dragDirection, slideDirection, stepFocus } from "./carousel";
+
+// The header lives in header.ts; island.ts takes it from here with the views.
+export { buildHeader, headerMicBadge } from "./header";
 
 export interface ViewActions {
   setView(v: IslandViewName): void;
@@ -87,103 +88,6 @@ function stack(padLeft: number, padRight: number, ...children: Node[]): HTMLElem
   const el = h("div", { class: "stack" }, ...children);
   el.style.padding = `4px ${padRight}px 4px ${padLeft}px`;
   return el;
-}
-
-// ── Header ────────────────────────────────────────────────────────────────────
-
-/** The mic state the header and the collapsed island show, when the Audio pill is on. */
-export function headerMicBadge(): "live" | "muted" | null {
-  if (!State.tasks.some((t) => t.id === "integration_audio")) return null;
-  return micBadge(State.integrations.integration_audio?.data as Record<string, unknown> | undefined);
-}
-
-export function buildHeader(actions: ViewActions): ViewHost {
-  const tabHome = h("button", { class: "tab", title: "Overview", onclick: () => go("overview") }, svg(ICONS.house, 13));
-  const tabChat = h("button", { class: "tab", title: "Ask", onclick: () => go("prompt") }, svg(ICONS.bubble, 13));
-  const tabDrop = h("button", { class: "tab", title: "Drop", onclick: () => go("upload") }, svg(ICONS.plus, 13));
-
-  const gearBtn = h("button", { title: "Settings", onclick: () => go("settings") }, svg(ICONS.gear, 14));
-  const soundBtn = h("button", { title: "Mute", onclick: () => actions.toggleSound() }, svg(ICONS.speakerOn, 14));
-  // While an app records: one click mutes or unmutes the microphone, from any pill.
-  const micBtn = h("button", { class: "mic-btn" });
-  micBtn.addEventListener("click", () => {
-    const badge = headerMicBadge();
-    if (badge) void Bridge.audioSetMute("input", badge === "live");
-  });
-
-  function go(v: IslandViewName) {
-    actions.blip();
-    actions.setView(v);
-  }
-
-  // The overview's pager: one dot per pill, the active one named.
-  const pager = h("div", { class: "pager" });
-  let pagerKey = "";
-  const BADGE_RING: Record<string, string> = { approval: "#F5A524", finished: "#22C55E", error: "#F4505E" };
-
-  function syncPager() {
-    const tasks = State.visibleTasks;
-    const focus = State.focusTask?.id ?? "";
-    const show = State.view === "overview" && tasks.length > 0;
-    const key = show
-      ? `${focus}|${tasks.map((t) => `${t.id}:${t.color}:${t.name}:${t.pillBadge ?? ""}`).join(",")}`
-      : "";
-    if (key === pagerKey) return;
-    pagerKey = key;
-    clear(pager);
-    if (!show) return;
-    for (const t of tasks) {
-      const active = t.id === focus;
-      const d = h("button", {
-        class: active ? "pager-dot on" : "pager-dot",
-        title: t.id === "integration_claude" ? "VS Code" : t.name,
-        onclick: () => {
-          if (!active) actions.setFocus(t.id);
-        },
-      });
-      d.style.setProperty("--dot", t.color);
-      if (t.pillBadge) d.style.setProperty("--ring", BADGE_RING[t.pillBadge]);
-      pager.append(d);
-      if (active) {
-        pager.append(h("span", { class: "pager-label", text: t.id === "integration_claude" ? "VS Code" : t.name }));
-      }
-    }
-  }
-
-  const el = h(
-    "div",
-    { id: "header" },
-    h("div", { class: "tabs" }, tabHome, tabChat, tabDrop),
-    pager,
-    h("div", { class: "header-actions" }, micBtn, gearBtn, soundBtn),
-  );
-
-  return {
-    el,
-    sync() {
-      syncPager();
-      const v = State.view;
-      tabHome.classList.toggle("on", v === "overview" || v === "empty");
-      tabChat.classList.toggle("on", v === "prompt");
-      tabDrop.classList.toggle("on", v === "upload");
-      gearBtn.classList.toggle("on", v === "settings");
-      clear(gearBtn);
-      gearBtn.append(svg(v === "settings" ? ICONS.gearFill : ICONS.gear, 14));
-      clear(soundBtn);
-      soundBtn.append(svg(State.settings.soundEnabled ? ICONS.speakerOn : ICONS.speakerOff, 14));
-      const badge = headerMicBadge();
-      micBtn.style.display = badge ? "" : "none";
-      micBtn.classList.toggle("live", badge === "live");
-      if (badge && micBtn.dataset.state !== badge) {
-        micBtn.dataset.state = badge;
-        clear(micBtn);
-        micBtn.append(svg(badge === "live" ? MIC_ICON : MIC_OFF_ICON, 14, { stroke: 1.9 }));
-      }
-      const users = micUsersLabel(micUsers(State.integrations.integration_audio?.data ?? {}));
-      micBtn.title = badge === "live" ? `${users} is using the mic. Click to mute` : `Mic muted (${users}). Click to unmute`;
-      el.style.opacity = v === "confused" ? "0" : "1";
-    },
-  };
 }
 
 // ── Overview ──────────────────────────────────────────────────────────────────

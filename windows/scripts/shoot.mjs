@@ -109,9 +109,11 @@ async function main() {
     }
     cdp.close();
   } finally {
+    const exited = new Promise((r) => edge.once("exit", r));
     edge.kill();
-    await sleep(300);
-    rmSync(profile, { recursive: true, force: true });
+    await exited;
+    // Edge's child processes can hold the profile a moment longer.
+    rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: POLL_MS });
   }
 }
 
