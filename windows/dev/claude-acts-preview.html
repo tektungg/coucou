@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Claude Code Acts</title>
+    <style>
+      body { margin: 0; background: #0b0c0f; color: #ece9f5; font: 13px/1.4 "Segoe UI", system-ui, sans-serif; padding: 24px 16px; }
+      h1 { font-size: 20px; margin: 0 0 4px; }
+      p { color: #9a94ab; margin: 0 0 18px; max-width: 900px; }
+      #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 14px; }
+      .cell { background: #15131c; border: 1px solid #23202d; border-radius: 18px; padding: 12px; }
+      .cell b { display: block; margin-bottom: 8px; color: #ff8fb1; font: 700 12px "Cascadia Code", Consolas, monospace; }
+      .pair { display: flex; align-items: center; gap: 14px; }
+      .pair canvas { border-radius: 14px; background: radial-gradient(160px 100px at 50% 100%, #2b2738, #17151f 70%); }
+      .island { padding: 6px; border-radius: 16px; background: #17151f; outline: 1px dashed #36314a; }
+    </style>
+  </head>
+  <body>
+    <h1>Claude Code acts</h1>
+    <p>The real Mochi and the real act pipeline. Left: a roomy canvas. Right, dashed: the island's own bot canvas (Home's 58 px Mochi), where anything outside the canvas would be cut.</p>
+    <div id="grid"></div>
+    <script type="module" src="./claude-acts/preview.ts"></script>
+  </body>
+</html>

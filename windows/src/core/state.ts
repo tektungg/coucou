@@ -2,7 +2,7 @@
 
 import type { BotEmoteName, BotStateName, IslandMode, IslandViewName } from "./layout";
 import type { EyeShape } from "../mochi/engine";
-import type { Act } from "../mochi/acts";
+import { isClaudeSessionTask, sessionEndAct, toolKind, type Act, type ToolKind } from "../mochi/acts";
 import type { AskAnswer, AskItem } from "../island/askQuestion";
 import { compareSessions, isSessionPill, sessionColor, staleSessions } from "../island/sessions";
 
@@ -31,6 +31,8 @@ export interface AgentTask {
   costUsd?: number;
   /** One-shot act a pill event started (mochi/acts.ts); continuous acts are derived each frame. */
   act?: Act | null;
+  /** The kind of tool a Claude Code session last called: picks Mochi's working prop. */
+  toolKind?: ToolKind | null;
 }
 
 export interface ApprovalInfo {
@@ -270,8 +272,17 @@ class AppState {
   updateTask(id: string, state: BotStateName) {
     const t = this.tasks.find((x) => x.id === id);
     if (!t) return;
+    // A Claude Code session ending its turn plays a one-shot (confetti, or smoke).
+    const end = isClaudeSessionTask({ ...t, state }) ? sessionEndAct(t.state, state) : null;
+    if (end) t.act = { ...end, at: performance.now() };
     t.state = state;
     this.notify();
+  }
+
+  /** The tool a session is about to call (PreToolUse). */
+  setToolKind(id: string, tool: string) {
+    const t = this.tasks.find((x) => x.id === id);
+    if (t) t.toolKind = toolKind(tool);
   }
 
   appendStep(id: string, step: string) {

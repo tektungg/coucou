@@ -269,6 +269,7 @@ function handleHook(island: Island, payload: HookPayload) {
         State.updateTask(agentId, "question");
         break;
       }
+      State.setToolKind(agentId, tool);
       State.updateTask(agentId, "working");
       State.appendStep(agentId, stepLabel(tool, payload.tool_input ?? {}));
       surface("overview", false);

@@ -220,7 +220,15 @@ network call is the Music pill's lyrics (lrclib.net), which Settings can turn of
   | Messages | the pill's `event` (a new toast, never the backlog) | an envelope pops up, surprised hop, the flap opens on a letter, hearts (3.2 s) |
   | Shelf | a file not on the shelf before, or saved again (screenshots, downloads, pins) | a box on the head, looks up, a sheet falls in, wobble, sparks (2.6 s) |
   | Space | the done count goes up (one poll every 5 minutes) | hard hat and clipboard, the check mark draws itself, proud hop; star eyes and confetti when every item is done (2.8 s / 3.6 s) |
+  | Claude Code | the focused session's state (hooks) | idle: a steaming mug · thinking: a thought cloud · working: a prop per tool (keyboard for Edit/Write, terminal for Bash, magnifier for Read/Grep/Glob/Web) · question: a "?" bubble · approval: a golden key · rate limit: an hourglass · error: a plaster. Ending a turn plays a one-shot: confetti and two hops when it finishes (2.6 s), smoke puffs when it fails (2.4 s) |
 
+  The Claude Code acts come from the session, not from pill data: `continuousAct`
+  reads its state (and `toolKind`, which `hooks.ts` records on PreToolUse), and
+  `State.updateTask` stores the finished/error one-shot. Their props live in
+  `mochi/claudeProps.ts`. `tests/claudeProps.test.ts` replays every prop through
+  a canvas stub and fails if one leaves the island's bot canvas or covers an
+  eye; `dev/claude-acts-preview.html` shows each one at preview size and at the
+  island's own canvas size.
   Only Messages sends an `event`, so `detectAct` compares each update with the
   pill's previous data in `island/integrations.ts`. The first data after a
   launch is the backlog and never plays, and files leaving the shelf (the

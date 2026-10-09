@@ -3,7 +3,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   actBursts, actDurationMs, actEye, actFor, actKey, actPose, actProps, continuousAct, detectAct,
-  endFade, isOneShot, newShelfItem, CATCH_LAND, CHECK_DONE, MAIL_OPEN, NEUTRAL,
+  endFade, isOneShot, newShelfItem, sessionEndAct, toolKind,
+  CATCH_LAND, CHECK_DONE, CLAUDE_ERROR_MS, CLAUDE_FINISHED_MS, MAIL_OPEN, NEUTRAL,
   type ActName, type Pose,
 } from "../src/mochi/acts.ts";
 
@@ -190,4 +191,64 @@ test("particle bursts fire once each, at their moment, whatever the frame rate",
     assert.deepEqual(total("check", "all", fps), { star: 10, spark: 6 });
     assert.deepEqual(total("dance", null, fps), {});
   }
+});
+
+// ── Claude Code sessions ──────────────────────────────────────────────────────
+
+const session = (state: string, over: Record<string, unknown> = {}) =>
+  ({ id: "cc_1234abcd", state, source: "claudeCode" as const, steps: ["Reading"], ...over });
+
+test("Claude Code: each state plays its act, finished has only its one-shot", () => {
+  const variant = (state: string) => continuousAct(session(state), null)?.variant ?? null;
+  assert.deepEqual(
+    ["idle", "thinking", "question", "approval", "ratelimit", "error", "finished"].map(variant),
+    ["idle", "thinking", "question", "approval", "ratelimit", "error", null]);
+  assert.equal(continuousAct(session("idle"), null)?.name, "claude");
+});
+
+test("Claude Code: working picks its prop from the tool", () => {
+  assert.equal(toolKind("Edit"), "edit");
+  assert.equal(toolKind("Write"), "edit");
+  assert.equal(toolKind("Bash"), "bash");
+  assert.equal(toolKind("PowerShell"), "bash");
+  for (const tool of ["Read", "Grep", "Glob", "WebSearch", "WebFetch"]) assert.equal(toolKind(tool), "read", tool);
+  assert.equal(toolKind("mcp__space__list_tasks"), "edit", "unknown tools type");
+  assert.equal(continuousAct(session("working", { toolKind: "bash" }), null)?.variant, "working:bash");
+  assert.equal(continuousAct(session("working"), null)?.variant, "working:edit", "no tool seen yet");
+});
+
+test("Claude Code: the idle catch-all pill and other pills play nothing", () => {
+  const catchAll = { id: "integration_claude", state: "idle", source: "claudeCode" as const, steps: [] };
+  assert.equal(continuousAct(catchAll, null), null, "the VS Code pill with no session");
+  assert.equal(continuousAct({ ...catchAll, state: "working" }, null)?.name, "claude", "a session without its own pill");
+  assert.equal(continuousAct({ id: "agent_gemini", state: "working", source: "agent" as const, steps: [] }, null), null);
+});
+
+test("Claude Code: ending a turn plays a one-shot, only on the change", () => {
+  assert.deepEqual(sessionEndAct("working", "finished"), { name: "claudeEnd", variant: "finished" });
+  assert.deepEqual(sessionEndAct("working", "error"), { name: "claudeEnd", variant: "error" });
+  assert.equal(sessionEndAct("finished", "finished"), null, "a repeated Stop does not replay it");
+  assert.equal(sessionEndAct("finished", "idle"), null);
+  assert.equal(actDurationMs("claudeEnd", "finished"), CLAUDE_FINISHED_MS);
+  assert.equal(actDurationMs("claudeEnd", "error"), CLAUDE_ERROR_MS);
+  assert.ok(isOneShot("claudeEnd") && !isOneShot("claude"));
+});
+
+test("Claude Code: a live end act wins over the state's act, then hands back", () => {
+  const at = 1000;
+  const t = { ...session("error"), act: { name: "claudeEnd" as const, variant: "error", at } };
+  assert.equal(actFor(t, null, at + 100)?.name, "claudeEnd");
+  assert.equal(actFor(t, null, at + CLAUDE_ERROR_MS + 1)?.variant, "error", "then the plaster stays");
+  assert.equal(actFor(t, null, at + CLAUDE_ERROR_MS + 1)?.name, "claude");
+});
+
+test("Claude Code: finished hops, error flinches, and both fade back to neutral", () => {
+  const hop = actPose("claudeEnd", "finished", 0.33, 0);
+  assert.ok(hop.oy < 0, "up in the air");
+  assert.equal(actEye("claudeEnd", "finished", 0.5), "happy");
+  assert.ok(Math.abs(actPose("claudeEnd", "error", 0.05, 0).ox) > 0);
+  const end = actPose("claudeEnd", "finished", CLAUDE_FINISHED_MS / 1000, 0);
+  assert.ok(Math.abs(end.oy) < 1e-9 && Math.abs(end.ox) < 1e-9);
+  assert.deepEqual(actPose("claude", "working:edit", 1, 1), NEUTRAL);
+  assert.equal(actEye("claude", "idle", 1), null, "the state's own eyes");
 });

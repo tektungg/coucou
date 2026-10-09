@@ -7,6 +7,7 @@
 //     --wait=<ms>        real time to wait after load (default 1500)
 //     --size=<w>x<h>     viewport (default 900x340)
 //     --clip=<x>,<y>,<w>,<h>  part of the page to keep (default: whole viewport)
+//     --console          print the page's uncaught exceptions and console errors
 //
 // Each URL is saved as <out-dir>/<n>-<query>.png and the paths are printed.
 
@@ -22,12 +23,13 @@ const POLL_MS = 200;
 const POLL_TRIES = 50;
 
 function parseArgs(argv) {
-  const opts = { wait: 1500, w: 900, h: 340, clip: null };
+  const opts = { wait: 1500, w: 900, h: 340, clip: null, console: false };
   const rest = [];
   for (const a of argv) {
     const [k, v] = a.split("=");
     if (k === "--wait") opts.wait = Number(v);
     else if (k === "--size") [opts.w, opts.h] = v.split("x").map(Number);
+    else if (k === "--console") opts.console = true;
     else if (k === "--clip") {
       const [x, y, width, height] = v.split(",").map(Number);
       opts.clip = { x, y, width, height, scale: 1 };
@@ -50,13 +52,14 @@ async function devtools() {
   throw new Error("Edge did not open its DevTools port");
 }
 
-/** A tiny CDP client: send(method, params) resolves with the result. */
-function connect(wsUrl) {
+/** A tiny CDP client: send(method, params) resolves with the result; events go to `onEvent`. */
+function connect(wsUrl, onEvent) {
   const ws = new WebSocket(wsUrl);
   let id = 0;
   const pending = new Map();
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
+    if (msg.method) return onEvent?.(msg);
     const p = pending.get(msg.id);
     if (!p) return;
     pending.delete(msg.id);
@@ -80,11 +83,22 @@ async function shoot(cdp, url, file, opts) {
   const s = (m, p) => cdp.send(m, p, sessionId);
   await s("Emulation.setDeviceMetricsOverride", { width: opts.w, height: opts.h, deviceScaleFactor: 1, mobile: false });
   await s("Page.enable");
+  if (opts.console) await s("Runtime.enable");
   await s("Page.navigate", { url });
   await sleep(opts.wait);
   const shot = await s("Page.captureScreenshot", { format: "png", ...(opts.clip ? { clip: opts.clip } : {}) });
   writeFileSync(file, Buffer.from(shot.data, "base64"));
   await cdp.send("Target.closeTarget", { targetId });
+}
+
+/** Uncaught exceptions and console.error from the page, one line each. */
+function printPageError(msg) {
+  if (msg.method === "Runtime.exceptionThrown") {
+    const d = msg.params.exceptionDetails;
+    console.error(`page exception: ${d.exception?.description ?? d.text} (${d.url ?? ""}:${d.lineNumber})`);
+  } else if (msg.method === "Runtime.consoleAPICalled" && msg.params.type === "error") {
+    console.error(`page console.error: ${msg.params.args.map((a) => a.value ?? a.description).join(" ")}`);
+  }
 }
 
 async function main() {
@@ -100,7 +114,7 @@ async function main() {
     `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, "about:blank",
   ], { stdio: "ignore" });
   try {
-    const cdp = await connect((await devtools()).webSocketDebuggerUrl);
+    const cdp = await connect((await devtools()).webSocketDebuggerUrl, opts.console ? printPageError : undefined);
     for (const [i, url] of urls.entries()) {
       const tag = (new URL(url).search.slice(1) || "page").replace(/[^a-z0-9]+/gi, "_").slice(0, 60);
       const file = join(out, `${String(i + 1).padStart(2, "0")}-${tag}.png`);

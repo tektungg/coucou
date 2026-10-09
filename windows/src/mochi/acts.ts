@@ -7,7 +7,7 @@
 import type { AgentTask } from "../core/state";
 import type { EyeShape } from "./engine";
 
-export type ActName = "dance" | "mic" | "mail" | "catch" | "check";
+export type ActName = "dance" | "mic" | "mail" | "catch" | "check" | "claude" | "claudeEnd";
 
 /** What a pill is playing. `at` is performance.now() ms of the event (0 for continuous acts). */
 export interface Act {
@@ -36,6 +36,11 @@ export interface Pose {
 export const NEUTRAL: Pose = { oy: 0, ox: 0, tilt: 0, yaw: 0, pitch: 0, sx: 1, sy: 1, handL: 0, handR: 0 };
 
 export const AUDIO_PILL_ID = "integration_audio";
+export const CLAUDE_CATCHALL_ID = "integration_claude";
+
+/** The one-shots a Claude Code session plays as it ends a turn (claudeProps.ts). */
+export const CLAUDE_FINISHED_MS = 2600;
+export const CLAUDE_ERROR_MS = 2400;
 export const MESSAGES_PILL_ID = "integration_messages";
 export const SHELF_PILL_ID = "integration_shelf";
 export const SPACE_PILL_ID = "integration_space";
@@ -46,6 +51,7 @@ export function actDurationMs(name: ActName, variant: string | null): number {
     case "mail": return 3200;
     case "catch": return 2600;
     case "check": return variant === "all" ? 3600 : 2800;
+    case "claudeEnd": return variant === "error" ? CLAUDE_ERROR_MS : CLAUDE_FINISHED_MS;
     default: return Number.POSITIVE_INFINITY;
   }
 }
@@ -175,8 +181,47 @@ export function detectAct(
   }
 }
 
+// ── Claude Code sessions ──────────────────────────────────────────────────────
+// Mochi acts out what a focused Claude Code session is doing: a prop per state,
+// and for tool use, a prop per kind of tool (claudeProps.ts).
+
+export type ToolKind = "edit" | "bash" | "read";
+
+const TOOL_KINDS: Record<string, ToolKind> = {
+  Bash: "bash", PowerShell: "bash",
+  Read: "read", Grep: "read", Glob: "read", LS: "read", WebSearch: "read", WebFetch: "read",
+};
+
+/** Which prop a tool gets; editing tools and anything unknown type on the keyboard. */
+export const toolKind = (tool: string): ToolKind => TOOL_KINDS[tool] ?? "edit";
+
+type SessionLike = Pick<AgentTask, "id" | "state" | "source" | "steps"> & { toolKind?: ToolKind | null };
+
+/** A Claude Code session; the catch-all pill only while a session without its own pill runs. */
+export function isClaudeSessionTask(task: SessionLike): boolean {
+  if (task.source !== "claudeCode") return false;
+  return task.id !== CLAUDE_CATCHALL_ID || task.state !== "idle" || task.steps.length > 0;
+}
+
+/** States whose prop lasts as long as the state (finished has only its one-shot). */
+const CLAUDE_STATES = new Set(["idle", "thinking", "working", "question", "approval", "ratelimit", "error"]);
+
+function claudeAct(task: SessionLike): Trigger | null {
+  if (!isClaudeSessionTask(task) || !CLAUDE_STATES.has(task.state)) return null;
+  const variant = task.state === "working" ? `working:${task.toolKind ?? "edit"}` : task.state;
+  return { name: "claude", variant };
+}
+
+/** The one-shot a session plays as it moves into finished or error, else null. */
+export function sessionEndAct(prev: string, next: string): Trigger | null {
+  if (prev === next || (next !== "finished" && next !== "error")) return null;
+  return { name: "claudeEnd", variant: next };
+}
+
 /** Acts that last while their trigger holds, read from the pill each frame. */
-export function continuousAct(task: Pick<AgentTask, "id" | "state">, data: Data): Trigger | null {
+export function continuousAct(task: SessionLike, data: Data): Trigger | null {
+  const claude = claudeAct(task);
+  if (claude) return claude;
   if (isDancing(task)) return { name: "dance", variant: null };
   if (task.id === AUDIO_PILL_ID && listOf<string>(data, "micUsers").length > 0) {
     const input = data?.input as { muted?: unknown } | null | undefined;
@@ -187,7 +232,7 @@ export function continuousAct(task: Pick<AgentTask, "id" | "state">, data: Data)
 
 /** What Mochi plays for this pill right now: a live one-shot first, then a continuous act. */
 export function actFor(
-  task: (Pick<AgentTask, "id" | "state"> & { act?: Act | null }) | null | undefined,
+  task: (SessionLike & { act?: Act | null }) | null | undefined,
   data: Data,
   nowMs: number,
 ): Act | null {
@@ -231,91 +276,124 @@ export const CHECK_DONE = 0.85;
 
 // ── Poses ─────────────────────────────────────────────────────────────────────
 
+function micPose(variant: string | null, t: number): Pose {
+  if (variant === "muted") {
+    // Muted on a call: still, slow breath, a small sulky lean.
+    const b = Math.sin(2 * Math.PI * 0.5 * t);
+    return { ...NEUTRAL, tilt: 0.05, sy: 1 + 0.015 * b, sx: 1 - 0.01 * b };
+  }
+  // Talking: a quick nod on syllables, a slow head turn.
+  const s = Math.sin(2 * Math.PI * 1.6 * t);
+  return {
+    ...NEUTRAL,
+    oy: -Math.max(0, s) * 0.03,
+    pitch: -Math.max(0, s) * 0.08, // nod down (positive pitch looks up)
+    yaw: Math.sin(2 * Math.PI * 0.3 * t) * 0.1,
+    tilt: Math.sin(2 * Math.PI * 0.4 * t) * 0.05,
+    sy: 1 + 0.02 * s,
+    sx: 1 - 0.012 * s,
+  };
+}
+
+function mailPose(variant: string | null, age: number): Pose {
+  const e = endFade("mail", variant, age);
+  const hop = age < 0.7 ? Math.sin((Math.PI * age) / 0.7) : 0;
+  const land = bump(age, 0.72, 0.1);
+  const sway = age > 0.9 ? Math.sin(2 * Math.PI * 0.9 * (age - 0.9)) : 0;
+  const hands = ramp(age, 0.02, 0.25) * (1 - ramp(age, 0.6, 0.95));
+  return {
+    ...NEUTRAL,
+    oy: -0.28 * hop * e,
+    tilt: 0.1 * sway * e,
+    sx: 1 + 0.1 * land * e,
+    sy: 1 - 0.12 * land * e,
+    handL: hands * e,
+    handR: hands * e,
+  };
+}
+
+function catchPose(variant: string | null, age: number): Pose {
+  const e = endFade("catch", variant, age);
+  const look = ramp(age, 0, 0.35) * (1 - ramp(age, CATCH_LAND, 1.25));
+  const since = age - CATCH_LAND;
+  const wobble = since > 0 ? Math.exp(-since * 3) * Math.sin(2 * Math.PI * 3 * since) : 0;
+  const land = bump(age, CATCH_LAND + 0.05, 0.09);
+  return {
+    ...NEUTRAL,
+    pitch: 0.45 * look * e, // looks up at the falling file
+    oy: 0.04 * land * e,
+    tilt: 0.12 * wobble * e,
+    sx: 1 + 0.1 * land * e,
+    sy: 1 - 0.12 * land * e,
+  };
+}
+
+function checkPose(variant: string | null, age: number): Pose {
+  const e = endFade("check", variant, age);
+  const hops = variant === "all" ? 3 : 1;
+  let hop = 0;
+  for (let i = 0; i < hops; i++) {
+    const a0 = CHECK_DONE + i * 0.5;
+    if (age > a0 && age < a0 + 0.4) hop = Math.sin((Math.PI * (age - a0)) / 0.4);
+  }
+  const proud = ramp(age, CHECK_DONE, CHECK_DONE + 0.25);
+  return {
+    ...NEUTRAL,
+    oy: -0.15 * hop * e,
+    tilt: -0.12 * proud * e,
+    handR: 0.55 * ramp(age, 0, 0.3) * e,
+  };
+}
+
+type PoseOf = (variant: string | null, age: number, t: number) => Pose;
+
+const POSES: Record<ActName, PoseOf> = {
+  dance: (_v, _age, t) => ({ ...dancePose(t), pitch: 0 }),
+  mic: (variant, _age, t) => micPose(variant, t),
+  mail: mailPose,
+  catch: catchPose,
+  check: checkPose,
+  // The state's own animation carries it; the prop does the rest.
+  claude: () => NEUTRAL,
+  claudeEnd: (variant, age) => claudeEndPose(variant, age),
+};
+
 /**
  * Pose of an act `age` seconds after it started, `t` the engine's free clock
  * (continuous acts follow `t` so they keep their rhythm).
  */
 export function actPose(name: ActName, variant: string | null, age: number, t: number): Pose {
-  switch (name) {
-    case "dance":
-      return { ...dancePose(t), pitch: 0 };
-    case "mic": {
-      if (variant === "muted") {
-        // Muted on a call: still, slow breath, a small sulky lean.
-        const b = Math.sin(2 * Math.PI * 0.5 * t);
-        return { ...NEUTRAL, tilt: 0.05, sy: 1 + 0.015 * b, sx: 1 - 0.01 * b };
-      }
-      // Talking: a quick nod on syllables, a slow head turn.
-      const s = Math.sin(2 * Math.PI * 1.6 * t);
-      return {
-        ...NEUTRAL,
-        oy: -Math.max(0, s) * 0.03,
-        pitch: -Math.max(0, s) * 0.08, // nod down (positive pitch looks up)
-        yaw: Math.sin(2 * Math.PI * 0.3 * t) * 0.1,
-        tilt: Math.sin(2 * Math.PI * 0.4 * t) * 0.05,
-        sy: 1 + 0.02 * s,
-        sx: 1 - 0.012 * s,
-      };
-    }
-    case "mail": {
-      const e = endFade(name, variant, age);
-      const hop = age < 0.7 ? Math.sin((Math.PI * age) / 0.7) : 0;
-      const land = bump(age, 0.72, 0.1);
-      const sway = age > 0.9 ? Math.sin(2 * Math.PI * 0.9 * (age - 0.9)) : 0;
-      const hands = ramp(age, 0.02, 0.25) * (1 - ramp(age, 0.6, 0.95));
-      return {
-        ...NEUTRAL,
-        oy: -0.28 * hop * e,
-        tilt: 0.1 * sway * e,
-        sx: 1 + 0.1 * land * e,
-        sy: 1 - 0.12 * land * e,
-        handL: hands * e,
-        handR: hands * e,
-      };
-    }
-    case "catch": {
-      const e = endFade(name, variant, age);
-      const look = ramp(age, 0, 0.35) * (1 - ramp(age, CATCH_LAND, 1.25));
-      const since = age - CATCH_LAND;
-      const wobble = since > 0 ? Math.exp(-since * 3) * Math.sin(2 * Math.PI * 3 * since) : 0;
-      const land = bump(age, CATCH_LAND + 0.05, 0.09);
-      return {
-        ...NEUTRAL,
-        pitch: 0.45 * look * e, // looks up at the falling file
-        oy: 0.04 * land * e,
-        tilt: 0.12 * wobble * e,
-        sx: 1 + 0.1 * land * e,
-        sy: 1 - 0.12 * land * e,
-      };
-    }
-    case "check": {
-      const e = endFade(name, variant, age);
-      const hops = variant === "all" ? 3 : 1;
-      let hop = 0;
-      for (let i = 0; i < hops; i++) {
-        const a0 = CHECK_DONE + i * 0.5;
-        if (age > a0 && age < a0 + 0.4) hop = Math.sin((Math.PI * (age - a0)) / 0.4);
-      }
-      const proud = ramp(age, CHECK_DONE, CHECK_DONE + 0.25);
-      return {
-        ...NEUTRAL,
-        oy: -0.15 * hop * e,
-        tilt: -0.12 * proud * e,
-        handR: 0.55 * ramp(age, 0, 0.3) * e,
-      };
-    }
-  }
+  return POSES[name](variant, age, t);
 }
+
+/** Finished: two happy hops while the confetti flies. Error: a flinch that settles. */
+function claudeEndPose(variant: string | null, age: number): Pose {
+  const e = endFade("claudeEnd", variant, age);
+  if (variant === "error") {
+    return { ...NEUTRAL, ox: Math.sin(age * 30) * 0.035 * Math.exp(-age * 2.5) * e };
+  }
+  const hop = Math.max(0, Math.sin((age / (CLAUDE_FINISHED_MS / 1000)) * Math.PI * 4));
+  return { ...NEUTRAL, oy: -0.12 * hop * e, sy: 1 + 0.04 * hop * e, sx: 1 - 0.03 * hop * e };
+}
+
+type EyeOf = (variant: string | null, age: number) => EyeShape | null;
+
+const EYES: Record<ActName, EyeOf> = {
+  dance: () => "happy",
+  mic: () => null,
+  mail: (_v, age) => (age < 0.8 ? "dot" : "happy"),
+  catch: (_v, age) => (age < CATCH_LAND ? null : "happy"),
+  check: (variant, age) => {
+    if (age < CHECK_DONE) return null;
+    return variant === "all" ? "star" : "happy";
+  },
+  claude: () => null,
+  claudeEnd: (variant) => (variant === "finished" ? "happy" : null),
+};
 
 /** Eye shape for the act, or null to keep the state's own eyes. */
 export function actEye(name: ActName, variant: string | null, age: number): EyeShape | null {
-  switch (name) {
-    case "dance": return "happy";
-    case "mic": return null;
-    case "mail": return age < 0.8 ? "dot" : "happy";
-    case "catch": return age < CATCH_LAND ? null : "happy";
-    case "check": return age < CHECK_DONE ? null : variant === "all" ? "star" : "happy";
-  }
+  return EYES[name](variant, age);
 }
 
 /**

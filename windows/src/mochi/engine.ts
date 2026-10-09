@@ -11,6 +11,7 @@ import {
   ACT_HANDS, isOneShot, noteDue, actBursts, actEye, actKey, actPitchFloor, actPose, actProps, type Act, type Props,
 } from "./acts";
 import { BODY_RY, ENVELOPE, EYE_H, EYE_P, EYE_SP, EYE_W, envelopeParts } from "./geometry";
+import { PROP_SCALE, drawClaudeProp } from "./claudeProps";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -759,7 +760,7 @@ export class BotEngine {
     this.drawEyes(x, body, R, rx, ry);
     if (this.morph > 0.05) this.drawMouth(x, body, R);
     const propAmt = this.actAmt * Math.max(0, 1 - this.morph * 2);
-    if (this.shown && propAmt > 0.01) this.drawProps(x, R, rx, ry, this.shown, propAmt);
+    if (this.shown && propAmt > 0.01) this.drawProps(x, { R, rx, ry }, this.shown, propAmt);
 
     x.restore();
 
@@ -1021,7 +1022,8 @@ export class BotEngine {
 
   // ── Act props: all drawn in code, in body space so they follow the pose ──────
 
-  private drawProps(x: CanvasRenderingContext2D, R: number, rx: number, ry: number, act: Act, alpha: number) {
+  private drawProps(x: CanvasRenderingContext2D, body: { R: number; rx: number; ry: number }, act: Act, alpha: number) {
+    const { R, rx, ry } = body;
     const p = this.props;
     x.save();
     x.globalAlpha = alpha;
@@ -1033,6 +1035,11 @@ export class BotEngine {
       case "check":
         this.drawHardHat(x, R, rx, ry, p.show);
         this.drawClipboard(x, R, rx, ry, p.show, p.stroke);
+        break;
+      case "claude":
+      case "claudeEnd":
+        // lastActAge: a one-shot's age, or the free clock for a continuous act.
+        drawClaudeProp(x, { R: R * PROP_SCALE, rx, ry, t: this.lastActAge }, act.name, act.variant);
         break;
     }
     x.restore();

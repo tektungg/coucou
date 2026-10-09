@@ -18,6 +18,8 @@ const view: IslandViewName = asked in VIEW_LAYOUTS ? (asked as IslandViewName) :
 (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {
   transformCallback: () => 0,
   invoke: async () => null,
+  // getCurrentWebview() (the file drop listener) reads these labels.
+  metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main", windowLabel: "main" } },
 };
 
 const { State } = await import("../src/core/state");
