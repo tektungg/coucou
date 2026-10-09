@@ -363,7 +363,7 @@ body {
 .card {
   position: relative;
   height: 100%;
-  border-radius: 20px;
+  border-radius: var(--r-card);
   background: var(--card);
   border: 1px solid var(--hairline);
   overflow: hidden;
@@ -429,8 +429,8 @@ body {
 /* ── Buttons ────────────────────────────────────────────────────────────── */
 
 .btn {
-  font: 500 12.5px var(--font);
-  padding: 7px 13px;
+  font: 650 12.5px var(--font);
+  padding: 7px 14px;
   border: 0;
   border-radius: 999px;
   cursor: default;
@@ -445,17 +445,27 @@ body {
 }
 
 .btn.primary {
-  background: var(--ink);
-  color: #0b0c0e;
+  background: var(--acc);
+  color: var(--acc-ink);
+}
+
+.btn.allow {
+  background: var(--green);
+  color: #062b14;
+}
+
+.btn.primary:hover,
+.btn.allow:hover {
+  filter: brightness(1.08);
 }
 
 .btn.secondary {
-  background: rgba(255, 255, 255, 0.09);
+  background: var(--soft-2);
   color: var(--ink-2);
 }
 
 .btn.secondary:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--soft-3);
 }
 
 .btn .kbd {
@@ -465,7 +475,8 @@ body {
   opacity: 0.55;
 }
 
-.btn.primary .kbd {
+.btn.primary .kbd,
+.btn.allow .kbd {
   border: 1px solid rgba(0, 0, 0, 0.4);
 }
 
@@ -592,7 +603,7 @@ body {
 }
 
 .who .name {
-  font: 600 12px var(--font);
+  font: 700 12.5px var(--font);
   color: var(--ink);
   white-space: nowrap;
   overflow: hidden;
@@ -720,11 +731,11 @@ body {
 
 .code {
   font: 400 12px var(--mono);
-  color: #e8e9ec;
-  background: rgba(255, 255, 255, 0.07);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 10px;
-  padding: 5px 10px;
+  color: var(--ink-2);
+  background: var(--soft-2);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  padding: 5px 11px;
   max-width: 100%;
   white-space: nowrap;
   overflow: hidden;
@@ -828,11 +839,11 @@ body {
 }
 
 .ask-chip {
-  font: 500 12px var(--font);
-  padding: 6px 11px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.07);
+  font: 600 12px var(--font);
+  padding: 6px 12px;
+  border-radius: var(--r-pill);
+  border: 1px solid transparent;
+  background: var(--soft-2);
   color: var(--ink-2);
   cursor: default;
   max-width: 100%;
@@ -842,17 +853,27 @@ body {
 }
 
 .ask-chip:hover {
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--soft-3);
 }
 
 .ask-chip.on {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: #0b0c0e;
+  background: var(--acc);
+  border-color: var(--acc);
+  color: var(--acc-ink);
 }
 
 .ask-chip.other {
+  border-color: var(--soft-3);
   border-style: dashed;
+}
+
+.settings-row.status {
+  gap: 14px;
+}
+
+.settings-link {
+  color: var(--dim-2);
+  font-size: 11.5px;
 }
 
 .status-badge {
@@ -876,7 +897,7 @@ body {
   align-items: center;
   gap: 10px;
   font: 400 12.5px var(--font);
-  color: #c5c8cd;
+  color: var(--ink-2);
 }
 
 .switch {
@@ -884,7 +905,7 @@ body {
   width: 32px;
   height: 18px;
   border-radius: 9px;
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--soft-3);
   flex: 0 0 32px;
   transition: background 0.18s;
   cursor: default;
@@ -914,9 +935,9 @@ body {
 input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
-  height: 3px;
+  height: 4px;
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--soft-3);
   width: 72px;
 }
 
@@ -935,18 +956,18 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .seg button {
-  font: 400 11px var(--font);
-  padding: 3px 7px;
+  font: 600 11px var(--font);
+  padding: 3px 9px;
   border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--dim-3);
+  border-radius: var(--r-pill);
+  background: var(--soft-2);
+  color: var(--dim-2);
   cursor: default;
 }
 
 .seg button.on {
-  background: #252830;
-  color: var(--ink);
+  background: #ffffff;
+  color: #241d2e;
 }
 
 /* ── Utility ────────────────────────────────────────────────────────────── */
@@ -1026,21 +1047,27 @@ input[type="range"]::-webkit-slider-thumb {
   padding-left: 32px;
 }
 
+/* The user's message: blue, its tail on the right. */
 .bubble {
-  background: rgba(255, 255, 255, 0.13);
-  border-radius: 12px;
-  padding: 6px 10px;
-  font: 400 12.5px var(--font);
-  color: var(--ink-2);
+  background: var(--acc-2);
+  border-radius: 16px 16px 5px 16px;
+  padding: 6px 12px;
+  font: 500 12.5px var(--font);
+  color: var(--acc-2-ink);
   white-space: pre-wrap;
   user-select: text;
 }
 
+/* Mochi's answer: a soft bubble, its tail toward Mochi on the left. */
 .reply {
+  align-self: flex-start;
+  max-width: 92%;
+  background: var(--soft-2);
+  border-radius: 5px 16px 16px 16px;
+  padding: 6px 12px;
   font: 400 12.5px var(--font);
-  color: #b0b5be;
+  color: var(--ink-2);
   white-space: pre-wrap;
-  padding-right: 8px;
   user-select: text;
 }
 
@@ -1075,9 +1102,9 @@ input[type="range"]::-webkit-slider-thumb {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 10px;
-  background: rgba(255, 255, 255, 0.07);
-  border-radius: 12px;
+  padding: 5px 5px 5px 14px;
+  background: var(--soft-2);
+  border-radius: var(--r-pill);
 }
 
 .chat-input {
@@ -1101,8 +1128,8 @@ input[type="range"]::-webkit-slider-thumb {
   flex: 0 0 28px;
   border: 0;
   border-radius: 50%;
-  background: var(--ink);
-  color: #0b0c0e;
+  background: var(--acc);
+  color: var(--acc-ink);
   display: grid;
   place-items: center;
   cursor: default;
@@ -1278,7 +1305,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .int-head b {
-  font: 600 12px var(--font);
+  font: 700 12.5px var(--font);
   color: var(--ink);
 }
 
@@ -1347,13 +1374,13 @@ input[type="range"]::-webkit-slider-thumb {
   align-items: center;
   gap: 5px;
   padding: 3px 8px;
-  border-radius: 5px;
+  border-radius: 10px;
   min-width: 0;
 }
 
 .int-name {
   font: 500 11px var(--font);
-  color: #9398a1;
+  color: var(--dim);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1361,7 +1388,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 .int-row.first .int-name {
-  color: #c5c8cd;
+  color: var(--ink-2);
 }
 
 .int-ago {
@@ -1508,12 +1535,12 @@ input[type="range"]::-webkit-slider-thumb {
   flex: none;
   min-width: 0;
   padding: 3px 8px 3px 18px;
-  border-radius: 5px;
+  border-radius: 5px 14px 14px 14px;
   cursor: pointer;
 }
 
 .msg-item:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--soft-2);
 }
 
 .msg-top {
@@ -1526,15 +1553,15 @@ input[type="range"]::-webkit-slider-thumb {
 .msg-sender {
   flex: 0 1 auto;
   min-width: 0;
-  font: 600 11px var(--font);
-  color: #c5c8cd;
+  font: 650 11px var(--font);
+  color: var(--ink-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .msg-item.newest .msg-sender {
-  color: #e6e7ea;
+  color: var(--acc);
 }
 
 .msg-place {

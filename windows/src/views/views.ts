@@ -4,6 +4,7 @@
 
 import { personalDataKey } from "./personal";
 import { h, svg, clear, dot } from "./dom";
+import { API_KEY_SECRET, Bridge } from "../core/bridge";
 import { ICONS } from "./icons";
 import { Ticker } from "./ticker";
 import { State, type AgentTask } from "../core/state";
@@ -60,9 +61,10 @@ function card(wash: Wash, ...children: (Node | string)[]): HTMLElement {
   return el;
 }
 
+/** "allow" is the approval's Allow: green, so it never reads as the pink default action. */
 function btn(
   label: string,
-  kind: "primary" | "secondary",
+  kind: "primary" | "secondary" | "allow",
   onClick: () => void,
   kbd?: string,
 ): HTMLElement {
@@ -273,7 +275,7 @@ function buildApproval(actions: ViewActions): ViewHost {
       clear(row);
       row.append(
         btn("Deny", "secondary", () => actions.decide("deny"), "N"),
-        btn("Allow", "primary", () => actions.decide("allow"), "Y"),
+        btn("Allow", "allow", () => actions.decide("allow"), "Y"),
       );
     },
   };
@@ -605,64 +607,93 @@ function buildNote(): ViewHost {
 
 // ── In-island settings ────────────────────────────────────────────────────────
 
-function buildSettings(actions: ViewActions): ViewHost {
-  const soundSwitch = h("button", { class: "switch", onclick: () => actions.toggleSound() });
+/** Auto-close choices of the in-island settings, in seconds. */
+const AUTO_CLOSE_CHOICES = [10, 15, 30];
+/** How often the Chat badge re-checks its key or CLI while the view is open. */
+const CHAT_CHECK_MS = 10_000;
+const BADGE_OK = "#22C55E";
+const BADGE_MISSING = "#F4505E";
+
+/** Whether the chat can answer: a saved API key, or the Claude Code CLI found. Cached. */
+const chatReadiness = { ready: null as boolean | null, provider: "", checkedAt: -Infinity };
+
+function refreshChatReadiness() {
+  const provider = State.settings.chatProvider;
+  const now = performance.now();
+  if (provider === chatReadiness.provider && now - chatReadiness.checkedAt < CHAT_CHECK_MS) return;
+  chatReadiness.provider = provider;
+  chatReadiness.checkedAt = now;
+  const check = provider === "cli"
+    ? Bridge.claudeCliStatus().then((r) => r?.found === true)
+    : Bridge.secretPresent(API_KEY_SECRET).then((v) => v === true);
+  void check.then((ready) => {
+    // A provider switched meanwhile has its own check on the way.
+    if (provider !== chatReadiness.provider || ready === chatReadiness.ready) return;
+    chatReadiness.ready = ready;
+    State.notify();
+  });
+}
+
+function badge(el: HTMLElement, ok: boolean, label: string) {
+  clear(el);
+  el.append(dot(ok ? BADGE_OK : BADGE_MISSING, 6), h("span", { text: label }));
+}
+
+function soundRow(actions: ViewActions) {
+  const toggle = h("button", { class: "switch", onclick: () => actions.toggleSound() });
   const volume = h("input", {
     type: "range", min: "0", max: "0.2", step: "0.005",
     oninput: (e: Event) => actions.setVolume(Number((e.target as HTMLInputElement).value)),
   }) as HTMLInputElement;
-  const autoLabel = h("span", {});
-  const segButtons = [10, 15, 30].map((s) =>
-    h("button", { onclick: () => actions.setAutoClose(s) }, `${s}s`),
-  );
-  const claudeBadge = h("span", { class: "status-badge" });
-  const apiBadge = h("span", { class: "status-badge" });
+  return {
+    el: h("div", { class: "settings-row" }, toggle, h("span", { text: "Sound" }), volume),
+    sync() {
+      const s = State.settings;
+      toggle.classList.toggle("on", s.soundEnabled);
+      volume.value = String(s.soundVolume);
+      volume.style.opacity = s.soundEnabled ? "1" : "0.4";
+    },
+  };
+}
 
-  const rows = h(
-    "div",
-    { class: "settings-rows" },
-    h("div", { class: "settings-row" }, soundSwitch, h("span", { text: "Sound" }), volume),
-    h(
-      "div",
-      { class: "settings-row" },
-      svg(ICONS.timer, 12),
-      autoLabel,
-      h("div", { class: "seg" }, ...segButtons),
-    ),
-    h(
-      "div",
-      { class: "settings-row", style: "gap:14px" },
-      claudeBadge,
-      apiBadge,
-      h("div", { class: "grow" }),
-      h("button", {
-        class: "link-btn",
-        style: "color:#8e939c;font-size:11.5px",
-        text: "Settings…",
-        onclick: () => actions.openSettingsWindow(),
-      }),
-    ),
-  );
+function autoCloseRow(actions: ViewActions) {
+  const label = h("span", {});
+  const choices = AUTO_CLOSE_CHOICES.map((s) => h("button", { onclick: () => actions.setAutoClose(s) }, `${s}s`));
+  return {
+    el: h("div", { class: "settings-row" }, svg(ICONS.timer, 12), label, h("div", { class: "seg" }, ...choices)),
+    sync() {
+      const secs = State.settings.autoCloseInterval;
+      label.textContent = `Auto-close · ${Math.round(secs)}s`;
+      choices.forEach((b, i) => b.classList.toggle("on", secs === AUTO_CLOSE_CHOICES[i]));
+    },
+  };
+}
 
+/** Claude Code hooks and the chat's readiness, and the way to the Settings window. */
+function statusRow(actions: ViewActions) {
+  const hooks = h("span", { class: "status-badge" });
+  const chat = h("span", { class: "status-badge" });
+  const open = h("button", { class: "link-btn settings-link", text: "Settings…", onclick: () => actions.openSettingsWindow() });
+  return {
+    el: h("div", { class: "settings-row status" }, hooks, chat, h("div", { class: "grow" }), open),
+    sync() {
+      badge(hooks, State.settings.hooksInstalled, "Claude Code");
+      if (State.view === "settings") refreshChatReadiness();
+      const via = State.settings.chatProvider === "cli" ? "Chat · CLI" : "Chat · API";
+      badge(chat, chatReadiness.ready === true, via);
+    },
+  };
+}
+
+function buildSettings(actions: ViewActions): ViewHost {
+  const rows = [soundRow(actions), autoCloseRow(actions), statusRow(actions)];
   const el = h("div", { class: "view" },
-    card(null, h("div", { class: "stack", style: "padding:14px 16px 14px 84px" }, rows)));
-
+    card(null, h("div", { class: "stack", style: "padding:14px 16px 14px 84px" },
+      h("div", { class: "settings-rows" }, ...rows.map((r) => r.el)))));
   return {
     el,
     sync() {
-      const s = State.settings;
-      soundSwitch.classList.toggle("on", s.soundEnabled);
-      volume.value = String(s.soundVolume);
-      volume.style.opacity = s.soundEnabled ? "1" : "0.4";
-      autoLabel.textContent = `Auto-close · ${Math.round(s.autoCloseInterval)}s`;
-      segButtons.forEach((b, i) => b.classList.toggle("on", s.autoCloseInterval === [10, 15, 30][i]));
-      clear(claudeBadge);
-      claudeBadge.append(
-        dot(s.hooksInstalled ? "#22C55E" : "#F4505E", 6),
-        h("span", { text: "Claude Code" }),
-      );
-      clear(apiBadge);
-      apiBadge.append(dot("#F4505E", 6), h("span", { text: "API" }));
+      for (const r of rows) r.sync();
     },
   };
 }

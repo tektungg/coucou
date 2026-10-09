@@ -8,6 +8,9 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { Settings } from "./state";
 import type { Lyrics, LyricHit } from "../views/lyrics";
 
+/** Credential Manager entry of the chat's Anthropic API key. */
+export const API_KEY_SECRET = "anthropic-api-key";
+
 export const IS_TAURI =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
