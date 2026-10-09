@@ -58,3 +58,8 @@ export function dot(color: string, size = 7): HTMLElement {
     style: `width:${size}px;height:${size}px;background:${color}`,
   });
 }
+
+/** Static CSS mini Mochi in a pill's colour (`.face` in style.css). */
+export function face(color: string, size = 20): HTMLElement {
+  return h("span", { class: "face", style: `--fc:${color};--fs:${size}px`, "aria-hidden": "true" });
+}
