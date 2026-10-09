@@ -318,6 +318,15 @@ export function actEye(name: ActName, variant: string | null, age: number): EyeS
   }
 }
 
+/**
+ * Lowest head pitch the look may reach during the act, or null for no limit.
+ * The envelope is held in front of the body: looking down at the cursor would
+ * lower the eyes into it.
+ */
+export function actPitchFloor(name: ActName): number | null {
+  return name === "mail" ? 0 : null;
+}
+
 /** Prop timings the engine draws with, all 0…1. */
 export interface Props {
   /** Prop scale-in (pop). */

@@ -227,7 +227,12 @@ network call is the Music pill's lyrics (lrclib.net), which Settings can turn of
   out, then the new one in. The Music groove eases in and out over about a
   second. One-shots pop their props in and fade their pose back to neutral at
   the end. The props replace the state badge, which would sit under them.
-  Minis play the acts too, without hands or particles. Nothing runs while the
+  Props held in front of the face must never cover the eyes: the envelope is
+  held low, at the bottom edge of the body, and its sizes live in
+  `mochi/geometry.ts` next to the eye constants. During the act Mochi stops
+  looking down at the cursor (`actPitchFloor`), which would drop the eyes into
+  it. `tests/geometry.test.ts` checks every frame of the act against the
+  lowest the eyes can reach (level head, surprised eye pop). Minis play the acts too, without hands or particles. Nothing runs while the
   island is hidden (the frame loop's hidden gate). `dev/acts-preview.html`
   shows every act side by side with `npm run dev`; one-shots loop, and
   `?t=<seconds>` freezes them at that age (the page title then lists each

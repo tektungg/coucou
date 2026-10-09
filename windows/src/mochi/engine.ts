@@ -7,7 +7,10 @@
 import { Ease, lerp, type EaseFn } from "../core/anim";
 import { Sound } from "../core/sound";
 import type { BotEmoteName, BotStateName } from "../core/layout";
-import { ACT_HANDS, isOneShot, noteDue, actBursts, actEye, actKey, actPose, actProps, type Act, type Props } from "./acts";
+import {
+  ACT_HANDS, isOneShot, noteDue, actBursts, actEye, actKey, actPitchFloor, actPose, actProps, type Act, type Props,
+} from "./acts";
+import { BODY_RY, ENVELOPE, EYE_H, EYE_P, EYE_SP, EYE_W, envelopeParts } from "./geometry";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -61,10 +64,6 @@ interface Particle {
 
 // ── Constants (MochiConst / PISTES.mochi) ─────────────────────────────────────
 
-const EYE_W = 0.25;
-const EYE_H = 0.27;
-const EYE_SP = 0.37;
-const EYE_P = -0.12;
 const BASE_TOP: RGB = [0.929, 0.929, 0.937]; // #EDEDEF
 const BASE_BOTTOM: RGB = [0.769, 0.773, 0.792]; // #C4C5CA
 const INK = "rgb(26,20,18)"; // #1A1412
@@ -554,6 +553,9 @@ export class BotEngine {
       tp = this.miniLookTarget.y * 0.5;
     }
 
+    const floor = this.shown ? actPitchFloor(this.shown.name) : null;
+    if (floor !== null && tp < floor) tp = lerp(tp, floor, this.actAmt);
+
     this.tgYaw = ty;
     this.tgPitch = tp;
     this.tgTilt = this.cfg.tilt;
@@ -723,7 +725,7 @@ export class BotEngine {
   draw(x: CanvasRenderingContext2D, W: number, H: number) {
     const R = W * 0.3;
     const rx = R * 1.14;
-    const ry = R * 0.88;
+    const ry = R * BODY_RY;
     const cx = W / 2 + (this.ox + this.dOx) * R;
     const cy = H / 2 + this.particleOverhang / 2 + (this.oy + this.dOy) * R + R * 0.06;
     const tilt = this.tilt + this.dTilt;
@@ -1026,7 +1028,7 @@ export class BotEngine {
     switch (act.name) {
       case "dance": this.drawHeadphones(x, R, rx, ry); break;
       case "mic": this.drawMicHeadset(x, R, rx, ry, act.variant === "muted"); break;
-      case "mail": this.drawEnvelope(x, R, ry, p.show, p.flap); break;
+      case "mail": this.drawEnvelope(x, R, p.show, p.flap); break;
       case "catch": this.drawBox(x, R, ry, p.show, p.fall); break;
       case "check":
         this.drawHardHat(x, R, rx, ry, p.show);
@@ -1125,19 +1127,24 @@ export class BotEngine {
     }
   }
 
-  /** Messages: an envelope pops up in front; the flap opens on a letter. */
-  private drawEnvelope(x: CanvasRenderingContext2D, R: number, ry: number, show: number, flap: number) {
+  /**
+   * Messages: an envelope pops up, held low in front of the body; the flap
+   * opens on a letter. Geometry in mochi/geometry.ts keeps it below the eyes.
+   */
+  private drawEnvelope(x: CanvasRenderingContext2D, R: number, show: number, flap: number) {
     if (show <= 0.01) return;
-    const w = R * 1.0;
-    const h = R * 0.64;
+    const E = ENVELOPE;
+    const w = R * E.w;
+    const h = R * E.h;
+    const parts = envelopeParts(flap);
+    const apex = R * parts.apex;
     const edge = "rgba(0,0,0,0.18)";
     x.save();
-    x.translate(0, ry * 0.62);
-    x.rotate(-0.06);
+    x.translate(0, R * E.cy);
+    x.rotate(E.tilt);
     x.scale(show, show);
     x.lineWidth = 1;
     x.lineJoin = "round";
-    const apex = lerp(h * 0.08, -h / 2 - h * 0.6, flap);
     const flapPath = () => {
       x.beginPath();
       x.moveTo(-w / 2, -h / 2);
@@ -1145,15 +1152,15 @@ export class BotEngine {
       x.lineTo(0, apex);
       x.closePath();
     };
-    if (flap > 0.5) {
+    if (parts.letterY !== null) {
       // Open: flap behind, the letter rising out of the pocket.
       flapPath();
       x.fillStyle = "rgb(232,228,218)";
       x.fill();
       x.strokeStyle = edge;
       x.stroke();
-      const ly = -h / 2 - h * 0.38 * ((flap - 0.5) * 2);
-      roundRectPath(x, -w * 0.36, ly, w * 0.72, h * 0.7, R * 0.04);
+      const ly = R * parts.letterY;
+      roundRectPath(x, (-w * E.letterW) / 2, ly, w * E.letterW, h * E.letterH, R * 0.04);
       x.fillStyle = "#fff";
       x.fill();
       x.stroke();
@@ -1178,15 +1185,15 @@ export class BotEngine {
     x.lineTo(0, -h * 0.02);
     x.lineTo(w / 2, h / 2);
     x.stroke();
-    if (flap <= 0.5) {
+    if (parts.heartY !== null) {
       flapPath();
       x.fillStyle = "rgb(240,236,227)";
       x.fill();
       x.strokeStyle = edge;
       x.stroke();
       x.save();
-      x.translate(0, apex - h * 0.06);
-      heartPath(x, R * 0.13);
+      x.translate(0, R * parts.heartY);
+      heartPath(x, R * E.heart);
       x.fillStyle = "#FF4D6D";
       x.fill();
       x.restore();
