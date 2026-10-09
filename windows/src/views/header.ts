@@ -6,10 +6,14 @@ import { MIC_ICON, MIC_OFF_ICON, micBadge, micUsers, micUsersLabel } from "./she
 import { Bridge } from "../core/bridge";
 import { h, svg, clear, face } from "./dom";
 import { ICONS } from "./icons";
-import { State, type AgentTask } from "../core/state";
+import { State } from "../core/state";
 import type { IslandViewName } from "../core/layout";
 import { PAGER_MAX_W, pagerChips, pillLabel, type PagerChip } from "./pager";
+import { sessionChips, type StopPill } from "./carousel";
 import type { ViewActions, ViewHost } from "./views";
+
+/** The one chip that stands for every Claude Code session. */
+const SESSIONS_CHIP = { name: "Claude Code", color: "#E07B53" };
 
 /** Ring on a chip whose pill waits on you or just finished. */
 const BADGE_RING: Record<string, string> = { approval: "#F5A524", finished: "#22C55E", error: "#F4505E" };
@@ -43,16 +47,16 @@ function buildTabs(go: Go) {
   };
 }
 
-/** One pill's chip; a click on an inactive chip focuses that pill. */
-function chipEl(chip: PagerChip, task: AgentTask | undefined, actions: ViewActions): HTMLElement {
+/** One pill's chip; a click on an inactive chip focuses its pill (a session, for the sessions chip). */
+function chipEl(chip: PagerChip, pill: (StopPill & { targetId: string }) | undefined, actions: ViewActions): HTMLElement {
   const isActive = chip.label !== null;
   const el = h("button", {
     class: isActive ? "pchip on" : "pchip",
-    title: task ? pillLabel(task) : "",
+    title: pill ? pillLabel(pill) : "",
     onclick: () => {
-      if (!isActive) actions.setFocus(chip.id);
+      if (!isActive && pill) actions.setFocus(pill.targetId);
     },
-  }, face(task?.color ?? "#ffffff", CHIP_FACE));
+  }, face(pill?.color ?? "#ffffff", CHIP_FACE));
   if (chip.label) el.append(h("span", { class: "pchip-label", text: chip.label }));
   if (chip.badge) el.style.setProperty("--ring", BADGE_RING[chip.badge]);
   return el;
@@ -73,13 +77,16 @@ function buildPager(actions: ViewActions) {
     key = next;
     clear(el);
     if (!show) return;
+    const grouped = sessionChips(
+      tasks.map((t) => ({ id: t.id, name: t.name, color: t.color, badge: t.pillBadge })), focus, SESSIONS_CHIP);
     // The open header is always 640 px wide, so the strip's room is a constant
     // (measuring it would read the island mid-animation, while it still grows).
-    const layout = pagerChips(tasks.map((t) => ({ id: t.id, name: t.name, badge: t.pillBadge })), focus, PAGER_MAX_W);
-    const byId = new Map(tasks.map((t) => [t.id, t]));
+    const layout = pagerChips(grouped.pills, grouped.focusChip, PAGER_MAX_W);
+    const byId = new Map(grouped.pills.map((p) => [p.id, p]));
     for (const chip of layout.chips) el.append(chipEl(chip, byId.get(chip.id), actions));
     const more = layout.overflow;
-    if (more) el.append(h("button", { class: "pchip more", text: `+${more.count}`, onclick: () => actions.setFocus(more.nextId) }));
+    const moreTarget = more ? byId.get(more.nextId)?.targetId : undefined;
+    if (more && moreTarget) el.append(h("button", { class: "pchip more", text: `+${more.count}`, onclick: () => actions.setFocus(moreTarget) }));
   }
   return { el, sync };
 }

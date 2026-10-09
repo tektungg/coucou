@@ -160,8 +160,11 @@ network call is the Music pill's lyrics (lrclib.net), which Settings can turn of
   header shows one chip per pill, a mini Mochi in that pill's colour, a ring on
   any with news, and the active pill's name. Two-finger swipe (or tilt wheel),
   drag the card left/right, ← →, or tap a chip to move between pills.
-- **Sessions.** Every Claude Code session gets its own pill. On one of them,
-  Home shows the session board: Mochi says what the sessions are up to, and a
+- **Sessions.** Every Claude Code session is tracked on its own, but the header
+  shows them all as **one** "Claude Code" chip ("Claude Code · 3"), with the
+  most urgent badge of the lot. Swipes and ← → step past every session at once
+  (`views/carousel.ts`, `tests/carousel.test.ts`). Inside it, Home shows the
+  session board: Mochi says what the sessions are up to, and a
   tile per session gives its step or state, the time since it last moved,
   context % and cost, with sessions that need you first (`views/board.ts`,
   `tests/board.test.ts`). Past 3 sessions the last tile reads "+N more". A
@@ -411,7 +414,9 @@ identity. It is Windows-only: the Mac app keeps the App Store look.
   `views/pager.ts` decides which chips fit the 340 px strip; the pills furthest
   from the active one fold into a `+N` chip that opens the next hidden pill
   (`tests/pager.test.ts`, including 6 pills plus 2 sessions with a long name).
-  The header stays 34 px tall: `core/layout.ts` places Mochi under it, so a
+  Claude Code sessions fold into one chip first (`sessionChips` in
+  `views/carousel.ts`); a click on it opens the focused session, else one
+  waiting on you, else the newest. The header stays 34 px tall: `core/layout.ts` places Mochi under it, so a
   taller header would push the cards off Mochi.
 - **Home.** With an agent session in focus, Home is the session board
   (`views/boardView.ts`): the speech bubble, then pastel tiles in each
