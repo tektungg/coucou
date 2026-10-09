@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coucou Menu Redesign</title>
+<style>
+:root{
+  --page:#0b0c0f; --page-ink:#e9ebef; --page-dim:#8b909a; --line:#22252b;
+  --font:"Segoe UI Variable","Segoe UI",system-ui,-apple-system,sans-serif;
+  --mono:"Cascadia Code",Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--page);color:var(--page-ink);font:14px/1.45 var(--font);padding:32px 16px 80px}
+.wrap{max-width:1380px;margin:0 auto}
+header.top h1{font-size:28px;font-weight:650;letter-spacing:-.02em}
+header.top p{color:var(--page-dim);max-width:820px;margin-top:6px}
+nav.jump{display:flex;gap:8px;flex-wrap:wrap;margin:20px 0 8px}
+nav.jump a{color:var(--page-ink);text-decoration:none;border:1px solid var(--line);border-radius:999px;padding:6px 14px;font-size:13px}
+nav.jump a:hover{background:#16181d}
+section.dir{border-top:1px solid var(--line);padding:40px 0 8px;margin-top:32px}
+.dir-head{display:grid;grid-template-columns:auto 1fr;gap:18px;align-items:start;margin-bottom:22px}
+.dir-letter{width:52px;height:52px;border-radius:14px;display:grid;place-items:center;font-size:24px;font-weight:700}
+.dir-head h2{font-size:22px;font-weight:650;letter-spacing:-.01em}
+.dir-head .tag{color:var(--page-dim);font-size:13px;margin-top:2px}
+.dir-head .why{margin-top:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px 24px;font-size:13px}
+.why b{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--page-dim);font-weight:600;margin-bottom:2px}
+.frames{display:grid;grid-template-columns:repeat(auto-fit,minmax(660px,1fr));gap:22px}
+.frame{background:#121419;border:1px solid var(--line);border-radius:16px;padding:14px 10px 18px;overflow-x:auto}
+.frame>.cap{font-size:12px;color:var(--page-dim);margin:0 6px 10px;display:flex;justify-content:space-between}
+.stage{width:640px;margin:0 auto}
+.desk{background:linear-gradient(160deg,#2a3346,#1b1f2a 60%,#151820);border-radius:12px;padding:0 0 18px;display:flex;justify-content:center;position:relative;min-height:120px}
+.desk.light{background:linear-gradient(160deg,#cdd6e6,#e9edf4)}
+
+/* ── Mochi (CSS stand-in for the Canvas character) ── */
+.mochi{position:relative;border-radius:46% 46% 42% 42%/50% 50% 44% 44%;background:linear-gradient(200deg,#f4f4f6,#c4c5ca);flex:none}
+.mochi::before,.mochi::after{content:"";position:absolute;top:44%;width:13%;height:20%;border-radius:50%;background:#1a1412}
+.mochi::before{left:28%}.mochi::after{right:28%}
+.mochi.happy::before,.mochi.happy::after{background:none;border:2.5px solid #1a1412;border-color:#1a1412 transparent transparent transparent;border-radius:50%;top:40%;height:22%;width:17%}
+.mochi.happy::before{left:22%}.mochi.happy::after{right:22%}
+.mochi.tinted{background:var(--mc)}
+
+/* ════════════════ A · Glass Dock ════════════════ */
+.A{--bg:rgba(18,20,26,.78);--glass:rgba(255,255,255,.06);--edge:rgba(255,255,255,.09);--ink:#f3f5f8;--dim:#9aa1ad;--acc:#7c8cff}
+.A .island{width:640px;background:var(--bg);backdrop-filter:blur(24px);border:1px solid var(--edge);border-top:none;border-radius:0 0 26px 26px;padding:10px 12px 12px;color:var(--ink);box-shadow:0 18px 40px rgba(0,0,0,.45)}
+.A .bar{display:flex;align-items:center;gap:10px}
+.A .seg{display:flex;background:rgba(255,255,255,.05);border:1px solid var(--edge);border-radius:12px;padding:3px}
+.A .seg span{padding:5px 12px;border-radius:9px;font-size:12px;color:var(--dim);display:flex;gap:6px;align-items:center}
+.A .seg span.on{background:rgba(255,255,255,.12);color:var(--ink)}
+.A .ico{width:14px;height:14px;border-radius:4px;background:currentColor;opacity:.75;display:inline-block}
+.A .ico.round{border-radius:50%}
+.A .grow{flex:1}
+.A .iconbtn{width:30px;height:30px;border-radius:10px;border:1px solid var(--edge);display:grid;place-items:center;color:var(--dim)}
+.A .body{display:grid;grid-template-columns:auto 1fr;gap:14px;margin-top:12px;align-items:center}
+.A .card{background:var(--glass);border:1px solid var(--edge);border-radius:18px;padding:12px}
+.A .row{display:flex;align-items:center;gap:10px}
+.A .agent{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:12px}
+.A .agent+.agent{border-top:1px solid var(--edge)}
+.A .dot{width:8px;height:8px;border-radius:50%}
+.A .t{font-weight:600;font-size:13px}.A .s{font-size:12px;color:var(--dim)}
+.A .chips{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}
+.A .chip{border-radius:14px;padding:10px;background:var(--glass);border:1px solid var(--edge);font-size:12px;position:relative}
+.A .chip i{display:block;width:22px;height:22px;border-radius:8px;margin-bottom:6px}
+.A .badge{position:absolute;top:8px;right:8px;font-size:10px;font-weight:700;background:var(--acc);color:#fff;border-radius:999px;padding:1px 6px}
+.A .msg{display:grid;grid-template-columns:28px 1fr auto;gap:10px;align-items:center;padding:8px;border-radius:12px}
+.A .msg:hover,.A .msg.hi{background:rgba(255,255,255,.06)}
+.A .av{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:700;color:#fff}
+.A .btn{font-size:12px;padding:5px 11px;border-radius:9px;border:1px solid var(--edge);color:var(--ink);background:rgba(255,255,255,.06)}
+.A .btn.pri{background:var(--acc);border-color:transparent}
+.A .input{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.06);border:1px solid var(--edge);border-radius:14px;padding:9px 10px 9px 14px;font-size:13px}
+.A .send{width:28px;height:28px;border-radius:9px;background:var(--acc);display:grid;place-items:center;color:#fff;font-size:14px}
+.A .bubble{max-width:78%;padding:8px 12px;border-radius:14px;font-size:13px}
+.A .bubble.me{margin-left:auto;background:var(--acc);color:#fff;border-bottom-right-radius:4px}
+.A .bubble.bot{background:rgba(255,255,255,.08);border-bottom-left-radius:4px}
+.A .win{width:600px;background:#15171d;border:1px solid #2a2e37;border-radius:14px;overflow:hidden;color:var(--ink);display:grid;grid-template-columns:170px 1fr;min-height:400px;margin-top:18px}
+.A .side{background:rgba(255,255,255,.03);border-right:1px solid #262a32;padding:14px 10px}
+.A .side .it{padding:7px 10px;border-radius:9px;font-size:13px;color:var(--dim);display:flex;gap:8px;align-items:center}
+.A .side .it.on{background:rgba(124,140,255,.16);color:var(--ink)}
+.A .pane{padding:18px 20px}
+.A .pane h3{font-size:17px;font-weight:650}
+.A .group{margin-top:14px;border:1px solid #262a32;border-radius:12px}
+.A .line{display:flex;align-items:center;gap:10px;padding:11px 14px;font-size:13px}
+.A .line+.line{border-top:1px solid #262a32}
+.A .tog{width:34px;height:20px;border-radius:999px;background:#3a3f4a;position:relative;flex:none}
+.A .tog::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff}
+.A .tog.on{background:var(--acc)}.A .tog.on::after{left:16px}
+
+/* ════════════════ B · Mochi Pop ════════════════ */
+.B{--bg:#17151f;--ink:#fbf8ff;--dim:#a7a0b8;--soft:#221f2d;--soft2:#2b2738;--acc:#ff8fb1;--acc2:#8fd3ff}
+.B .island{width:640px;background:var(--bg);border-radius:0 0 30px 30px;padding:12px 14px 14px;color:var(--ink);box-shadow:0 18px 40px rgba(0,0,0,.4)}
+.B .bar{display:flex;align-items:center;gap:8px}
+.B .tab{display:flex;align-items:center;gap:7px;padding:6px 12px 6px 7px;border-radius:999px;background:var(--soft);font-size:12.5px;font-weight:600;color:var(--dim)}
+.B .tab.on{background:#fff;color:#2a2235}
+.B .face{display:inline-block;flex:none;width:20px;height:16px;border-radius:45%;background:var(--fc,#fff);position:relative}
+.B .face::before,.B .face::after{content:"";position:absolute;top:6px;width:3px;height:4px;border-radius:2px;background:#1a1412}
+.B .face::before{left:5px}.B .face::after{right:5px}
+.B .grow{flex:1}
+.B .round{width:32px;height:32px;border-radius:50%;background:var(--soft);display:grid;place-items:center;color:var(--dim);font-size:14px}
+.B .body{display:grid;grid-template-columns:auto 1fr;gap:16px;margin-top:12px;align-items:center}
+.B .bubbleSay{background:var(--soft2);border-radius:18px 18px 18px 6px;padding:9px 13px;font-size:13px;display:inline-block}
+.B .tiles{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}
+.B .tile{border-radius:20px;padding:10px 12px;display:flex;align-items:center;gap:10px;font-size:12.5px;font-weight:600;color:#241d2e}
+.B .tile small{display:block;font-weight:500;opacity:.7;font-size:11.5px}
+.B .tile .face{width:28px;height:22px}
+.B .tile .face::before,.B .tile .face::after{top:8px;width:4px;height:6px}
+.B .tile .face::before{left:7px}.B .tile .face::after{right:7px}
+.B .count{margin-left:auto;background:#241d2e;color:#fff;border-radius:999px;font-size:11px;padding:2px 8px}
+.B .card{background:var(--soft);border-radius:22px;padding:12px}
+.B .msg{display:flex;gap:10px;align-items:flex-start;padding:7px 4px}
+.B .av{width:32px;height:32px;border-radius:12px;display:grid;place-items:center;font-weight:800;color:#241d2e;font-size:13px;flex:none}
+.B .say{background:var(--soft2);border-radius:6px 16px 16px 16px;padding:7px 11px;font-size:13px}
+.B .say b{display:block;font-size:12px;color:var(--acc)}
+.B .time{font-size:11px;color:var(--dim);margin-top:3px}
+.B .btn{font-size:12.5px;font-weight:700;padding:7px 14px;border-radius:999px;background:var(--soft2);color:var(--ink)}
+.B .btn.pri{background:var(--acc);color:#2a1020}
+.B .input{display:flex;align-items:center;gap:8px;background:var(--soft2);border-radius:999px;padding:7px 7px 7px 16px;font-size:13px}
+.B .send{width:32px;height:32px;border-radius:50%;background:var(--acc);display:grid;place-items:center;color:#2a1020;font-weight:800}
+.B .win{width:600px;background:#1b1824;border-radius:22px;overflow:hidden;color:var(--ink);margin-top:18px;padding:18px}
+.B .win h3{font-size:18px;font-weight:750}
+.B .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}
+.B .set{border-radius:18px;padding:14px;background:var(--soft);min-height:98px;position:relative}
+.B .set .face{display:block;width:30px;height:24px;margin-bottom:10px}
+.B .set .face::before,.B .set .face::after{top:9px;width:4px;height:6px}
+.B .set .face::before{left:8px}.B .set .face::after{right:8px}
+.B .set b{display:block;font-size:13.5px}
+.B .set span{font-size:12px;color:var(--dim)}
+.B .set .st{position:absolute;top:12px;right:12px;font-size:10.5px;font-weight:700;border-radius:999px;padding:2px 8px}
+
+/* ════════════════ C · Command Pro ════════════════ */
+.C{--bg:#0c0d0f;--ink:#e8e9ec;--dim:#7d828c;--line:#1f2227;--hi:#17191d;--acc:#e8e9ec}
+.C .island{width:640px;background:var(--bg);border:1px solid var(--line);border-top:none;border-radius:0 0 16px 16px;color:var(--ink);display:grid;grid-template-columns:44px 1fr;overflow:hidden;font-size:12.5px;box-shadow:0 18px 40px rgba(0,0,0,.5)}
+.C .rail{border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 0}
+.C .rail i{width:28px;height:28px;border-radius:7px;display:grid;place-items:center;color:var(--dim);font-style:normal;font-size:13px}
+.C .rail i.on{background:var(--hi);color:var(--ink);box-shadow:inset 2px 0 0 var(--ink)}
+.C .rail .sp{flex:1}
+.C .main{padding:10px 12px 12px}
+.C .cmd{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:9px;padding:6px 10px;color:var(--dim)}
+.C kbd{font:11px var(--mono);border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:0 5px;color:var(--dim)}
+.C .grow{flex:1}
+.C table{width:100%;border-collapse:collapse;margin-top:8px}
+.C td{padding:6px 6px;border-bottom:1px solid var(--line);white-space:nowrap}
+.C tr:last-child td{border-bottom:none}
+.C tr.sel td{background:var(--hi)}
+.C .st{font:11px var(--mono);padding:1px 6px;border-radius:4px}
+.C .mono{font-family:var(--mono);color:var(--dim);font-size:11.5px}
+.C .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px}
+.C .head{display:flex;align-items:center;gap:8px;margin-top:10px;color:var(--dim);font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+.C .list .r{display:grid;grid-template-columns:16px 120px 1fr auto;gap:10px;padding:6px 6px;border-radius:6px;align-items:center}
+.C .list .r.sel{background:var(--hi)}
+.C .term{background:#08090a;border:1px solid var(--line);border-radius:9px;padding:10px 12px;font:12px/1.6 var(--mono);margin-top:8px;height:118px}
+.C .term .u{color:#9fd3ff}.C .term .a{color:var(--ink)}
+.C .win{width:600px;background:#0e0f11;border:1px solid var(--line);border-radius:10px;overflow:hidden;color:var(--ink);margin-top:18px;font-size:12.5px}
+.C .win .wtop{display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line);padding:10px 14px;color:var(--dim)}
+.C .win .cols{display:grid;grid-template-columns:200px 1fr;min-height:340px}
+.C .win .lst{border-right:1px solid var(--line);padding:6px}
+.C .win .lst div{padding:6px 10px;border-radius:6px;display:flex;justify-content:space-between;color:var(--dim)}
+.C .win .lst div.on{background:var(--hi);color:var(--ink)}
+.C .win .det{padding:14px 18px}
+.C .kv{display:grid;grid-template-columns:130px 1fr;gap:8px 12px;margin-top:12px;align-items:center}
+.C .field{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border:1px solid var(--line);border-radius:6px;padding:5px 8px;font-family:var(--mono);color:var(--dim);font-size:11.5px}
+.C .btn{border:1px solid var(--line);border-radius:6px;padding:4px 10px;display:inline-block}
+
+/* ════════════════ D · Pill Strip ════════════════ */
+.D{--bg:#101114;--ink:#f4f5f7;--dim:#8f95a0;--card:#17191d;--line:#24272d}
+.D .island{width:640px;background:var(--bg);border-radius:0 0 24px 24px;color:var(--ink);overflow:hidden;box-shadow:0 18px 40px rgba(0,0,0,.45)}
+.D .strip{display:flex;gap:4px;padding:8px 10px 0;border-bottom:1px solid var(--line);align-items:flex-end}
+.D .pt{display:flex;align-items:center;gap:7px;padding:7px 12px 9px;border-radius:12px 12px 0 0;font-size:12.5px;color:var(--dim);position:relative}
+.D .pt i{width:16px;height:16px;border-radius:5px}
+.D .pt.on{background:var(--card);color:var(--ink)}
+.D .pt.on::after{content:"";position:absolute;left:12px;right:12px;bottom:0;height:2px;border-radius:2px;background:var(--pc)}
+.D .pt em{font-style:normal;font-size:10.5px;font-weight:700;border-radius:999px;padding:0 6px;background:var(--pc);color:#fff}
+.D .grow{flex:1}
+.D .gear{color:var(--dim);padding:0 6px 10px;font-size:14px}
+.D .body{background:var(--card);padding:12px 14px 14px;display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:center}
+.D .dash{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.D .w{border:1px solid var(--line);border-radius:14px;padding:10px;font-size:12px}
+.D .w b{display:block;font-size:20px;font-weight:700;letter-spacing:-.02em}
+.D .w .bar{height:4px;border-radius:2px;background:var(--line);margin-top:8px;overflow:hidden}
+.D .w .bar span{display:block;height:100%}
+.D .s{color:var(--dim);font-size:12px}
+.D .msg{display:grid;grid-template-columns:3px 1fr auto;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);font-size:13px}
+.D .msg:last-child{border-bottom:none}
+.D .msg i{border-radius:2px}
+.D .btn{font-size:12px;padding:5px 11px;border-radius:8px;border:1px solid var(--line)}
+.D .input{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:12px;padding:8px 8px 8px 12px;font-size:13px;background:var(--bg)}
+.D .send{width:26px;height:26px;border-radius:8px;background:#f4f5f7;color:#101114;display:grid;place-items:center;font-weight:800}
+.D .chipsrow{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.D .chipsrow span{font-size:11.5px;border:1px solid var(--line);border-radius:999px;padding:3px 9px;color:var(--dim)}
+.D .win{width:600px;background:#121316;border:1px solid var(--line);border-radius:14px;overflow:hidden;color:var(--ink);margin-top:18px}
+.D .win .tabs{display:flex;gap:2px;padding:10px 12px 0;border-bottom:1px solid var(--line)}
+.D .win .tabs span{padding:7px 12px;font-size:13px;color:var(--dim);border-radius:9px 9px 0 0}
+.D .win .tabs span.on{color:var(--ink);background:#1a1c20;box-shadow:inset 0 -2px 0 #f4f5f7}
+.D .win .in{padding:16px 18px;background:#1a1c20;min-height:330px}
+.D .pr{display:grid;grid-template-columns:22px 1fr auto auto;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line);font-size:13px}
+.D .pr i{width:22px;height:22px;border-radius:7px}
+.D .drag{color:var(--dim);letter-spacing:-2px}
+.D .tog{width:32px;height:18px;border-radius:999px;background:#3a3f4a;position:relative}
+.D .tog::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff}
+.D .tog.on{background:#22c55e}.D .tog.on::after{left:16px}
+
+/* compare table */
+table.cmp{width:100%;border-collapse:collapse;margin-top:18px;font-size:13px}
+table.cmp th,table.cmp td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+table.cmp th{color:var(--page-dim);font-weight:600;font-size:12px}
+.note{color:var(--page-dim);font-size:13px;margin-top:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="top">
+  <h1>Coucou: pilihan redesign menu</h1>
+  <p>Empat arah desain untuk semua menu: top bar island, Home (sesi agent + pill), kartu pill (Messages), Chat, dan jendela Settings. Mochi di sini cuma pengganti CSS; di app tetap digambar dengan Canvas. Isi datanya contoh.</p>
+  <nav class="jump">
+    <a href="#A">A · Glass Dock</a><a href="#B">B · Mochi Pop</a><a href="#C">C · Command Pro</a><a href="#D">D · Pill Strip</a><a href="#cmp">Perbandingan</a>
+  </nav>
+</header>
+
+<!-- ═════════════ A ═════════════ -->
+<section class="dir A" id="A">
+  <div class="dir-head">
+    <div class="dir-letter" style="background:#7c8cff22;color:#9aa6ff">A</div>
+    <div>
+      <h2>Glass Dock</h2>
+      <div class="tag">Kaca buram ala Windows 11 Mica, segmented control berlabel, Settings dengan sidebar.</div>
+      <div class="why">
+        <div><b>Navigasi</b>Tab Home / Chat / Pills jadi satu segmented control dengan label. Pill tidak lagi berupa titik; aksesnya lewat tab Pills.</div>
+        <div><b>Kelebihan</b>Paling terasa "native Windows", label membuat menu langsung jelas, Settings jadi bisa dijelajah.</div>
+        <div><b>Risiko</b>Blur butuh `backdrop-filter`, jadi WebView2 bekerja lebih berat. Paling sedikit karakter Mochi-nya.</div>
+      </div>
+    </div>
+  </div>
+  <div class="frames">
+    <div class="frame"><div class="cap"><span>Home · sesi agent + pill</span><span>160 px</span></div><div class="stage"><div class="desk">
+      <div class="island">
+        <div class="bar">
+          <div class="seg"><span class="on"><i class="ico"></i>Home</span><span><i class="ico round"></i>Chat</span><span><i class="ico"></i>Pills <small style="opacity:.6">4</small></span></div>
+          <div class="grow"></div>
+          <div class="iconbtn">+</div><div class="iconbtn">♪</div><div class="iconbtn">⚙</div>
+        </div>
+        <div class="body">
+          <div class="mochi" style="width:74px;height:58px;margin:0 6px"></div>
+          <div>
+            <div class="card" style="padding:4px">
+              <div class="agent"><span class="dot" style="background:#f5a524"></span><div style="flex:1"><div class="t">Claude Code · coucou</div><div class="s">Editing engine.ts · 3 min</div></div><span class="btn">Open</span></div>
+              <div class="agent"><span class="dot" style="background:#22c55e"></span><div style="flex:1"><div class="t">Gemini CLI · api</div><div class="s">Finished · tests pass</div></div><span class="btn">View</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div></div></div>
+
+    <div class="frame"><div class="cap"><span>Kartu pill · Messages</span><span>240 px</span></div><div class="stage"><div class="desk">
+      <div class="island">
+        <div class="bar">
+          <div class="seg"><span><i class="ico"></i>Home</span><span><i class="ico round"></i>Chat</span><span class="on"><i class="ico"></i>Pills</span></div>
+          <div class="grow"></div><div class="iconbtn">⚙</div>
+        </div>
+        <div class="chips">
+          <div class="chip" style="border-color:#5865f266;background:#5865f21f"><i style="background:#5865f2"></i>Messages<span class="badge">15</span></div>
+          <div class="chip"><i style="background:#1db954"></i>Music</div>
+          <div class="chip"><i style="background:#f5a524"></i>Shelf</div>
+          <div class="chip"><i style="background:#4f8ef7"></i>Space</div>
+        </div>
+        <div class="card" style="margin-top:10px;padding:6px">
+          <div class="row" style="padding:4px 8px 6px"><span class="t">Telegram</span><span class="s">11 baru</span><div class="grow"></div><span class="btn">Clear all</span></div>
+          <div class="msg hi"><div class="av" style="background:#2aabee">ダ</div><div><div class="t">ダーリン</div><div class="s">You have a new message</div></div><span class="s">baru saja</span></div>
+          <div class="msg"><div class="av" style="background:#25d366">M</div><div><div class="t">Mama</div><div class="s">Nanti pulang jam berapa?</div></div><span class="s">2 mnt</span></div>
+        </div>
+      </div>
+    </div></div></div>
+
+    <div class="frame"><div class="cap"><span>Chat</span><span>240 px</span></div><div class="stage"><div class="desk">
+      <div class="island">
+        <div class="bar">
+          <div class="seg"><span><i class="ico"></i>Home</span><span class="on"><i class="ico round"></i>Chat</span><span><i class="ico"></i>Pills</span></div>
+          <div class="grow"></div><span class="s">Claude Opus 5.5 ▾</span>
+        </div>
+        <div class="body" style="align-items:end">
+          <div class="mochi happy" style="width:52px;height:42px"></div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div class="bubble me">bonjour Mochi, ringkas PR terakhir</div>
+            <div class="bubble bot">PR #42 memindahkan amplop Messages ke bawah mata Mochi dan menambah 5 test geometry.</div>
+            <div class="input"><span style="flex:1;color:var(--dim)">Tanya Mochi…</span><span class="s">📎</span><span class="send">↑</span></div>
+          </div>
+        </div>
+      </div>
+    </div></div></div>
+
+    <div class="frame"><div class="cap"><span>Jendela Settings</span><span>600 × 400</span></div><div class="stage" style="display:flex;justify-content:center">
+      <div class="win">
+        <div class="side">
+          <div style="display:flex;gap:8px;align-items:center;padding:0 8px 12px"><div class="mochi" style="width:24px;height:19px"></div><b style="font-size:14px">Coucou</b></div>
+          <div class="it">◐ General</div><div class="it on">⌘ Agents</div><div class="it">✦ AI provider</div><div class="it">▦ Pills</div><div class="it">♪ Sound</div><div class="it">ⓘ About</div>
+        </div>
+        <div class="pane">
+          <h3>Agents</h3><div class="s">Hook yang mengirim sesi ke island.</div>
+          <div class="group">
+            <div class="line"><span class="dot" style="background:#22c55e"></span><div style="flex:1"><div class="t">Claude Code</div><div class="s" style="font-family:var(--mono)">~/.claude-kantor/settings.json</div></div><span class="btn">Reinstall</span></div>
+            <div class="line"><span class="dot" style="background:#f4505e"></span><div style="flex:1"><div class="t">Gemini CLI</div><div class="s">Belum terpasang</div></div><span class="btn pri">Install</span></div>
+            <div class="line"><span class="dot" style="background:#9aa1ad"></span><div style="flex:1"><div class="t">Codex</div><div class="s">Belum terpasang</div></div><span class="btn pri">Install</span></div>
+          </div>
+          <div class="group">
+            <div class="line"><div style="flex:1">Minta izin lewat island</div><span class="tog on"></span></div>
+            <div class="line"><div style="flex:1">Bunyi saat sesi selesai</div><span class="tog on"></span></div>
+            <div class="line"><div style="flex:1">Sembunyikan sesi idle setelah 10 menit</div><span class="tog"></span></div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </div>
+</section>
+
+<!-- ═════════════ B ═════════════ -->
+<section class="dir B" id="B">
+  <div class="dir-head">
+    <div class="dir-letter" style="background:#ff8fb122;color:#ff8fb1">B</div>
+    <div>
+      <h2>Mochi Pop</h2>
+      <div class="tag">Ramah dan main-main. Setiap pill jadi mini-Mochi berwarna, pesan tampil sebagai bubble chat, Settings berupa grid kartu.</div>
+      <div class="why">
+        <div><b>Navigasi</b>Tab berbentuk kapsul dengan wajah mini-Mochi. Pill ikut jadi tab sejajar Home dan Chat, jadi titik pill hilang.</div>
+        <div><b>Kelebihan</b>Paling dekat dengan jiwa produknya (Mochi), paling mudah dikenali, cocok untuk screenshot App Store / Store.</div>
+        <div><b>Risiko</b>Kalau agent banyak, terasa kurang serius dan kurang padat. Warna pastel perlu dicek kontrasnya.</div>
+      </div>
+    </div>
+  </div>
+  <div class="frames">
+    <div class="frame"><div class="cap"><span>Home · sesi agent + pill</span><span>160 px</span></div><div class="stage"><div class="desk">
+      <div class="island">
+        <div class="bar">
+          <span class="tab on"><span class="face"></span>Home</span>
+          <span class="tab"><span class="face" style="--fc:#8fd3ff"></span>Chat</span>
+          <span class="tab"><span class="face" style="--fc:#a5adff"></span>15</span>
+          <span class="tab"><span class="face" style="--fc:#7ee2a8"></span>♪</span>
+          <div class="grow"></div><span class="round">+</span><span class="round">⚙</span>
+        </div>
+        <div class="body">
+          <div class="mochi" style="width:76px;height:60px;margin-left:4px"></div>
+          <div>
+            <span class="bubbleSay">Claude lagi edit <b>engine.ts</b>, Gemini sudah selesai ✨</span>
+            <div class="tiles">
+              <div class="tile" style="background:#ffd59a"><span class="face" style="--fc:#fff4e0"></span><div>Claude Code<small>bekerja · 3 mnt</small></div></div>
+              <div class="tile" style="background:#9ff0c0"><span class="face" style="--fc:#effff5"></span><div>Gemini CLI<small>selesai</small></div><span class="count">✓</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div></div></div>
+
+    <div class="frame"><div class="cap"><span>Kartu pill · Messages</span><span>240 px</span></div><div class="stage"><div class="desk">
+      <div class="island">
+        <div class="bar">
+          <span class="tab"><span class="face"></span>Home</span>
+          <span class="tab"><span class="face" style="--fc:#8fd3ff"></span>Chat</span>
+          <span class="tab on" style="background:#a5adff;color:#1d1a40"><span class="face" style="--fc:#e9ebff"></span>Messages 15</span>
+          <div class="grow"></div><span class="btn">Clear</span>
+        </div>
+        <div class="body" style="align-items:start">
+          <div class="mochi tinted" style="--mc:linear-gradient(200deg,#c4c9ff,#7f88f0);width:60px;height:48px;margin-top:8px"></div>
+          <div class="card">
+            <div class="msg"><div class="av" style="background:#8fd3ff">ダ</div><div><div class="say"><b>ダーリン · Telegram</b>You have a new message</div><div class="time">baru saja</div></div></div>
+            <div class="msg"><div class="av" style="background:#9ff0c0">M</div><div><div class="say"><b>Mama · WhatsApp</b>Nanti pulang jam berapa?</div><div class="time">2 mnt</div></div></div>
+          </div>
+        </div>
+      </div>
+    </div></div></div>
+
+    <div class="frame"><div class="cap"><span>Chat</span><span>240 px</span></div><div class="stage"><div class="desk">
+      <div class="island">
+        <div class="bar">
+          <span class="tab"><span class="face"></span>Home</span>
+          <span class="tab on"><span class="face" style="--fc:#8fd3ff"></span>Chat</span>
+          <div class="grow"></div><span class="btn">Opus 5.5</span>
+        </div>
+        <div class="body" style="align-items:end">
+          <div class="mochi happy" style="width:66px;height:52px"></div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="align-self:flex-end;background:var(--acc2);color:#10263a;border-radius:18px 18px 6px 18px;padding:8px 13px;font-size:13px">bonjour Mochi 👋</div>
+            <span class="bubbleSay">Halo! Mau aku bantu apa hari ini?</span>
+            <div class="input"><span style="flex:1;color:var(--dim)">Bilang sesuatu ke Mochi…</span><span class="send">↑</span></div>
+          </div>
+        </div>
+      </div>
+    </div></div></div>
+
+    <div class="frame"><div class="cap"><span>Jendela Settings</span><span>600 × 400</span></div><div class="stage" style="display:flex;justify-content:center">
+      <div class="win">
+        <div style="display:flex;align-items:center;gap:12px"><div class="mochi happy" style="width:44px;height:35px"></div><div><h3>Atur Mochi</h3><div style="color:var(--dim);font-size:12.5px">Ketuk kartu untuk membukanya.</div></div></div>
+        <div class="grid">
+          <div class="set"><span class="face" style="--fc:#ffd59a"></span><b>Claude Code</b><span>Hook terpasang</span><span class="st" style="background:#9ff0c0;color:#123">ON</span></div>
+          <div class="set"><span class="face" style="--fc:#8fd3ff"></span><b>Gemini CLI</b><span>Belum terpasang</span><span class="st" style="background:#ff8fb1;color:#2a1020">SETUP</span></div>
+          <div class="set"><span class="face" style="--fc:#e8c6ff"></span><b>Claude Chat</b><span>Login Claude Code</span><span class="st" style="background:#9ff0c0;color:#123">ON</span></div>
+          <div class="set"><span class="face" style="--fc:#a5adff"></span><b>Messages</b><span>Telegram, WhatsApp</span></div>
+          <div class="set"><span class="face" style="--fc:#7ee2a8"></span><b>Music</b><span>Lirik: aktif</span></div>
+          <div class="set"><span class="face" style="--fc:#ffe08a"></span><b>Suara</b><span>28 suara · 70%</span></div>
+        </div>
+      </div>
+    </div></div>
+  </div>
+</section>
+
+<!-- ═════════════ C ═════════════ -->
+<section class="dir C" id="C">
+  <div class="dir-head">
+    <div class="dir-letter" style="background:#ffffff14;color:#e8e9ec">C</div>
+    <div>
+      <h2>Command Pro</h2>
+      <div class="tag">Padat dan monokrom, ala Raycast / Linear. Rail ikon di kiri, Ctrl+K untuk semua aksi, Settings berupa daftar dua panel yang bisa dicari.</div>
+      <div class="why">
+        <div><b>Navigasi</b>Rail vertikal (Home, Chat, Pills, Settings) dan command bar. Semua aksi bisa diketik: "approve", "clear messages", "install gemini".</div>
+        <div><b>Kelebihan</b>Info paling padat (5+ sesi muat), cepat lewat keyboard, cocok untuk power user yang menjalankan banyak agent.</div>
+        <div><b>Risiko</b>Mochi kecil atau hilang di view padat, terasa dingin. Butuh sistem shortcut keyboard yang baru.</div>
+      </div>
+    </div>
+  </div>
+  <div class="frames">
+    <div class="frame"><div class="cap"><span>Home · sesi agent + pill</span><span>160 px</span></div><div class="stage"><div class="desk">
+      <div class="island">
+        <div class="rail"><i class="on">⌂</i><i>◌</i><i>▦</i><span class="sp"></span><i>⚙</i></div>
+        <div class="main">
+          <div class="cmd"><div class="mochi" style="width:20px;height:16px"></div><span class="grow">Ketik perintah atau cari sesi…</span><kbd>Ctrl</kbd><kbd>K</kbd></div>
+          <table>
+            <tr class="sel"><td><span class="dot" style="background:#f5a524"></span>Claude Code</td><td class="mono">coucou</td><td class="mono">Edit engine.ts</td><td><span class="st" style="background:#f5a52422;color:#f5a524">WORKING</span></td><td class="mono">3m</td></tr>
+            <tr><td><span class="dot" style="background:#f4505e"></span>Codex</td><td class="mono">relay</td><td class="mono">Wants: rm -rf dist</td><td><span class="st" style="background:#f4505e22;color:#ff8d97">APPROVE</span></td><td class="mono">now</td></tr>
+            <tr><td><span class="dot" style="background:#22c55e"></span>Gemini CLI</td><td class="mono">api</td><td class="mono">Tests pass</td><td><span class="st" style="background:#22c55e22;color:#34d399">DONE</span></td><td class="mono">8m</td></tr>
+          </table>
+        </div>
+      </div>
+    </div></div></div>
+
+    <div class="frame"><div class="cap"><span>Kartu pill · Messages</span><span>240 px</span></div><div class="stage"><div class="desk">
+      <div class="island">
+        <div class="rail"><i>⌂</i><i>◌</i><i class="on">▦</i><span class="sp"></span><i>⚙</i></div>
+        <div class="main">
+          <div class="cmd"><span style="color:var(--ink)">Messages</span><span class="mono">15</span><span class="grow"></span><span class="mono">Music · Shelf · Space</span><kbd>Tab</kbd></div>
+          <div class="head">Telegram · 11<span class="grow"></span><span class="mono" style="text-transform:none">x clear all</span></div>
+          <div class="list">
+            <div class="r sel"><span class="dot" style="background:#2aabee"></span><b>ダーリン</b><span style="color:var(--dim)">You have a new message</span><span class="mono">now</span></div>
+            <div class="r"><span class="dot" style="background:#2aabee"></span><b>Dev Squad</b><span style="color:var(--dim)">Deploy jam 3 ya</span><span class="mono">5m</span></div>
+          </div>
+          <div class="head">WhatsApp · 4</div>
+          <div class="list">
+            <div class="r"><span class="dot" style="background:#25d366"></span><b>Mama</b><span style="color:var(--dim)">Nanti pulang jam berapa?</span><span class="mono">2m</span></div>
+          </div>
+        </div>
+      </div>
+    </div></div></div>
+
+    <div class="frame"><div class="cap"><span>Chat</span><span>240 px</span></div><div class="stage"><div class="desk">
+      <div class="island">
+        <div class="rail"><i>⌂</i><i class="on">◌</i><i>▦</i><span class="sp"></span><i>⚙</i></div>
+        <div class="main">
+          <div class="cmd"><div class="mochi happy" style="width:20px;height:16px"></div><span class="grow">Chat · claude-opus-5-5</span><kbd>Esc</kbd></div>
+          <div class="term">
+            <div class="u">› ringkas PR terakhir</div>
+            <div class="a">PR #42: amplop Messages dipindah ke bawah mata,</div>
+            <div class="a">+5 test geometry, README diperbarui.</div>
+            <div class="u">› <span style="border-right:7px solid #e8e9ec"></span></div>
+          </div>
+        </div>
+      </div>
+    </div></div></div>
+
+    <div class="frame"><div class="cap"><span>Jendela Settings</span><span>600 × 400</span></div><div class="stage" style="display:flex;justify-content:center">
+      <div class="win">
+        <div class="wtop"><span>⌕</span><span class="grow">Cari pengaturan…</span><kbd>Ctrl</kbd><kbd>,</kbd></div>
+        <div class="cols">
+          <div class="lst">
+            <div>General</div><div class="on">Agents <span class="mono">3</span></div><div>AI provider</div><div>Pills <span class="mono">4/4</span></div><div>Sound</div><div>Shortcuts</div><div>About</div>
+          </div>
+          <div class="det">
+            <b style="font-size:14px">Agents</b>
+            <div class="kv">
+              <span style="color:var(--dim)">Claude Code</span><span><span class="dot" style="background:#22c55e"></span>terpasang <span class="btn" style="margin-left:8px">Reinstall</span></span>
+              <span style="color:var(--dim)">settings.json</span><span class="field">~/.claude-kantor/settings.json</span>
+              <span style="color:var(--dim)">Relay</span><span class="field">…\Coucou\bin\coucou-hook.exe</span>
+              <span style="color:var(--dim)">Gemini CLI</span><span><span class="dot" style="background:#f4505e"></span>belum <span class="btn" style="margin-left:8px">Install</span></span>
+              <span style="color:var(--dim)">Approve dari island</span><span class="field" style="width:70px">on</span>
+              <span style="color:var(--dim)">Shortcut approve</span><span><kbd>Ctrl</kbd> <kbd>Enter</kbd></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div></div>
+  </div>
+</section>
+
+<!-- ═════════════ D ═════════════ -->
+<section class="dir D" id="D">
+  <div class="dir-head">
+    <div class="dir-letter" style="background:#22c55e22;color:#34d399">D</div>
+    <div>
+      <h2>Pill Strip</h2>
+      <div class="tag">Top bar diganti strip tab: Home, Chat, lalu setiap pill sebagai tab berwarna dengan badge. Home jadi dashboard kecil. Settings pakai tab di atas.</div>
+      <div class="why">
+        <div><b>Navigasi</b>Satu klik ke pill mana pun, tanpa titik dan tanpa carousel. Badge menunjukkan pill mana yang ada isinya.</div>
+        <div><b>Kelebihan</b>Perubahan paling kecil dari struktur sekarang, tapi masalah titik pill yang susah dibaca langsung beres. Settings bisa mengatur urutan pill (drag).</div>
+        <div><b>Risiko</b>Lebar strip terbatas, jadi maksimal sekitar 6 tab sebelum harus di-scroll. Tampilannya paling "biasa".</div>
+      </div>
+    </div>
+  </div>
+  <div class="frames">
+    <div class="frame"><div class="cap"><span>Home · dashboard</span><span>160 px</span></div><div class="stage"><div class="desk">
+      <div class="island">
+        <div class="strip">
+          <span class="pt on" style="--pc:#f4f5f7"><i style="background:#f4f5f7"></i>Home</span>
+          <span class="pt"><i style="background:#8f95a0;border-radius:50%"></i>Chat</span>
+          <span class="pt" style="--pc:#5865f2"><i style="background:#5865f2"></i>Messages<em>15</em></span>
+          <span class="pt" style="--pc:#1db954"><i style="background:#1db954"></i>Music</span>
+          <span class="pt" style="--pc:#4f8ef7"><i style="background:#4f8ef7"></i>Space</span>
+          <span class="grow"></span><span class="gear">⚙</span>
+        </div>
+        <div class="body">
+          <div class="mochi" style="width:70px;height:56px;margin-left:4px"></div>
+          <div class="dash">
+            <div class="w"><span class="s">Agents</span><b>2 <small style="font-size:12px;font-weight:500;color:var(--dim)">aktif</small></b><div class="bar"><span style="width:66%;background:#f5a524"></span></div></div>
+            <div class="w"><span class="s">Space hari ini</span><b>5/8</b><div class="bar"><span style="width:62%;background:#4f8ef7"></span></div></div>
+            <div class="w"><span class="s">Kuota Claude</span><b>41%</b><div class="bar"><span style="width:41%;background:#22c55e"></span></div></div>
+          </div>
+        </div>
+      </div>
+    </div></div></div>
+
+    <div class="frame"><div class="cap"><span>Kartu pill · Messages</span><span>240 px</span></div><div class="stage"><div class="desk">
+      <div class="island">
+        <div class="strip">
+          <span class="pt" style="--pc:#f4f5f7"><i style="background:#f4f5f7"></i>Home</span>
+          <span class="pt"><i style="background:#8f95a0;border-radius:50%"></i>Chat</span>
+          <span class="pt on" style="--pc:#5865f2"><i style="background:#5865f2"></i>Messages<em>15</em></span>
+          <span class="pt" style="--pc:#1db954"><i style="background:#1db954"></i>Music</span>
+          <span class="pt" style="--pc:#4f8ef7"><i style="background:#4f8ef7"></i>Space</span>
+          <span class="grow"></span><span class="gear">⚙</span>
+        </div>
+        <div class="body" style="align-items:start">
+          <div class="mochi tinted" style="--mc:linear-gradient(200deg,#8f97ff,#4b55d8);width:60px;height:48px;margin-top:6px"></div>
+          <div>
+            <div style="display:flex;align-items:center;gap:8px"><b>Telegram</b><span class="s">11</span><span class="grow" style="flex:1"></span><span class="btn">Clear all</span></div>
+            <div class="msg"><i style="background:#2aabee"></i><div><b>ダーリン</b><div class="s">You have a new message</div></div><span class="s">baru saja</span></div>
+            <div class="msg"><i style="background:#25d366"></i><div><b>Mama</b> <span class="s">· WhatsApp</span><div class="s">Nanti pulang jam berapa?</div></div><span class="s">2 mnt</span></div>
+          </div>
+        </div>
+      </div>
+    </div></div></div>
+
+    <div class="frame"><div class="cap"><span>Chat</span><span>240 px</span></div><div class="stage"><div class="desk">
+      <div class="island">
+        <div class="strip">
+          <span class="pt" style="--pc:#f4f5f7"><i style="background:#f4f5f7"></i>Home</span>
+          <span class="pt on" style="--pc:#f4f5f7"><i style="background:#f4f5f7;border-radius:50%"></i>Chat</span>
+          <span class="pt" style="--pc:#5865f2"><i style="background:#5865f2"></i>Messages<em>15</em></span>
+          <span class="pt" style="--pc:#1db954"><i style="background:#1db954"></i>Music</span>
+          <span class="grow"></span><span class="gear">⚙</span>
+        </div>
+        <div class="body" style="align-items:end">
+          <div class="mochi happy" style="width:56px;height:44px"></div>
+          <div>
+            <div class="s" style="margin-bottom:6px">Mochi: PR #42 sudah merge. Ada lagi?</div>
+            <div class="input"><span style="flex:1;color:var(--dim)">Tanya Mochi…</span><span class="s">Opus 5.5</span><span class="send">↑</span></div>
+            <div class="chipsrow"><span>Ringkas sesi</span><span>Cek kuota</span><span>Tulis commit</span></div>
+          </div>
+        </div>
+      </div>
+    </div></div></div>
+
+    <div class="frame"><div class="cap"><span>Jendela Settings</span><span>600 × 400</span></div><div class="stage" style="display:flex;justify-content:center">
+      <div class="win">
+        <div class="tabs"><span>General</span><span>Agents</span><span>AI</span><span class="on">Pills</span><span>Sound</span><span>About</span></div>
+        <div class="in">
+          <div style="display:flex;align-items:baseline;gap:8px"><b style="font-size:15px">Pills</b><span class="s">Seret untuk mengatur urutan tab. Maksimal 6 tampil.</span></div>
+          <div class="pr"><i style="background:#5865f2"></i><div><b>Messages</b><div class="s">Notifikasi Windows · Telegram, WhatsApp</div></div><span class="tog on"></span><span class="drag">⋮⋮</span></div>
+          <div class="pr"><i style="background:#1db954"></i><div><b>Music</b><div class="s">Spotify · lirik aktif</div></div><span class="tog on"></span><span class="drag">⋮⋮</span></div>
+          <div class="pr"><i style="background:#4f8ef7"></i><div><b>Space</b><div class="s">Venturo · cek tiap 5 menit</div></div><span class="tog on"></span><span class="drag">⋮⋮</span></div>
+          <div class="pr"><i style="background:#f5a524"></i><div><b>Shelf</b><div class="s">Screenshot dan download 3 hari</div></div><span class="tog"></span><span class="drag">⋮⋮</span></div>
+          <div class="pr"><i style="background:#24292f;border:1px solid #444"></i><div><b>GitHub</b><div class="s">Token tersimpan di Credential Manager</div></div><span class="tog"></span><span class="drag">⋮⋮</span></div>
+        </div>
+      </div>
+    </div></div>
+  </div>
+</section>
+
+<!-- ═════════════ Compare ═════════════ -->
+<section class="dir" id="cmp">
+  <div class="dir-head"><div class="dir-letter" style="background:#ffffff10">≡</div><div><h2>Perbandingan</h2><div class="tag">Biaya kerja diperkirakan untuk `windows/` saja. Versi Mac tidak disentuh kecuali diminta.</div></div></div>
+  <table class="cmp">
+    <tr><th></th><th>A · Glass Dock</th><th>B · Mochi Pop</th><th>C · Command Pro</th><th>D · Pill Strip</th></tr>
+    <tr><td>Rasa</td><td>Native Windows, rapi</td><td>Imut, penuh karakter</td><td>Alat power user</td><td>Netral, fungsional</td></tr>
+    <tr><td>Kepadatan info</td><td>Sedang</td><td>Rendah</td><td>Tinggi</td><td>Sedang–tinggi</td></tr>
+    <tr><td>Mochi</td><td>Ada, ukuran tetap</td><td>Pusat desain</td><td>Kecil di command bar</td><td>Ada, ukuran tetap</td></tr>
+    <tr><td>Akses pill</td><td>Tab Pills, lalu chip</td><td>Tab kapsul</td><td>Rail, lalu Tab</td><td>1 klik, tab langsung</td></tr>
+    <tr><td>Settings</td><td>Sidebar + grup</td><td>Grid kartu</td><td>Dua panel + cari</td><td>Tab di atas + urutan pill</td></tr>
+    <tr><td>Biaya ubah</td><td>Besar (CSS + Settings)</td><td>Besar (semua view)</td><td>Paling besar (+ sistem command)</td><td>Paling kecil</td></tr>
+    <tr><td>Beban performa</td><td>Blur di WebView2</td><td>Ringan</td><td>Ringan</td><td>Ringan</td></tr>
+  </table>
+  <p class="note">Bisa juga dicampur, misalnya top bar D + Settings A, atau gaya B dengan strip pill D. Sebutkan huruf dan bagian mana yang dipakai.</p>
+</section>
+</div>
+</body>
+</html>

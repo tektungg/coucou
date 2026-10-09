@@ -87,8 +87,8 @@ switch (view) {
     break;
   case "prompt":
     State.chatHistory = [
-      { id: 1, role: "user", content: "bonjour Mochi, ringkas PR terakhir" },
-      { id: 2, role: "assistant", content: "PR #42 memindahkan amplop Messages ke bawah mata Mochi dan menambah 5 test geometry." },
+      { id: 1, role: "user", content: "bonjour Mochi, sum up the last PR" },
+      { id: 2, role: "assistant", content: "PR #42 moves the Messages envelope below your eyes, sorry, mine, and adds 5 geometry tests." },
     ];
     break;
 }

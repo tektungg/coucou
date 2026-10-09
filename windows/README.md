@@ -32,7 +32,7 @@ installs for the current user only — no admin prompt.
 ## Using it
 
 <img src="screenshots/compact.png" width="292" alt="The compact island, with the integration pills as mini Mochis">
-<img src="screenshots/overview.png" width="640" alt="The overview: the focused integration on the left, the other pills on the right">
+<img src="screenshots/overview.png" width="640" alt="The overview: the Messages pill open, every pill as a chip in the header">
 <img src="screenshots/approval.png" width="640" alt="A Claude Code permission request, with Deny and Allow">
 <img src="screenshots/chat.png" width="640" alt="Chatting with Claude from the island">
 <img src="screenshots/drop.png" width="640" alt="Mochi turned into a box, waiting for a file">
@@ -54,7 +54,7 @@ your integrations sit in the coloured pills next to Mochi.
 
 ## Claude Code
 
-<img src="screenshots/settings.png" width="562" alt="The settings window">
+<img src="screenshots/settings.png" width="562" alt="The settings window: a tile per thing to set up">
 
 Open **Settings… → Claude Code → Install hooks…**. You get the exact diff of what
 will change in `%USERPROFILE%\.claude\settings.json`, the path of the dated backup
@@ -177,7 +177,7 @@ network call is the Music pill's lyrics (lrclib.net), which Settings can turn of
   warning shows), open tasks first and done ones after with a green ✓ on the
   right (`views/spaceTasks.ts`); the scroll position survives the 5-minute refresh.
   Login stays with space-timebox (`space-timebox login`); its errors are shown as is.
-  The folder is set in **Settings → Integrations → Space** (empty = default).
+  The folder is set in **Settings → Space** (empty = default).
 - **Music.** Prefers a playing session, then Spotify. ⏮ ⏯ ⏭ act on the same
   session. The card has two columns, in the same height as every other card.
   On the left: the cover (with a soft glow of it behind), the title and the
@@ -267,7 +267,7 @@ network call is the Music pill's lyrics (lrclib.net), which Settings can turn of
   box takes the keyboard only when clicked; ← → and Esc act on it, not on the
   island. Only the title, artist, album and
   length leave the PC, nothing reaches the log, and nothing is sent while
-  **Settings → Integrations → Music → Lyrics** is off or Coucou is paused.
+  **Settings → Music → Lyrics** is off or Coucou is paused.
 - **Shelf.** Took the Claude usage pill's place (a one-time settings
   migration, `settings.rs migrate_pills`, also adds Audio; up to six pills can
   be on). Three tabs: files kept on the shelf (dropped on Mochi while the Shelf
@@ -323,7 +323,7 @@ network call is the Music pill's lyrics (lrclib.net), which Settings can turn of
   app's heading) opens the app and takes those messages off the card; **Clear
   all** empties it. A cleared message never comes back: the listener has already
   seen its toast. Slack toasts never
-  name the workspace, so it comes from **Settings → Slack workspace**. Messages
+  name the workspace, so it comes from **Settings → Messages → Slack workspace**. Messages
   stay in memory (the last 15), and the log records counts only. A toast an app
   clears before the next poll (3 s) is not seen. Discord's toast format is
   parsed as `Author (#channel, Server)`; adjust `notify.rs` if a live toast differs.
@@ -389,6 +389,49 @@ The app icon and the tray icon are drawn in code, like Mochi itself:
 npm run icons          # regenerates src-tauri/icons from scripts/gen-icons.mjs
 ```
 
+### Look (Mochi Pop)
+
+The Windows island and Settings window share one look, picked from four
+directions in `design/redesign/menu-options.html` (option B). Violet-dark
+surfaces, a pink accent for the main action, a blue one for your own chat
+bubbles, round capsules and a small mini Mochi wherever something has an
+identity. It is Windows-only: the Mac app keeps the App Store look.
+
+- **Theme.** `src/theme.css` holds the palette, the radii and `.face`, the
+  static mini Mochi. Both `style.css` (island) and `settings/settings.css`
+  import it. `face(color, size)` in `views/dom.ts` makes one. It is plain CSS,
+  never a canvas, so it costs nothing while the island is hidden.
+- **Header** (`views/header.ts`). Home and Chat are capsule tabs with a face,
+  and the label shows only on the open one. The pills are chips in the middle:
+  a face in the pill's colour, and the active chip also shows its name.
+  `views/pager.ts` decides which chips fit the 340 px strip; the pills furthest
+  from the active one fold into a `+N` chip that opens the next hidden pill
+  (`tests/pager.test.ts`, including 6 pills plus 2 sessions with a long name).
+  The header stays 34 px tall: `core/layout.ts` places Mochi under it, so a
+  taller header would push the cards off Mochi.
+- **Cards, alerts, chat.** Shared classes only (`.card`, `.btn`, `.int-card`,
+  `.int-row`, `.msg-item`, `.bubble`, `.reply`, `.ask-chip`), so every pill card
+  follows. Primary buttons are pink, but the approval's Allow is green (`btn`
+  kind `"allow"`): an approval must never look like the default action. The
+  108 and 116 px text gutters are kept, for the same reason as the header.
+- **Settings window.** A grid of tiles: the hooks, Chat, each pill and General.
+  Each tile has a face, a status line and an ON / SETUP / OFF chip, worked out
+  by `settings/tiles.ts` (`tests/settingsTiles.test.ts`). A tile opens its own
+  screen (`claudeCode.ts`, `chat.ts`, `pills.ts`, `general.ts`) with a way
+  back. The hooks still go preview, diff, confirm, and the write only happens
+  if `settings.json` still matches the preview. Turning on a 7th pill is
+  refused, and the screen says why.
+- **Checking it.** With `npm run dev`:
+  - `dev/pop-preview.html?view=overview&focus=integration_messages` opens the
+    real island on any view (overview, prompt, approval, question, plan,
+    settings…) with fake sessions and cards.
+  - `dev/settings-preview.html?open=Chat` (or `?preview` for the hooks diff)
+    does the same for Settings.
+
+  `node scripts/shoot.mjs <dir> <url>... --size=900x340 --wait=2200`
+  screenshots them in headless Edge, in real time. Edge's own `--screenshot`
+  runs on virtual time, which stops the island halfway through opening.
+
 ### Layout
 
 ```
@@ -401,8 +444,8 @@ windows/
   src-tauri/           Rust backend: window, named pipe, Claude API, pollers
   hook/                coucou-hook.exe, the Claude Code relay
   patches/             vendored tauri-runtime-wry with the Rc race fix
-  scripts/             icon generator, packaging, rc-stress.ps1
-  dev/                 browser previews: upload, Mochi acts, Music card
+  scripts/             icon generator, packaging, rc-stress.ps1, shoot.mjs
+  dev/                 browser previews: island views, Settings, upload, Mochi acts, Music card
 ```
 
 ### Log
@@ -420,6 +463,8 @@ problems. It stays on your machine.
   attach it as context, and jumping to a specific terminal window — "Open
   terminal" opens the working folder in VS Code when `code` is on your `PATH`.
 - Cal.com shows the next bookings as a list rather than the Mac's calendar.
+- The look is "Mochi Pop" (see Look above): capsule tabs, pill chips with a
+  mini Mochi, and a tile grid in Settings. The Mac app keeps its own look.
 
 ## Linux
 
