@@ -3,45 +3,7 @@
    canvas lines up with the cards (core/layout.ts); colours and shapes are
    Windows-only. */
 
-:root {
-  color-scheme: dark;
-
-  --font: system-ui, "Segoe UI Variable Text", "Segoe UI", "Segoe UI Emoji", sans-serif;
-  --mono: "Cascadia Mono", "Consolas", ui-monospace, monospace;
-
-  /* Mochi Pop: violet-dark surfaces, pink and blue accents, round shapes. */
-  --bg: #17151f;          /* the island */
-  --soft: #221f2d;        /* cards */
-  --soft-2: #2b2738;      /* rows, bubbles, inputs inside a card */
-  --soft-3: #36314a;      /* hover */
-  --acc: #ff8fb1;         /* primary actions, send, active accents */
-  --acc-ink: #2a1020;     /* text on --acc */
-  --acc-2: #8fd3ff;       /* the user's chat bubble, Chat tab face */
-  --acc-2-ink: #10263a;
-  --face-ink: #1a1412;    /* Mochi's eyes */
-  --r-card: 22px;
-  --r-pill: 999px;
-
-  --ink: #fbf8ff;        /* primary text */
-  --ink-2: #f3eefb;
-  --dim: #a7a0b8;
-  --dim-2: #a19ab3;
-  --dim-3: #7d7690;
-  --dim-4: #6e6782;
-  --dim-5: #554f66;
-  --card: var(--soft);
-  --card-flat: #1b1824;
-  --tab-on: var(--soft-3);
-  --hairline: rgba(255, 255, 255, 0.05);
-  --red: #f4505e;
-  --red-text: #ff8d97;
-  --green: #22c55e;
-  --green-2: #34d399;
-  --amber: #f5a524;
-  --cyan: #22d3ee;
-  --indigo: #6366f1;
-  --pink: #f472b6;
-}
+@import "./theme.css";
 
 * {
   box-sizing: border-box;
@@ -391,39 +353,6 @@ body {
   display: inline-block;
   border-radius: 50%;
   flex: 0 0 auto;
-}
-
-/* A static mini Mochi (views/dom.ts face()): tabs, pill chips, Settings tiles.
-   Plain CSS, no canvas, so it costs nothing while the island is hidden. */
-.face {
-  --fc: #fff;
-  --fs: 20px;
-  position: relative;
-  display: inline-block;
-  flex: 0 0 auto;
-  width: var(--fs);
-  height: calc(var(--fs) * 0.8);
-  border-radius: 46% 46% 42% 42% / 52% 52% 46% 46%;
-  background: var(--fc);
-}
-
-.face::before,
-.face::after {
-  content: "";
-  position: absolute;
-  top: 38%;
-  width: 15%;
-  height: 26%;
-  border-radius: 40%;
-  background: var(--face-ink);
-}
-
-.face::before {
-  left: 25%;
-}
-
-.face::after {
-  right: 25%;
 }
 
 /* ── Buttons ────────────────────────────────────────────────────────────── */

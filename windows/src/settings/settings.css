@@ -1,22 +1,7 @@
-/* Settings window — same palette as the island, laid out as a normal window. */
+/* Settings window (Mochi Pop): the island's theme, laid out as a normal window.
+   A grid of tiles on top (settings/main.ts), one screen per tile below it. */
 
-:root {
-  /* Makes Windows render the native dropdown and scrollbars dark — without it
-     the <select> popup is white text on white. */
-  color-scheme: dark;
-
-  --font: system-ui, "Segoe UI Variable Text", "Segoe UI", sans-serif;
-  --mono: "Cascadia Mono", "Consolas", ui-monospace, monospace;
-  --ink: #f5f6f8;
-  --dim: #9398a1;
-  --dim-2: #6b7079;
-  --bg: #0b0c0e;
-  --card: #141518;
-  --hairline: rgba(255, 255, 255, 0.07);
-  --green: #22c55e;
-  --red: #f4505e;
-  --amber: #f5a524;
-}
+@import "../theme.css";
 
 * {
   box-sizing: border-box;
@@ -33,7 +18,7 @@ body.settings-window {
 }
 
 #settings-root {
-  padding: 22px 24px 32px;
+  padding: 20px 22px 32px;
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -42,36 +27,156 @@ body.settings-window {
 }
 
 h1 {
-  font: 600 17px var(--font);
+  font: 750 18px var(--font);
   letter-spacing: -0.01em;
 }
 
 h1 .version {
-  font: 400 12px var(--font);
-  color: var(--dim-2);
+  font: 500 12px var(--font);
+  color: var(--dim-3);
   margin-left: 8px;
 }
 
-section {
-  background: var(--card);
+.hint {
+  font: 400 12px var(--font);
+  color: var(--dim);
+}
+
+/* ── Top screen: header, groups of tiles ──────────────────────────────────── */
+
+.home-head,
+.detail-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.detail-head > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.group-head h2 {
+  font: 700 13px var(--font);
+  color: var(--ink-2);
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 104px;
+  padding: 14px;
   border: 1px solid var(--hairline);
-  border-radius: 14px;
+  border-radius: 18px;
+  background: var(--soft);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.14s, transform 0.12s;
+}
+
+.tile:hover {
+  background: var(--soft-2);
+  transform: translateY(-2px);
+}
+
+.tile-top {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.tile b {
+  font: 700 13.5px var(--font);
+}
+
+.tile span {
+  font: 400 12px var(--font);
+  color: var(--dim);
+}
+
+.chip {
+  font: 750 10.5px var(--font);
+  letter-spacing: 0.02em;
+  border-radius: var(--r-pill);
+  padding: 2px 8px;
+  flex: 0 0 auto;
+}
+
+.chip.on {
+  background: #9ff0c0;
+  color: #0e2a1a;
+}
+
+.chip.setup {
+  background: var(--acc);
+  color: var(--acc-ink);
+}
+
+.chip.off {
+  background: var(--soft-3);
+  color: var(--dim);
+}
+
+/* ── A tile's screen ──────────────────────────────────────────────────────── */
+
+button.back {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px 5px 9px;
+  background: var(--soft);
+  color: var(--dim);
+}
+
+.panel {
+  background: var(--soft);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-card);
   padding: 16px 18px;
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-section > h2 {
-  font: 600 13px var(--font);
+.panel > h2 {
+  font: 700 13px var(--font);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.status-line {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.hint {
-  font: 400 12px var(--font);
-  color: var(--dim);
 }
 
 .row {
@@ -87,8 +192,16 @@ section > h2 {
   font-size: 12.5px;
 }
 
-.spacer {
-  flex: 1 1 auto;
+.checks {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 5px;
 }
 
 .dot {
@@ -100,18 +213,18 @@ section > h2 {
 }
 
 button {
-  font: 500 12.5px var(--font);
-  padding: 7px 14px;
+  font: 650 12.5px var(--font);
+  padding: 7px 15px;
   border: 0;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.09);
+  border-radius: var(--r-pill);
+  background: var(--soft-2);
   color: var(--ink);
   cursor: pointer;
-  transition: background 0.14s, transform 0.08s;
+  transition: background 0.14s, transform 0.08s, filter 0.14s;
 }
 
 button:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--soft-3);
 }
 
 button:active:not(:disabled) {
@@ -119,17 +232,18 @@ button:active:not(:disabled) {
 }
 
 button.primary {
-  background: var(--ink);
-  color: #0b0c0e;
+  background: var(--acc);
+  color: var(--acc-ink);
 }
 
 button.primary:hover:not(:disabled) {
-  background: #fff;
+  background: var(--acc);
+  filter: brightness(1.08);
 }
 
 button.danger {
   background: rgba(244, 80, 94, 0.16);
-  color: #ff8d97;
+  color: var(--red-text);
 }
 
 button:disabled {
@@ -150,12 +264,18 @@ code,
   width: 36px;
   height: 20px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--soft-3);
   flex: 0 0 36px;
   padding: 0;
 }
 
-.switch.on {
+.switch:hover:not(:disabled) {
+  background: var(--soft-3);
+  filter: brightness(1.15);
+}
+
+.switch.on,
+.switch.on:hover:not(:disabled) {
   background: var(--green);
 }
 
@@ -180,14 +300,14 @@ input[type="range"] {
   appearance: none;
   height: 4px;
   border-radius: 2px;
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--soft-3);
   width: 140px;
 }
 
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 13px;
-  height: 13px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   background: #fff;
 }
@@ -197,35 +317,44 @@ input[type="text"],
 input[type="password"],
 select {
   font: 400 12.5px var(--font);
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--soft-2);
   border: 1px solid var(--hairline);
-  border-radius: 8px;
+  border-radius: 12px;
   color: var(--ink);
-  padding: 5px 8px;
+  padding: 6px 10px;
+}
+
+.grow-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+input.num {
+  width: 72px;
 }
 
 input::placeholder {
-  color: var(--dim-2);
+  color: var(--dim-3);
 }
 
 input:focus,
 select:focus {
   outline: none;
-  border-color: rgba(255, 255, 255, 0.28);
+  border-color: var(--acc);
 }
 
 /* The popup is drawn by the OS: give it an explicit pair of colours rather than
    inheriting white on white. */
 select option {
-  background-color: #1a1c20;
+  background-color: var(--card-flat);
   color: var(--ink);
 }
 
 .diff {
   font: 400 11.5px/1.5 var(--mono);
-  background: #08090b;
+  background: var(--card-flat);
   border: 1px solid var(--hairline);
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 10px 12px;
   max-height: 260px;
   overflow: auto;
@@ -238,16 +367,16 @@ select option {
 }
 
 .diff .del {
-  color: #ff8d97;
+  color: var(--red-text);
 }
 
 .diff .ctx {
-  color: var(--dim-2);
+  color: var(--dim-3);
 }
 
 .notice {
   font: 400 12px var(--font);
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 8px 12px;
 }
 
@@ -258,7 +387,7 @@ select option {
 
 .notice.err {
   background: rgba(244, 80, 94, 0.14);
-  color: #ff8d97;
+  color: var(--red-text);
 }
 
 .notice.warn {
