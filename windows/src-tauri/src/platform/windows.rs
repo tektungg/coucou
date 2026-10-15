@@ -379,3 +379,51 @@ pub fn login_item_command(name: &str) -> Option<String> {
     let text = String::from_utf16_lossy(&buf[..len]);
     Some(text.trim_end_matches('\0').to_string())
 }
+
+// ── Launch ────────────────────────────────────────────────────────────────────
+
+fn wide(s: &str) -> Vec<u16> {
+    s.encode_utf16().chain(Some(0)).collect()
+}
+
+/// The Coucou that already holds the single-instance mutex, if any: its pid
+/// (0 if its window can't be found) and exe path. `mutex`, `class` and `title`
+/// are the names tauri-plugin-single-instance gives them (startup.rs).
+pub fn running_instance(mutex: &str, class: &str, title: &str) -> Option<(u32, Option<String>)> {
+    use ::windows::Win32::System::Threading::{OpenMutexW, SYNCHRONIZATION_SYNCHRONIZE};
+    use ::windows::Win32::UI::WindowsAndMessaging::FindWindowW;
+    let m = wide(mutex);
+    let handle = unsafe { OpenMutexW(SYNCHRONIZATION_SYNCHRONIZE, false, PCWSTR(m.as_ptr())) }.ok()?;
+    unsafe {
+        let _ = CloseHandle(handle);
+    }
+    let (c, t) = (wide(class), wide(title));
+    let mut pid = 0u32;
+    if let Ok(hwnd) = unsafe { FindWindowW(PCWSTR(c.as_ptr()), PCWSTR(t.as_ptr())) } {
+        unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)) };
+    }
+    let path = if pid == 0 { None } else { process_path(pid) };
+    Some((pid, path))
+}
+
+fn process_path(pid: u32) -> Option<String> {
+    use ::windows::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) }.ok()?;
+    let mut buf = [0u16; 1024];
+    let mut len = buf.len() as u32;
+    let read = unsafe { QueryFullProcessImageNameW(process, PROCESS_NAME_WIN32, PWSTR(buf.as_mut_ptr()), &mut len) };
+    unsafe {
+        let _ = CloseHandle(process);
+    }
+    read.ok()?;
+    Some(String::from_utf16_lossy(&buf[..len as usize]))
+}
+
+/// A blocking error box, for when Coucou can't show its own window.
+pub fn alert(title: &str, text: &str) {
+    use ::windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK, MB_SETFOREGROUND};
+    let (t, x) = (wide(title), wide(text));
+    unsafe { MessageBoxW(None, PCWSTR(x.as_ptr()), PCWSTR(t.as_ptr()), MB_OK | MB_ICONERROR | MB_SETFOREGROUND) };
+}

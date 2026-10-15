@@ -22,6 +22,7 @@ mod quota;
 mod rc_guard;
 mod romanize;
 mod shelf;
+mod startup;
 mod secrets;
 mod settings;
 mod space;
@@ -511,12 +512,16 @@ fn open_settings_window(app: AppHandle) {
 }
 
 pub fn run() {
+    startup::install_panic_log();
     platform::prepare_environment();
+    let context = tauri::generate_context!();
+    startup::announce_handoff(&context.config().identifier);
     let loaded = settings::load();
     let gate = Arc::new(PollGate::new());
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            log::line(format!("launch handed off from {}", argv.first().map(String::as_str).unwrap_or("?")));
             let _ = app.emit_to(island::WINDOW_LABEL, "tray", "open".to_string());
         }))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
@@ -576,6 +581,11 @@ pub fn run() {
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
+            startup::maybe_panic_probe();
+            // Built here, not from tauri.conf.json: a failure is retried, not a panic.
+            if !startup::create_island(&handle) {
+                startup::give_up();
+            }
             tray::build(&handle)?;
             // Before the island: see create_settings_window.
             create_settings_window(&handle);
@@ -607,6 +617,6 @@ pub fn run() {
             integrations::start(handle.clone());
             Ok(())
         })
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running Coucou");
 }

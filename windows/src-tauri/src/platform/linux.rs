@@ -316,6 +316,18 @@ fn apply_input_region(gw: &impl IsA<gtk::Widget>, rect: Region) {
     }
 }
 
+// ── Launch ────────────────────────────────────────────────────────────────────
+
+/// The single-instance plugin talks over D-Bus on Linux: no mutex to look at.
+pub fn running_instance(_mutex: &str, _class: &str, _title: &str) -> Option<(u32, Option<String>)> {
+    None
+}
+
+/// No toolkit dialog without a window: the terminal (or journal) gets it.
+pub fn alert(title: &str, text: &str) {
+    eprintln!("{title}: {text}");
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

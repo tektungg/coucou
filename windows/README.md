@@ -507,6 +507,30 @@ windows/
 `%LOCALAPPDATA%\Coucou\coucou.log` — hook events, permission decisions, poller
 problems. It stays on your machine.
 
+It also records launch trouble (`src-tauri/src/startup.rs`):
+
+- **`PANIC at <file>:<line>: <message>`**: a Rust panic. A panic inside the event
+  loop aborts Coucou with `0xc0000409` and no window, so this line is the only
+  trace it leaves.
+- **`island webview failed (attempt n/5): …`**: Coucou builds the island window
+  itself (`"create": false` in `tauri.conf.json`) and retries it every 1.5 s.
+  When Tauri built it from the config, a failure was a panic. If all five
+  attempts fail, a message box says so and Coucou exits.
+- **`Coucou is already running (pid N, <path>): this launch opens it and
+  exits`**: a second launch hands over to the running one through the
+  single-instance plugin. The running instance logs `launch handed off from
+  <exe>`. That is why `npm run tauri dev` seems to do nothing while the
+  installed Coucou runs: the message is printed in its terminal too. Quit the
+  installed one from the tray first.
+
+Reinstalling wipes the log (the NSIS uninstall step deletes it), so a crash
+right after an install shows up only in the Event Viewer (Application,
+`coucou.exe`).
+
+Debug builds can exercise these paths: `COUCOU_PANIC_AT_SETUP=1` panics in
+setup, and `COUCOU_FAIL_ISLAND=<n>` fails the first `n` island attempts (5 or
+more takes the message-box path).
+
 ## What's different from the Mac version
 
 - No notch, so the island lives at the top centre of the screen and retracts into
