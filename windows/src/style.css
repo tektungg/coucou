@@ -1425,13 +1425,30 @@ input[type="range"]::-webkit-slider-thumb {
   color: var(--green);
 }
 
-/* Messages card: grouped by app, newest app first, scrolling inside the card.
-   Each message reads like an Android notification: sender, then the text. */
-.int-rows.msg-list {
-  padding-top: 2px;
+/* Messages card (views/messagesCard.ts): one row per chat, like a chat app's
+   inbox. The island grows to MESSAGES_OVERVIEW_H on this pill, and the list
+   fills the card: four 32px rows and a peek of the fifth, so it reads as more. */
+.int-card.msg-card {
+  height: 100%;
+  box-sizing: border-box;
+  padding-bottom: 6px;
+}
+
+/* Same height with or without the chips, so the list never jumps. */
+.msg-card .int-head {
+  height: 20px;
+}
+
+.msg-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   gap: 1px;
+  margin-top: 5px;
+  margin-right: -6px;
+  padding-right: 4px;
   overflow-y: auto;
-  max-height: 78px;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
 }
@@ -1451,48 +1468,113 @@ input[type="range"]::-webkit-slider-thumb {
   color: #c5c8cd;
 }
 
-.msg-group {
-  display: flex;
+.msg-chips {
+  display: inline-flex;
   align-items: center;
-  gap: 5px;
-  flex: none;
-  height: 16px;
-  padding: 0 8px;
-  cursor: pointer;
+  gap: 2px;
 }
 
-.msg-group b {
-  font: 600 10px var(--font);
+.msg-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  border-radius: var(--r-pill);
+  padding: 1px 7px;
+  background: transparent;
+  color: var(--dim-3);
+  font: 500 10.5px var(--font);
+  cursor: default;
+}
+
+.msg-chip:hover {
+  background: rgba(255, 255, 255, 0.06);
   color: #c5c8cd;
 }
 
-.msg-detail .msg-group:not(:first-child) {
-  margin-top: 4px;
+.msg-chip.on {
+  background: color-mix(in srgb, var(--app) 18%, transparent);
+  color: var(--ink-2);
 }
 
-.msg-item {
+.msg-chip-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--app);
+}
+
+.msg-chip b {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+
+.msg-row {
   display: flex;
-  flex-direction: column;
-  gap: 1px;
+  align-items: flex-start;
+  gap: 8px;
   flex: none;
   min-width: 0;
-  padding: 3px 8px 3px 18px;
-  border-radius: 5px 14px 14px 14px;
+  padding: 2px 8px 2px 5px;
+  border-radius: 12px;
   cursor: pointer;
 }
 
-.msg-item:hover {
+.msg-row:hover {
   background: var(--soft-2);
+}
+
+.msg-row.arrive {
+  animation: msg-arrive 0.22s cubic-bezier(0.3, 0.9, 0.4, 1);
+}
+
+@keyframes msg-arrive {
+  from { transform: translateY(-6px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+.msg-avatar {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--app) 26%, var(--soft-2));
+  color: color-mix(in srgb, var(--app) 35%, #ffffff);
+  font: 650 11px var(--font);
+  line-height: 1;
+}
+
+/* The app, at a glance: a dot in its colour on the avatar's corner. */
+.msg-badge {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--app);
+  box-shadow: 0 0 0 2px var(--bg);
+}
+
+.msg-main {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .msg-top {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 5px;
+  height: 14px;
   min-width: 0;
 }
 
-.msg-sender {
+.msg-title {
   flex: 0 1 auto;
   min-width: 0;
   font: 650 11px var(--font);
@@ -1502,78 +1584,110 @@ input[type="range"]::-webkit-slider-thumb {
   text-overflow: ellipsis;
 }
 
-.msg-item.newest .msg-sender {
-  color: var(--acc);
+.msg-count {
+  flex: none;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.1);
+  color: #c5c8cd;
+  font: 600 9.5px/14px var(--font);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
-.msg-place {
-  flex: 0 1 auto;
-  min-width: 0;
-  font: 400 10px var(--font);
-  color: var(--dim-3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.msg-top .int-ago {
+.msg-time {
+  flex: none;
   margin-left: auto;
   padding-left: 6px;
-}
-
-.msg-body {
-  display: flex;
-  align-items: flex-start;
-  gap: 4px;
-  min-width: 0;
-}
-
-.msg-text {
-  flex: 1 1 auto;
-  min-width: 0;
-  font: 400 10.5px var(--font);
-  line-height: 14px;
-  color: #8d929b;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.msg-item.expanded .msg-text {
-  white-space: pre-line;
-  overflow-wrap: anywhere;
-}
-
-.msg-toggle {
-  display: none;
-  place-items: center;
-  flex: none;
-  width: 14px;
-  height: 14px;
-  border: 0;
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.06);
+  font: 400 10px var(--font);
   color: var(--dim-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.msg-time.fresh {
+  color: var(--acc);
+  font-weight: 600;
+}
+
+/* Hovering a row swaps its time for ✓ (mark as read) and ⌄ (whole chat). */
+.msg-actions {
+  display: none;
+  flex: none;
+  gap: 3px;
+  margin-left: auto;
+}
+
+.msg-row:hover .msg-time {
+  display: none;
+}
+
+.msg-row:hover .msg-actions {
+  display: inline-flex;
+}
+
+.msg-act {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin: -2px 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  color: #c5c8cd;
   cursor: default;
 }
 
-.msg-toggle.shown {
-  display: grid;
+.msg-act:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: var(--ink);
 }
 
-.msg-toggle:hover {
-  background: rgba(255, 255, 255, 0.14);
-  color: #c5c8cd;
+.msg-act.read:hover {
+  background: color-mix(in srgb, var(--green) 30%, transparent);
+  color: var(--green-2);
 }
 
 /* The chevron points down to expand and up to collapse. */
-.msg-toggle svg {
+.msg-act.more svg {
   transform: rotate(90deg);
   transition: transform 0.15s ease;
 }
 
-.msg-item.expanded .msg-toggle svg {
+.msg-row.expanded .msg-act.more svg {
   transform: rotate(-90deg);
+}
+
+.msg-preview {
+  font: 400 10.5px var(--font);
+  line-height: 14px;
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The whole chat, oldest first, each message in full. */
+.msg-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-top: 2px;
+}
+
+.msg-line {
+  font: 400 10.5px var(--font);
+  line-height: 14px;
+  color: var(--dim);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.msg-line:last-child {
+  color: var(--ink-2);
 }
 
 .gauge-row {

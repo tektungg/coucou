@@ -100,6 +100,13 @@ export const VIEW_LAYOUTS: Record<IslandViewName, ViewLayout> = {
 // dropped the whole sequence — Mochi included — is drawn by src/upload, which
 // owns its own constants (USC) straight from UploadSequenceEngine.swift.
 
+/**
+ * The overview while the Messages pill has the focus and something to show:
+ * taller, so four chats fit in its card instead of one and a half. Every other
+ * pill keeps VIEW_LAYOUTS.overview's 160.
+ */
+export const MESSAGES_OVERVIEW_H = 240;
+
 /** Chat view grows with the conversation — IslandContainer.chatPromptHeight. */
 export function chatPromptHeight(messageCount: number): number {
   return Math.min(300, 240 + messageCount * 40);
@@ -110,6 +117,7 @@ export function islandSize(
   view: IslandViewName,
   chatCount = 0,
   compactW = COMPACT_W,
+  tallOverview = false,
 ): { w: number; h: number } {
   switch (mode) {
     case "hidden":
@@ -119,7 +127,9 @@ export function islandSize(
     case "compact":
       return { w: compactW, h: NOTCH_H };
     case "expanded": {
-      const h = view === "prompt" ? chatPromptHeight(chatCount) : VIEW_LAYOUTS[view].height;
+      const h = view === "prompt"
+        ? chatPromptHeight(chatCount)
+        : view === "overview" && tallOverview ? MESSAGES_OVERVIEW_H : VIEW_LAYOUTS[view].height;
       return { w: EXPANDED_W, h };
     }
   }

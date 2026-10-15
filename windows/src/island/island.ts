@@ -20,7 +20,7 @@ import { USC, UploadSeq } from "../upload/sequence";
 import { buildHeader, buildViews, type ViewActions, type ViewHost } from "../views/views";
 import { h, svg } from "../views/dom";
 import {
-  lyricStripActive, lyricStripEl, lyricStripWidth, onLyricStripResize, shelfDragActive, showShelfTab,
+  hasPersonalData, lyricStripActive, lyricStripEl, lyricStripWidth, onLyricStripResize, shelfDragActive, showShelfTab,
 } from "../views/personal";
 import { headerMicBadge } from "../views/views";
 import { MIC_ICON, MIC_OFF_ICON } from "../views/shelf";
@@ -92,6 +92,8 @@ export class Island {
   private stripHovered = false;
   /** Seconds the countdown bar spans for the current close; null = the usual. */
   private countdownWindowS: number | null = null;
+  /** The overview was last sized for the Messages card (MESSAGES_OVERVIEW_H). */
+  private tallOverview = false;
 
   // Bot hover → love (IslandWindowController.botHoverIn)
   private botHovering = false;
@@ -125,6 +127,13 @@ export class Island {
     // A lyric line wider than the collapsed island grows it; a short one shrinks it back.
     onLyricStripResize(() => {
       if (this.lyricMode()) this.animateGeometry(lyricStripWidth() < this.width.value);
+    });
+    // Focusing Messages (or its first message landing) grows the overview; leaving it shrinks it back.
+    State.subscribe(() => {
+      const tall = this.wantsTallOverview();
+      if (tall === this.tallOverview) return;
+      this.tallOverview = tall;
+      if (State.mode === "expanded" && State.view === "overview") this.animateGeometry(!tall);
     });
     this.engine.onDizzy = () => this.handleDizzy();
     this.greeting.onComplete = () => this.fsm.greetComplete();
@@ -641,9 +650,14 @@ export class Island {
 
   private targetSize(): { w: number; h: number; r: number } {
     const compactW = this.lyricMode() ? lyricStripWidth() : COMPACT_W;
-    const { w, h } = islandSize(State.mode, State.view, State.chatHistory.length, compactW);
+    const { w, h } = islandSize(State.mode, State.view, State.chatHistory.length, compactW, this.wantsTallOverview());
     const r = State.mode === "expanded" ? EXPANDED_CORNER : ROUNDED_CORNER;
     return { w, h, r };
+  }
+
+  private wantsTallOverview(): boolean {
+    const id = State.focusTask?.id;
+    return id === "integration_messages" && hasPersonalData(id);
   }
 
   private animateGeometry(shrinking: boolean) {

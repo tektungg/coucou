@@ -342,21 +342,30 @@ network call is the Music pill's lyrics (lrclib.net), which Settings can turn of
   the most recent Claude Code session pill (`island/quotaAlert.ts`).
 - **Messages.** Reads Action Center toasts through `UserNotificationListener`
   (Windows asks once for notification access). Shows sender, message,
-  server/workspace and channel; clicking a row opens the app. The card groups
-  messages by app (the app with the newest message first, `views/messageGroups.ts`)
-  in a list that scrolls, and goes back to the top when news comes in. Each
-  message reads like an Android notification: sender and channel on top, the
-  text below on one line; long or multi-line text gets a chevron that expands
-  and collapses it (the state survives the card's refreshes). A new
+  server/workspace and channel. The card (`views/messagesCard.ts`) reads like a
+  chat app's inbox: **one row per chat**, newest chat first. A group or channel
+  is one chat whoever writes in it, a DM is one chat per sender
+  (`threadsOf` in `views/messageGroups.ts`). A row shows an avatar (the chat's
+  first character on its app colour, with the app's dot on the corner), the chat
+  name, a count when it holds several messages, the time (`now`, `5m`, `2h`; pink
+  while under a minute) and the latest text, with `Sender:` in front in a group.
+  Hovering a row swaps the time for **✓ Mark as read** (off the card, the app
+  stays closed) and **⌄**, which opens the row to every message of the chat,
+  oldest first, in full. When two apps or more are on the card, chips in the
+  header (`All 9 · Telegram 6 · WhatsApp 2`) narrow it to one app. A chip
+  whose app has nothing left falls back to All. On this pill the overview is
+  taller (`MESSAGES_OVERVIEW_H`, 240 instead of 160), so four chats fit plus a peek of
+  the fifth. The other pills keep 160, and an empty Messages pill ("All caught
+  up.") shrinks back. News sends the list back to All and to the top. The chip,
+  the scroll and the expanded chats survive the card's refreshes. A new
   message opens the island on the Messages pill for a 3-second glance (the
   countdown bar shows it) and then collapses; hovering keeps it open to read.
   When the island closes, the focus goes back to the pill the message took it
   from, unless you moved to another pill yourself meanwhile
   (`focusAfterGlance` in `island/messageAlert.ts`).
   It never takes the island from an approval, a question, the chat or a
-  pointer already in it (`island/messageAlert.ts`). Clicking a message (or an
-  app's heading) opens the app and takes those messages off the card; **Clear
-  all** empties it. A cleared message never comes back: the listener has already
+  pointer already in it (`island/messageAlert.ts`). Clicking a row opens the app
+  and takes that chat off the card; **Clear all** empties it. A cleared message never comes back: the listener has already
   seen its toast. Slack toasts never
   name the workspace, so it comes from **Settings → Messages → Slack workspace**. Messages
   stay in memory (the last 15), and the log records counts only. A toast an app
@@ -452,7 +461,7 @@ identity. It is Windows-only: the Mac app keeps the App Store look.
   It starts at the same 108 px gutter as the cards. Any other pill keeps its
   own card.
 - **Cards, alerts, chat.** Shared classes only (`.card`, `.btn`, `.int-card`,
-  `.int-row`, `.msg-item`, `.bubble`, `.reply`, `.ask-chip`), so every pill card
+  `.int-row`, `.msg-row`, `.bubble`, `.reply`, `.ask-chip`), so every pill card
   follows. Primary buttons are pink, but the approval's Allow is green (`btn`
   kind `"allow"`): an approval must never look like the default action. The
   108 and 116 px text gutters are kept, for the same reason as the header.
@@ -469,6 +478,9 @@ identity. It is Windows-only: the Mac app keeps the App Store look.
     settings…) with fake sessions and cards.
   - `dev/settings-preview.html?open=Chat` (or `?preview` for the hooks diff)
     does the same for Settings.
+  - `dev/messages-card-preview.html` shows the Messages card alone with fake
+    chats: `?many`, `?one` (no chips), `?long`, `?expanded`, `?hover`,
+    `?filter=whatsapp`.
 
   `node scripts/shoot.mjs <dir> <url>... --size=900x340 --wait=2200`
   screenshots them in headless Edge, in real time. Edge's own `--screenshot`

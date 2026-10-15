@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Coucou — Messages card preview</title>
+    <style>
+      body { margin: 0; background: #1b1b1f; font: 12px system-ui; color: #ddd; }
+      /* MESSAGES_OVERVIEW_H 240 minus the island header and insets: the card is 188 tall. */
+      .frame { position: relative; width: 620px; height: 188px; margin: 18px auto; background: var(--soft);
+               border-radius: 22px; overflow: hidden; isolation: isolate; }
+      .frame > * { height: 100%; box-sizing: border-box; }
+      .mochi { position: absolute; left: 30px; top: 60px; width: 56px; height: 46px; border-radius: 22px;
+               background: #5865f2; opacity: 0.85; z-index: 2; }
+    </style>
+  </head>
+  <body>
+    <div id="cards"></div>
+    <script type="module" src="./messages-card-preview.ts"></script>
+  </body>
+</html>
