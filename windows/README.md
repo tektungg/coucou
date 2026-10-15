@@ -230,12 +230,16 @@ network call is the Music pill's lyrics (lrclib.net), which Settings can turn of
   game, video or presentation, and a song starting on the Music pill brings
   it back if it had hidden.
 - **Mochi's acts.** Each personal pill has a themed animation, played only
-  on a real event (`mochi/acts.ts`, tested in `tests/acts.test.ts` and
-  `tests/dance.test.ts`):
+  on a real event (`mochi/acts.ts`, tested in `tests/acts.test.ts`,
+  `tests/dance.test.ts` and `tests/musicProps.test.ts`):
 
   | Pill | Trigger | Act |
   |---|---|---|
-  | Music | the pill is `working` (a song plays) | headphones, dances at a fixed 112 BPM (Spotify closed its tempo API), music notes |
+  | Music · playing | the pill is `working` (a song plays) | HD headphones whose pink rings light on the beat, sound arcs by the cups, a bop at a fixed 112 BPM (Spotify closed its tempo API), music notes |
+  | Music · singing | a song plays and its synced lyrics are in their sung part (from just before the first line to 4 s after the last) | a pink karaoke mic held to the mouth, happy eyes, a slow sway leaning in on the beat, music notes |
+  | Music · paused | a track is loaded, `playing: false` | headphones down round the neck, a ⏸ bubble, slow breathing |
+  | Music · track change | a new title or artist starts playing | the old record sinks away, the new one drops in spinning and is caught, a hop (1.8 s) |
+  | Music · resume | the same track goes from paused to playing | the headphones come down onto the ears, click, the rings light up, notes (1.6 s) |
   | Audio | `micUsers` is not empty (an app uses the mic) | call headset with a boom mic, nods as if talking, sound waves; red mic, no waves, while the mic is muted |
   | Messages | the pill's `event` (a new toast, never the backlog) | an envelope pops up, surprised hop, the flap opens on a letter, hearts (3.2 s) |
   | Shelf | a file not on the shelf before, or saved again (screenshots, downloads, pins) | a box on the head, looks up, a sheet falls in, wobble, sparks (2.6 s) |
@@ -249,6 +253,16 @@ network call is the Music pill's lyrics (lrclib.net), which Settings can turn of
   a canvas stub and fails if one leaves the island's bot canvas or covers an
   eye; `dev/claude-acts-preview.html` shows each one at preview size and at the
   island's own canvas size.
+  The Music acts were picked from fifteen designs (five states, three each).
+  Their props are in `mochi/musicProps.ts` and get the same bounds test as the
+  Claude Code ones; `dev/music-acts-preview.html` shows them. The singing
+  state needs the lyrics, which only the views know: `musicSinging()` in
+  `views/personal.ts` checks them (`singingAt` in `views/lyrics.ts`), and the
+  island passes the result to `actFor` for the main Mochi and the minis. With
+  Lyrics off, or no synced lyrics found, Mochi just plays. Playing, singing and
+  paused cross-fade (`actKey` counts the Music variant), so the headphones
+  never pop into a mic. A track skipped while paused waits for play, and the
+  first poll after launch never plays a cue.
   Only Messages sends an `event`, so `detectAct` compares each update with the
   pill's previous data in `island/integrations.ts`. The first data after a
   launch is the backlog and never plays, and files leaving the shelf (the
@@ -259,7 +273,7 @@ network call is the Music pill's lyrics (lrclib.net), which Settings can turn of
   `BotEngine` draws every prop in code and adds the act's pose on top of its
   own animation, so a slap or an emote still plays over it. A one-shot drops
   the "finished" eye roll it arrives with. Swapping acts fades the old one
-  out, then the new one in. The Music groove eases in and out over about a
+  out, then the new one in. The Music states ease in and out over about a
   second. One-shots pop their props in and fade their pose back to neutral at
   the end. The props replace the state badge, which would sit under them.
   Props held in front of the face must never cover the eyes: the envelope is
@@ -478,12 +492,9 @@ identity. It is Windows-only: the Mac app keeps the App Store look.
     settings…) with fake sessions and cards.
   - `dev/settings-preview.html?open=Chat` (or `?preview` for the hooks diff)
     does the same for Settings.
-  - `dev/music-acts-options.html` shows every Music act option on the real
-    Mochi (green, as on the Music pill), at a roomy size and at island size,
-    one design per state (playing, singing, paused, track change, resume)
-    to pick from. The props are drawn in `src/mochi/musicProps.ts`, and
-    `tests/musicProps.test.ts` keeps each one inside the bot canvas and off
-    the eyes.
+  - `dev/music-acts-preview.html` shows the five Music acts on the real Mochi
+    (green, as on the Music pill), at a roomy size and at island size, the
+    one-shots replaying.
   - `dev/messages-card-preview.html` shows the Messages card alone with fake
     chats: `?many`, `?one` (no chips), `?long`, `?expanded`, `?hover`,
     `?filter=whatsapp`.

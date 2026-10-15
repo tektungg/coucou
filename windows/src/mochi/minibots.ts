@@ -2,7 +2,7 @@
 // Each canvas owns a BotEngine; the island's frame loop ticks every live one.
 
 import { BotEngine, hexToRGB } from "./engine";
-import { actFor } from "./acts";
+import { actFor, type MusicContext } from "./acts";
 import { State, type AgentTask } from "../core/state";
 
 interface MiniBot {
@@ -75,7 +75,7 @@ export function syncMiniBotStates(tasks: AgentTask[]) {
   }
 }
 
-export function tickMiniBots(dt: number) {
+export function tickMiniBots(dt: number, music: MusicContext = {}) {
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   const nowMs = performance.now();
   for (const mb of live.values()) {
@@ -83,7 +83,7 @@ export function tickMiniBots(dt: number) {
     if (!ctx) continue;
     // Re-read every frame: one-shot acts end by time, not by a state change.
     const task = State.tasks.find((t) => t.id === mb.taskId);
-    mb.engine.act = actFor(task, task ? State.integrations[task.id]?.data : null, nowMs);
+    mb.engine.act = actFor(task, task ? State.integrations[task.id]?.data : null, nowMs, music);
     mb.engine.update(dt);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, mb.cssSize, mb.cssSize);

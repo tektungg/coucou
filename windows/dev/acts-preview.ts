@@ -15,14 +15,14 @@ if (frozen != null) Object.defineProperty(performance, "now", { value: () => bas
 
 // Pill colours from core/state.ts.
 const CASES: { label: string; name: ActName; variant: string | null; color: string }[] = [
-  { label: "Music · dance", name: "dance", variant: null, color: "#1DB954" },
+  { label: "Music · playing", name: "music", variant: "playing", color: "#1DB954" },
   { label: "Audio · mic", name: "mic", variant: null, color: "#A78BFA" },
   { label: "Audio · muted", name: "mic", variant: "muted", color: "#A78BFA" },
   { label: "Messages · mail", name: "mail", variant: null, color: "#5865F2" },
   { label: "Shelf · catch", name: "catch", variant: null, color: "#F5A524" },
   { label: "Space · check", name: "check", variant: null, color: "#4F8EF7" },
   { label: "Space · all done", name: "check", variant: "all", color: "#4F8EF7" },
-  { label: "idle", name: "dance", variant: "none", color: "#4F8EF7" },
+  { label: "idle", name: "music", variant: "none", color: "#4F8EF7" },
 ];
 
 const stage = document.getElementById("stage")!;

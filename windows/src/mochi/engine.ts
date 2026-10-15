@@ -643,9 +643,9 @@ export class BotEngine {
     }
     const shown = this.shown;
     const want = shown && actKey(shown) === actKey(target) ? 1 : 0;
-    // The Music groove eases in and out over about a second; other acts swap fast
+    // The Music states ease in and out over about a second; other acts swap fast
     // (one-shots pop their props and fade their own pose out at the end).
-    const slow = (shown?.name === "dance" || shown?.name === "music") && (want === 1 || target == null);
+    const slow = shown?.name === "music" && (want === 1 || target == null);
     this.actAmt += (want - this.actAmt) * (1 - Math.pow(slow ? 0.02 : 0.0005, dt));
     if (want === 0 && this.actAmt < 0.001) {
       this.actAmt = 0;
@@ -1030,7 +1030,6 @@ export class BotEngine {
     x.save();
     x.globalAlpha = alpha;
     switch (act.name) {
-      case "dance": this.drawHeadphones(x, R, rx, ry); break;
       case "mic": this.drawMicHeadset(x, R, rx, ry, act.variant === "muted"); break;
       case "mail": this.drawEnvelope(x, R, p.show, p.flap); break;
       case "catch": this.drawBox(x, R, ry, p.show, p.fall); break;
@@ -1086,12 +1085,6 @@ export class BotEngine {
     roundRectPath(x, -w * 0.32, -h * 0.36, w * 0.64, h * 0.72, w * 0.3);
     x.stroke();
     x.restore();
-  }
-
-  /** Music: headphones. */
-  private drawHeadphones(x: CanvasRenderingContext2D, R: number, rx: number, ry: number) {
-    const shift = this.drawHeadband(x, R, rx, ry);
-    for (const sd of [-1, 1]) this.drawEarCup(x, R, sd * rx * 0.97 + shift, -ry * 0.04);
   }
 
   /** Audio: a call headset, boom mic to the mouth; sound waves, or a red muted mic. */

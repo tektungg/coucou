@@ -16,7 +16,7 @@ import {
 } from "./shelf";
 import {
   canRomanize, currentPositionMs, defaultQuery, displayLines, displayPlain, durationMatch, formatTime, hitKind,
-  lyricWindow, plainLines, progress, romanLabel,
+  lyricWindow, plainLines, progress, romanLabel, singingAt,
   stripIslandWidth, stripText, timelineOf, trackKey,
   type LyricHit, type LyricLine, type Lyrics, type Timeline,
 } from "./lyrics";
@@ -487,6 +487,17 @@ function measureLine(text: string): number {
   if (!measureCtx) return 0;
   measureCtx.font = getComputedStyle(stripLine).font || "600 12px sans-serif";
   return measureCtx.measureText(text).width;
+}
+
+/**
+ * Mochi sings along (acts.ts "singing") while the playing track's synced
+ * lyrics are in their sung part. Lyrics off, or none found: just playing.
+ */
+export function musicSinging(nowMs = Date.now()): boolean {
+  if (!lyricsOn()) return false;
+  const d = get("integration_media");
+  if (d.playing !== true) return false;
+  return singingAt(syncedLines(trackKey(d)), currentPositionMs(timelineOf(d), nowMs));
 }
 
 /** True while the collapsed island should sing: the Music pill has the focus and a song plays. */

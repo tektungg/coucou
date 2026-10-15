@@ -91,19 +91,24 @@ test("cues are one-shots that settle back to neutral, the states are continuous"
   }
 });
 
-test("only the plain bop brings the hands out; playing and singing float notes", () => {
-  assert.equal(actShowsHands({ name: "music", variant: "1A", at: 0 }), true);
-  assert.equal(actShowsHands({ name: "music", variant: "2A", at: 0 }), false, "the mic hand is the prop's own");
-  assert.equal(actShowsHands({ name: "dance", variant: null, at: 0 }), true);
-  assert.equal(actFloatsNotes({ name: "music", variant: "1C", at: 0 }), true);
-  assert.equal(actFloatsNotes({ name: "music", variant: "2B", at: 0 }), true);
-  assert.equal(actFloatsNotes({ name: "music", variant: "3A", at: 0 }), false, "paused is quiet");
-  assert.equal(actFloatsNotes({ name: "musicCue", variant: "4A", at: 0 }), false);
+test("only playing brings the hands out; playing and singing float notes", () => {
+  assert.equal(actShowsHands({ name: "music", variant: "playing", at: 0 }), true);
+  assert.equal(actShowsHands({ name: "music", variant: "singing", at: 0 }), false, "the mic hand is the prop's own");
+  assert.equal(actShowsHands({ name: "mail", variant: null, at: 0 }), true);
+  assert.equal(actFloatsNotes({ name: "music", variant: "playing", at: 0 }), true);
+  assert.equal(actFloatsNotes({ name: "music", variant: "singing", at: 0 }), true);
+  assert.equal(actFloatsNotes({ name: "music", variant: "paused", at: 0 }), false, "paused is quiet");
+  assert.equal(actFloatsNotes({ name: "musicCue", variant: "change", at: 0 }), false);
+});
+
+test("the five picked designs, and only those, have props", () => {
+  assert.deepEqual(Object.keys(MUSIC_PROPS).sort(),
+    ["music:paused", "music:playing", "music:singing", "musicCue:change", "musicCue:resume"]);
 });
 
 test("an unknown variant draws nothing", () => {
   const x = new BoundsCtx();
-  drawMusicProp(x as unknown as CanvasRenderingContext2D, scene(0), "music", "9Z");
+  drawMusicProp(x as unknown as CanvasRenderingContext2D, scene(0), "music", "dancing");
   drawMusicProp(x as unknown as CanvasRenderingContext2D, scene(0), "music", null);
   assert.equal(x.shapes.length, 0);
 });

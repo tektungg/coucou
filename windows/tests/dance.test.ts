@@ -1,4 +1,4 @@
-// Mochi's music groove (headphones + dance while the Music pill plays). Run with `npm test`.
+// The Music pill's groove (acts.ts "music" playing: the bop, the beat, the notes). Run with `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { BEAT, MEDIA_PILL_ID, dancePose, isDancing, noteDue } from "../src/mochi/acts.ts";

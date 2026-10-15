@@ -53,6 +53,6 @@ test("Messages: the envelope stays inside the bot canvas", () => {
 });
 
 test("only the mail act limits the look", () => {
-  const others: ActName[] = ["dance", "mic", "catch", "check"];
+  const others: ActName[] = ["music", "musicCue", "mic", "catch", "check"];
   for (const n of others) assert.equal(actPitchFloor(n), null, n);
 });

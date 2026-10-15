@@ -93,6 +93,22 @@ export function progress(t: Timeline, nowMs: number): number {
   return t.durationMs > 0 ? currentPositionMs(t, nowMs) / t.durationMs : 0;
 }
 
+/** Mochi starts singing this long before the first line… */
+export const SING_LEAD_MS = 500;
+/** …and stops this long after the last one. */
+export const SING_TAIL_MS = 4000;
+
+/**
+ * Whether the song is in its sung part at `ms`: from just before the first
+ * line with words to a few seconds after the last. One span for the whole
+ * vocal part, so the gaps between lines never flicker Mochi's mic.
+ */
+export function singingAt(lines: readonly LyricLine[], ms: number): boolean {
+  const sung = lines.filter((l) => l.text.trim() !== "");
+  if (sung.length === 0) return false;
+  return ms >= sung[0].t - SING_LEAD_MS && ms <= sung[sung.length - 1].t + SING_TAIL_MS;
+}
+
 /** Index of the line being sung at `ms`, -1 before the first one. Lines are sorted. */
 export function activeLine(lines: readonly LyricLine[], ms: number): number {
   let lo = 0;

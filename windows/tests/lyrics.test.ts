@@ -16,6 +16,9 @@ import {
   plainLines,
   progress,
   romanLabel,
+  SING_LEAD_MS,
+  SING_TAIL_MS,
+  singingAt,
   stripIslandWidth,
   stripText,
   subtitle,
@@ -216,4 +219,24 @@ test("the toggle names the romanization of the song's language", () => {
   assert.equal(romanLabel("zh"), "pinyin");
   assert.equal(romanLabel("ko"), "romanization");
   assert.equal(romanLabel(null), "romanization");
+});
+
+test("Mochi sings through the whole vocal part, not line by line", () => {
+  const lines: LyricLine[] = [
+    { t: 0, text: "" }, // the LRC's empty opening marker
+    { t: 10_000, text: "first line" },
+    { t: 14_000, text: "" }, // an instrumental gap inside the song
+    { t: 30_000, text: "last line" },
+    { t: 34_000, text: "" },
+  ];
+  assert.equal(singingAt(lines, 5_000), false, "the intro is just playing");
+  assert.equal(singingAt(lines, 10_000 - SING_LEAD_MS), true, "the mic comes up just before the first words");
+  assert.equal(singingAt(lines, 20_000), true, "a gap between lines keeps the mic");
+  assert.equal(singingAt(lines, 30_000 + SING_TAIL_MS), true);
+  assert.equal(singingAt(lines, 30_000 + SING_TAIL_MS + 1), false, "the outro is just playing");
+});
+
+test("no words, no singing", () => {
+  assert.equal(singingAt([], 1000), false);
+  assert.equal(singingAt([{ t: 0, text: "  " }, { t: 5000, text: "" }], 1000), false);
 });

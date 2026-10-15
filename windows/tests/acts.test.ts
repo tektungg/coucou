@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   actBursts, actDurationMs, actEye, actFor, actKey, actPose, actProps, continuousAct, detectAct,
-  endFade, isOneShot, newShelfItem, sessionEndAct, toolKind,
+  endFade, isOneShot, musicCueOf, musicStateOf, newShelfItem, sessionEndAct, toolKind,
   CATCH_LAND, CHECK_DONE, CLAUDE_ERROR_MS, CLAUDE_FINISHED_MS, MAIL_OPEN, NEUTRAL,
   type ActName, type Pose,
 } from "../src/mochi/acts.ts";
@@ -57,13 +57,44 @@ test("Space: a check when an item gets done, the big one when all are", () => {
   assert.equal(detectAct("integration_space", space(true), {}, null), null);
 });
 
-test("Music and Audio never start a one-shot", () => {
-  assert.equal(detectAct("integration_media", { playing: false }, { playing: true }, null), null);
+test("Audio never starts a one-shot", () => {
   assert.equal(detectAct("integration_audio", { micUsers: [] }, { micUsers: ["Discord"] }, null), null);
 });
 
-test("continuous acts: dancing to music, the headset while an app uses the mic", () => {
-  assert.deepEqual(continuousAct({ id: "integration_media", state: "working" }, {}), { name: "dance", variant: null });
+const song = (title: string, playing: boolean, artist = "Someone") => ({ title, artist, playing });
+
+test("Music cues: a new track playing is a change, play after a pause is a resume", () => {
+  assert.deepEqual(detectAct("integration_media", song("A", true), song("B", true), null), { name: "musicCue", variant: "change" });
+  assert.deepEqual(detectAct("integration_media", song("A", false), song("A", true), null), { name: "musicCue", variant: "resume" });
+  // A new track straight out of a pause is still the new track.
+  assert.deepEqual(musicCueOf(song("A", false), song("B", true)), { name: "musicCue", variant: "change" });
+  // Same title, another artist: another song.
+  assert.deepEqual(musicCueOf(song("Intro", true, "X"), song("Intro", true, "Y")), { name: "musicCue", variant: "change" });
+});
+
+test("Music cues: nothing on the first load, while paused, or while the same song plays on", () => {
+  assert.equal(detectAct("integration_media", null, song("A", true), null), null, "the first poll is not news");
+  assert.equal(musicCueOf(song("A", true), song("B", false)), null, "skipped while paused: wait for play");
+  assert.equal(musicCueOf(song("A", true), song("A", true)), null, "a position tick");
+  assert.equal(musicCueOf(song("A", true), song("A", false)), null, "pausing has its own lasting state");
+  assert.equal(musicCueOf({}, song("A", true)), null, "Spotify just opened: nothing was playing before");
+  assert.equal(musicCueOf(song("A", true), { title: "", playing: true }), null);
+});
+
+test("Music states: playing, singing along, paused, or nothing", () => {
+  const media = (state: "working" | "idle" | "finished") => ({ id: "integration_media", state });
+  assert.equal(musicStateOf(media("working"), song("A", true)), "playing");
+  assert.equal(musicStateOf(media("working"), song("A", true), { singing: true }), "singing");
+  assert.equal(musicStateOf(media("idle"), song("A", false)), "paused");
+  assert.equal(musicStateOf(media("idle"), { title: "", playing: false }), null, "nothing loaded");
+  assert.equal(musicStateOf(media("idle"), {}), null);
+  assert.equal(musicStateOf(media("finished"), song("A", false)), null, "an event card owns the pill");
+  assert.equal(musicStateOf({ id: "integration_quota", state: "working" }, song("A", true)), null);
+  assert.deepEqual(continuousAct(media("working"), song("A", true), { singing: true }), { name: "music", variant: "singing" });
+});
+
+test("continuous acts: the music states, the headset while an app uses the mic", () => {
+  assert.deepEqual(continuousAct({ id: "integration_media", state: "working" }, {}), { name: "music", variant: "playing" });
   assert.equal(continuousAct({ id: "integration_media", state: "idle" }, {}), null);
   const audio = { id: "integration_audio", state: "idle" as const };
   assert.deepEqual(continuousAct(audio, { micUsers: ["Discord"], input: { volume: 1, muted: false } }),
@@ -87,7 +118,8 @@ test("actFor: a live one-shot first, then the continuous act, expiring by time",
 
 test("one-shots are told apart by kind, not by their timestamp", () => {
   for (const n of ["mail", "catch", "check"] as const) assert.equal(isOneShot(n), true);
-  for (const n of ["dance", "mic"] as const) assert.equal(isOneShot(n), false);
+  for (const n of ["music", "mic"] as const) assert.equal(isOneShot(n), false);
+  assert.equal(isOneShot("musicCue"), true);
   // A page that just loaded can stamp an act at or below 0 ms; it is still a one-shot.
   const task = { id: "integration_shelf", state: "idle" as const, act: { name: "catch" as const, variant: null, at: -200 } };
   assert.equal(actFor(task, {}, 100)?.name, "catch");
@@ -95,6 +127,8 @@ test("one-shots are told apart by kind, not by their timestamp", () => {
 
 test("actKey: a variant change (muting) is the same act, a new event is not", () => {
   assert.equal(actKey({ name: "mic", variant: null, at: 0 }), actKey({ name: "mic", variant: "muted", at: 0 }));
+  // The music states cross-fade: the headphones never pop into a mic.
+  assert.notEqual(actKey({ name: "music", variant: "playing", at: 0 }), actKey({ name: "music", variant: "singing", at: 0 }));
   assert.notEqual(actKey({ name: "mail", variant: null, at: 1 }), actKey({ name: "mail", variant: null, at: 2 }));
   assert.equal(actKey(null), "");
 });
@@ -102,7 +136,8 @@ test("actKey: a variant change (muting) is the same act, a new event is not", ()
 // ── Poses and props ───────────────────────────────────────────────────────────
 
 const ALL: [ActName, string | null][] = [
-  ["dance", null], ["mic", null], ["mic", "muted"], ["mail", null], ["catch", null], ["check", null], ["check", "all"],
+  ["music", "playing"], ["music", "singing"], ["music", "paused"], ["musicCue", "change"], ["musicCue", "resume"],
+  ["mic", null], ["mic", "muted"], ["mail", null], ["catch", null], ["check", null], ["check", "all"],
 ];
 const span = (name: ActName, variant: string | null) => {
   const d = actDurationMs(name, variant) / 1000;
@@ -170,7 +205,9 @@ test("the beats of each one-shot land in order", () => {
   assert.equal(actProps("check", null, CHECK_DONE).stroke, 1);
   assert.equal(actEye("check", null, 1.2), "happy");
   assert.equal(actEye("check", "all", 1.2), "star");
-  assert.equal(actEye("dance", null, 0), "happy");
+  assert.equal(actEye("music", "playing", 0), "happy");
+  assert.equal(actEye("music", "paused", 0), null);
+  assert.equal(actEye("musicCue", "change", 0.2), "wide");
   assert.equal(actEye("mic", null, 0), null);
 });
 
@@ -189,7 +226,9 @@ test("particle bursts fire once each, at their moment, whatever the frame rate",
     assert.deepEqual(total("catch", null, fps), { spark: 5 });
     assert.deepEqual(total("check", null, fps), { star: 3 });
     assert.deepEqual(total("check", "all", fps), { star: 10, spark: 6 });
-    assert.deepEqual(total("dance", null, fps), {});
+    assert.deepEqual(total("music", "playing", fps), {});
+    assert.deepEqual(total("musicCue", "change", fps), { spark: 5, note: 2 });
+    assert.deepEqual(total("musicCue", "resume", fps), { star: 4, note: 3 });
   }
 });
 

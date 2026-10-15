@@ -12,7 +12,7 @@ import {
 import { Sound } from "../core/sound";
 import { State } from "../core/state";
 import { BotEngine, hexToRGB } from "../mochi/engine";
-import { actFor } from "../mochi/acts";
+import { actFor, type MusicContext } from "../mochi/acts";
 import { Greeting } from "../mochi/greeting";
 import { createMiniBot, pruneMiniBots, syncMiniBotStates, tickMiniBots } from "../mochi/minibots";
 import { UploadCanvas } from "../upload/canvas";
@@ -20,7 +20,8 @@ import { USC, UploadSeq } from "../upload/sequence";
 import { buildHeader, buildViews, type ViewActions, type ViewHost } from "../views/views";
 import { h, svg } from "../views/dom";
 import {
-  hasPersonalData, lyricStripActive, lyricStripEl, lyricStripWidth, onLyricStripResize, shelfDragActive, showShelfTab,
+  hasPersonalData, lyricStripActive, lyricStripEl, lyricStripWidth, musicSinging, onLyricStripResize, shelfDragActive,
+  showShelfTab,
 } from "../views/personal";
 import { headerMicBadge } from "../views/views";
 import { MIC_ICON, MIC_OFF_ICON } from "../views/shelf";
@@ -92,6 +93,8 @@ export class Island {
   private stripHovered = false;
   /** Seconds the countdown bar spans for the current close; null = the usual. */
   private countdownWindowS: number | null = null;
+  /** What the Music acts need beyond the pill's data, read once a frame. */
+  private music: MusicContext = {};
   /** The overview was last sized for the Messages card (MESSAGES_OVERVIEW_H). */
   private tallOverview = false;
 
@@ -963,7 +966,9 @@ export class Island {
     this.uploadCanvas.el.classList.toggle("on", uploadActive);
     this.viewsEl.classList.toggle("hidden-by-upload", uploadActive);
 
-    tickMiniBots(dt);
+    // Once a frame for every Mochi on screen: the Music pill sings along with its lyrics.
+    this.music = { singing: musicSinging() };
+    tickMiniBots(dt, this.music);
     this.views.get(State.view)?.tick?.(nowMs);
     if (UploadSeq.isActive) this.stepSequence();
     this.updateCountdown(nowMs);
@@ -1039,7 +1044,7 @@ export class Island {
 
     const focus = State.focusTask;
     this.engine.bodyColor = focus?.isIntegration ? hexToRGB(focus.color) : null;
-    this.engine.act = actFor(focus, focus ? State.integrations[focus.id]?.data : null, performance.now());
+    this.engine.act = actFor(focus, focus ? State.integrations[focus.id]?.data : null, performance.now(), this.music);
     this.engine.particleOverhang = BOT_OVERHANG;
     this.engine.lookX = this.lookX();
     this.engine.lookY = this.lookY();
