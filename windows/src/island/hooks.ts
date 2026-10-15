@@ -174,6 +174,7 @@ function dismissCard(
   island.dropPin();
   State.updateTask(card.taskId, "working");
   State.setPillBadge(card.taskId, null);
+  island.returnFocusAfterCard();
   if (State.view === "approval" || State.view === "plan" || State.view === "question") {
     island.setView(State.defaultView());
   }
@@ -397,8 +398,9 @@ function handleHook(island: Island, payload: HookPayload) {
       State.isPinned = true;
       Sound.play("approval");
       // The session that asks takes the focus: with one pill per session, a
-      // badge on a pill would leave the card naming the wrong project.
-      State.setFocus(agentId);
+      // badge on a pill would leave the card naming the wrong project. The pill
+      // it interrupted gets the focus back once the card is answered.
+      island.focusForCard(agentId);
       island.alert(cardView);
       // Coucou answers within 108 s or not at all; after that the terminal has
       // taken over and the card would be lying.
@@ -410,6 +412,7 @@ function handleHook(island: Island, payload: HookPayload) {
         island.dropPin();
         State.updateTask(agentId, "working");
         State.setPillBadge(agentId, null);
+        island.returnFocusAfterCard();
         if (State.view === "approval" || State.view === "plan") island.setView(State.defaultView());
         State.notify();
       }, 110_000);
@@ -451,8 +454,8 @@ function showQuestion(
   State.updateTask(taskId, "question");
   State.isPinned = true;
   Sound.play("question");
-  // As with approvals: the session asking takes the focus.
-  State.setFocus(taskId);
+  // As with approvals: the session asking takes the focus, and gives it back.
+  island.focusForCard(taskId);
   island.alert("question");
   // The relay stops waiting at 110 s; past that the terminal is asking.
   questionTimeout = window.setTimeout(() => {
@@ -463,6 +466,7 @@ function showQuestion(
     island.dropPin();
     State.updateTask(taskId, "working");
     State.setPillBadge(taskId, null);
+    island.returnFocusAfterCard();
     if (State.view === "question") island.setView(State.defaultView());
     State.notify();
   }, 110_000);

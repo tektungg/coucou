@@ -1,6 +1,7 @@
 // Coucou for Windows — app wiring and the commands the island calls.
 
 mod audio;
+mod autostart;
 mod claude;
 #[cfg(windows)]
 mod webdrop;
@@ -32,7 +33,7 @@ use std::sync::{Arc, Mutex};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
-use tauri_plugin_autostart::{ManagerExt, MacosLauncher};
+use tauri_plugin_autostart::MacosLauncher;
 
 use claude::{Chat, ChatContext, ChatReply};
 use files::DroppedFile;
@@ -86,11 +87,7 @@ fn save_settings(app: AppHandle, shared: State<Shared>, settings: Settings) {
         eprintln!("[coucou] could not save settings: {err}");
     }
     if autostart_changed {
-        let manager = app.autolaunch();
-        let result = if settings.autostart { manager.enable() } else { manager.disable() };
-        if let Err(err) = result {
-            eprintln!("[coucou] autostart: {err}");
-        }
+        autostart::sync(&app, settings.autostart);
     }
     if screen_changed {
         let collapsed = shared.gate.collapsed.load(Ordering::Relaxed);
@@ -589,6 +586,8 @@ pub fn run() {
                 platform::make_non_activating(&win);
                 island::apply_geometry(&handle, &loaded.screen, false);
                 let _ = win.show();
+                // On the main thread: the foreground hook needs its message loop.
+                platform::keep_on_top(&win);
             }
             gate.collapsed.store(false, Ordering::Relaxed);
             // Nothing drawn yet, so nothing takes the mouse until the page
@@ -602,6 +601,7 @@ pub fn run() {
             rc_guard::maybe_stress(&handle);
 
             log::line(format!("--- Coucou {} started ---", env!("CARGO_PKG_VERSION")));
+            autostart::sync(&handle, loaded.autostart);
             hooks::ensure_hook_exe(&handle);
             pipe::start(handle.clone());
             integrations::start(handle.clone());

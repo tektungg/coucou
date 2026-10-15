@@ -289,6 +289,17 @@ pub fn set_input_region(win: &WebviewWindow, rect: Region) {
     apply_input_region(&gw, rect);
 }
 
+/// The layer-shell overlay layer already keeps the island above windows.
+pub fn keep_on_top(_win: &WebviewWindow) {}
+
+pub fn raise_island() {}
+
+/// None: the autostart `.desktop` file is simply rewritten at every launch,
+/// which also follows an AppImage that moved.
+pub fn login_item_command(_name: &str) -> Option<String> {
+    None
+}
+
 fn apply_input_region(gw: &impl IsA<gtk::Widget>, rect: Region) {
     match rect {
         None => gw.input_shape_combine_region(None),

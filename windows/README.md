@@ -52,6 +52,26 @@ Everything else happens on its own: a Claude Code permission request opens the
 island with **Deny / Allow**, a finished session shows what it did, and
 your integrations sit in the coloured pills next to Mochi.
 
+A permission, plan or question card takes the focus for the session that asks.
+Once it is answered (here or in the terminal) or times out, the pill you were on
+before, Music for instance, gets the focus back, the same way it does after a
+new message's three-second glance. A pill you picked yourself meanwhile stays.
+
+The island stays above other windows, including other always-on-top ones: every
+time another app comes to the front, Coucou puts itself back on top (an event
+hook, so nothing runs while nothing changes), and while the island is showing it
+also checks twice a second for overlays that pop up without taking the front. A
+fullscreen game, video or presentation is left alone.
+
+**Launch at startup** (Settings → General) is checked at every launch, not only
+when you flip it. The login entry (`HKCU\Software\Microsoft\Windows\CurrentVersion\Run\Coucou`)
+holds a path, and an install that moved, from `C:\Program Files` to the per-user
+`%LOCALAPPDATA%\Coucou`, used to leave it pointing at an exe that no longer exists,
+so Coucou silently stopped starting at login. Now a missing or stale entry is
+rewritten to the running exe (the log says `autostart on: <path>`). An entry that
+already names this exe is left alone, so turning Coucou off in Task Manager's
+Startup apps still sticks. A debug build (`npm run tauri dev`) never touches it.
+
 ## Claude Code
 
 <img src="screenshots/settings.png" width="562" alt="The settings window: a tile per thing to set up">

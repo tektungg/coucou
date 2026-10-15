@@ -3,11 +3,16 @@
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::atomic::{AtomicIsize, Ordering};
 
 use tauri::{AppHandle, Manager, WebviewWindow};
 
-use ::windows::core::{BOOL, PWSTR};
-use ::windows::Win32::Foundation::{CloseHandle, HANDLE, HLOCAL, HWND, LPARAM, LocalFree, POINT};
+use ::windows::core::{BOOL, PCWSTR, PWSTR};
+use ::windows::Win32::Foundation::{
+    CloseHandle, ERROR_SUCCESS, HANDLE, HLOCAL, HWND, LPARAM, LocalFree, POINT,
+};
+use ::windows::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_SZ};
+use ::windows::Win32::UI::Accessibility::{SetWinEventHook, HWINEVENTHOOK};
 use ::windows::Win32::Security::Authorization::ConvertSidToStringSidW;
 use ::windows::Win32::Security::{GetTokenInformation, TokenUser, TOKEN_QUERY, TOKEN_USER};
 use ::windows::Win32::System::Ole::RevokeDragDrop;
@@ -23,7 +28,9 @@ use ::windows::Win32::UI::Shell::{
 use ::windows::Win32::UI::WindowsAndMessaging::{
     EnumChildWindows, GetClassNameW, GetCursorPos, GetDesktopWindow, GetForegroundWindow,
     GetShellWindow, GetWindowLongPtrW, GetWindowRect, GetWindowThreadProcessId, IsZoomed,
-    SetWindowLongPtrW, GWL_EXSTYLE, GWL_STYLE, WS_CAPTION, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    SetWindowLongPtrW, SetWindowPos, EVENT_SYSTEM_FOREGROUND, GWL_EXSTYLE, GWL_STYLE, HWND_TOPMOST,
+    SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE,
+    WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WS_CAPTION, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
 };
 
 use super::LocalTime;
@@ -291,3 +298,84 @@ pub fn set_activating(win: &WebviewWindow, activating: bool) {
 
 /// Click-through here is the poll's WS_EX_TRANSPARENT toggle, not a region.
 pub fn set_input_region(_win: &WebviewWindow, _rect: Option<(f64, f64, f64, f64)>) {}
+
+// ── Staying on top ────────────────────────────────────────────────────────────
+//
+// Always-on-top is a band, not a guarantee: every other topmost window that
+// comes to the front (an overlay, Task Manager "always on top", a game
+// launcher) lands above the island, and nothing put it back — it stayed buried
+// until clicked. Each foreground change now re-asserts our place. The hook is
+// an event, not a poll, so a hidden island still costs nothing.
+
+/// The island's HWND for the hook callback, which gets no context of its own.
+static ISLAND_HWND: AtomicIsize = AtomicIsize::new(0);
+
+/// Remembers the island and hooks foreground changes. Must run on the main
+/// thread: an out-of-context WinEvent hook is delivered through the message
+/// loop of the thread that installed it.
+pub fn keep_on_top(win: &WebviewWindow) {
+    let Some(hwnd) = hwnd_of(win) else { return };
+    ISLAND_HWND.store(hwnd.0 as isize, Ordering::Relaxed);
+    let hook = unsafe {
+        SetWinEventHook(
+            EVENT_SYSTEM_FOREGROUND,
+            EVENT_SYSTEM_FOREGROUND,
+            None,
+            Some(on_foreground),
+            0,
+            0,
+            WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS,
+        )
+    };
+    if hook.is_invalid() {
+        crate::log::line("keep-on-top hook failed".to_string());
+    }
+}
+
+unsafe extern "system" fn on_foreground(_: HWINEVENTHOOK, _: u32, _: HWND, _: i32, _: i32, _: u32, _: u32) {
+    raise_island();
+}
+
+/// Puts the island back at the top of the topmost band, without moving,
+/// resizing or activating it. Asynchronous, so the cursor poll thread never
+/// waits on the UI thread. A fullscreen game, film or presentation keeps the
+/// screen, as it does for hovering.
+pub fn raise_island() {
+    let raw = ISLAND_HWND.load(Ordering::Relaxed);
+    if raw == 0 || fullscreen_app_active() {
+        return;
+    }
+    let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_ASYNCWINDOWPOS;
+    unsafe {
+        let _ = SetWindowPos(HWND(raw as *mut _), Some(HWND_TOPMOST), 0, 0, 0, 0, flags);
+    }
+}
+
+// ── Launch at login ───────────────────────────────────────────────────────────
+
+/// The command the HKCU Run key holds for `name`, or None when there is none.
+/// The same key tauri-plugin-autostart writes.
+pub fn login_item_command(name: &str) -> Option<String> {
+    let key: Vec<u16> = "Software\\Microsoft\\Windows\\CurrentVersion\\Run\0".encode_utf16().collect();
+    let value: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
+    let mut buf = vec![0u16; 2048];
+    let mut size = (buf.len() * 2) as u32;
+    let status = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            PCWSTR(key.as_ptr()),
+            PCWSTR(value.as_ptr()),
+            RRF_RT_REG_SZ,
+            None,
+            Some(buf.as_mut_ptr().cast()),
+            Some(&mut size),
+        )
+    };
+    if status != ERROR_SUCCESS {
+        return None;
+    }
+    // `size` is in bytes and counts the terminating NUL.
+    let len = (size as usize / 2).min(buf.len());
+    let text = String::from_utf16_lossy(&buf[..len]);
+    Some(text.trim_end_matches('\0').to_string())
+}

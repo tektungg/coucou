@@ -99,3 +99,32 @@ test("a pill that is gone is not brought back", () => {
   const glance = { to: "cc_1234abcd", from: "integration_messages" };
   assert.equal(focusAfterGlance(glance, "integration_messages", ["integration_messages"]), null);
 });
+
+// Island.focusForCard / returnFocusAfterCard run a Claude Code card through the
+// same two functions, with the asking session's pill as `from`.
+
+test("answering a card gives Music its focus back", () => {
+  const visible = ["integration_media", "cc_1234abcd"];
+  const card = rememberGlance(null, "integration_media", "cc_1234abcd");
+  assert.deepEqual(card, { to: "integration_media", from: "cc_1234abcd" });
+  assert.equal(focusAfterGlance(card, "cc_1234abcd", visible), "integration_media");
+});
+
+test("a card from the session already in focus has nothing to give back", () => {
+  assert.equal(rememberGlance(null, "cc_1234abcd", "cc_1234abcd"), null);
+});
+
+test("the same card re-sent keeps the pill it first interrupted", () => {
+  const card = { to: "integration_media", from: "cc_1234abcd" };
+  assert.equal(rememberGlance(card, "cc_1234abcd", "cc_1234abcd"), card);
+});
+
+test("a card during a message's glance hands back to Messages, then Music", () => {
+  const visible = ["integration_media", "integration_messages", "cc_1234abcd"];
+  const message = rememberGlance(null, "integration_media", "integration_messages");
+  const card = rememberGlance(null, "integration_messages", "cc_1234abcd");
+  // Card answered: back on Messages, so the message's glance still matches…
+  assert.equal(focusAfterGlance(card, "cc_1234abcd", visible), "integration_messages");
+  // …and the island closing then returns to Music.
+  assert.equal(focusAfterGlance(message, "integration_messages", visible), "integration_media");
+});

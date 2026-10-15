@@ -393,7 +393,24 @@ export class Island {
     State.updateTask(taskId, "working");
     State.setPillBadge(taskId, null);
     void Bridge.focusWindow(false);
+    this.returnFocusAfterCard();
     this.setView(State.defaultView());
+  }
+
+  /**
+   * A card takes the focus for the session that asks; remember the pill it took
+   * it from (Music, say) so answering gives it back, as a message's glance does.
+   */
+  focusForCard(taskId: string) {
+    this.cardGlance = rememberGlance(this.cardGlance, State.focusTask?.id ?? null, taskId);
+    State.setFocus(taskId);
+  }
+
+  /** The card is gone (answered here or in the terminal, or timed out). */
+  returnFocusAfterCard() {
+    const back = focusAfterGlance(this.cardGlance, State.focusTask?.id ?? null, State.visibleTasks.map((t) => t.id));
+    this.cardGlance = null;
+    if (back) State.setFocus(back);
   }
 
   collapse() {
@@ -1131,6 +1148,8 @@ export class Island {
 
   /** Set while a new message holds the island on the Messages pill. */
   private glance: GlanceReturn | null = null;
+  /** Set while an approval, plan or question card holds the island on its session's pill. */
+  private cardGlance: GlanceReturn | null = null;
 
   /** Collapsed on a playing Music pill: the island sings instead of showing the other pills. */
   private lyricMode(): boolean {

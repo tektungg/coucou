@@ -219,6 +219,9 @@ pub fn spawn_cursor_poll(app: AppHandle, gate: Arc<PollGate>) {
                 // is already running, so this costs one monitor query.
                 ticks = ticks.wrapping_add(1);
                 if ticks % screen_every == 0 {
+                    // Overlays can pop up above us without taking the
+                    // foreground, so the hook alone misses them.
+                    platform::raise_island();
                     let now = current_screen_key(&app);
                     if now.is_some() && now != last_screen {
                         let first = last_screen.is_none();

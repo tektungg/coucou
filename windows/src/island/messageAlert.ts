@@ -32,11 +32,14 @@ export function messageAlertAction(c: MessageAlertContext): MessageAlertAction {
   return c.view === "overview" ? "focus" : "none";
 }
 
-/** The pill a message took the island from, so it can be given back. */
+/**
+ * The pill a message (or a Claude Code card) took the island from, so it can
+ * be given back.
+ */
 export interface GlanceReturn {
-  /** Focused before the message: where to go back to. */
+  /** Focused before: where to go back to. */
   to: string;
-  /** The Messages pill the message switched to. */
+  /** The pill that took the focus: Messages, or the session whose card asked. */
   from: string;
 }
 
