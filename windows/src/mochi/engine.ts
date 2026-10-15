@@ -8,10 +8,12 @@ import { Ease, lerp, type EaseFn } from "../core/anim";
 import { Sound } from "../core/sound";
 import type { BotEmoteName, BotStateName } from "../core/layout";
 import {
-  ACT_HANDS, isOneShot, noteDue, actBursts, actEye, actKey, actPitchFloor, actPose, actProps, type Act, type Props,
+  actFloatsNotes, actShowsHands, isOneShot, noteDue, actBursts, actEye, actKey, actPitchFloor, actPose, actProps,
+  type Act, type Props,
 } from "./acts";
 import { BODY_RY, ENVELOPE, EYE_H, EYE_P, EYE_SP, EYE_W, envelopeParts } from "./geometry";
 import { PROP_SCALE, drawClaudeProp } from "./claudeProps";
+import { drawMusicProp } from "./musicProps";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -643,7 +645,7 @@ export class BotEngine {
     const want = shown && actKey(shown) === actKey(target) ? 1 : 0;
     // The Music groove eases in and out over about a second; other acts swap fast
     // (one-shots pop their props and fade their own pose out at the end).
-    const slow = shown?.name === "dance" && (want === 1 || target == null);
+    const slow = (shown?.name === "dance" || shown?.name === "music") && (want === 1 || target == null);
     this.actAmt += (want - this.actAmt) * (1 - Math.pow(slow ? 0.02 : 0.0005, dt));
     if (want === 0 && this.actAmt < 0.001) {
       this.actAmt = 0;
@@ -671,7 +673,7 @@ export class BotEngine {
       this.dSx = this.dSy = 1;
       this.actEyeShape = null;
     }
-    if (this.shown?.name === "dance" && want && !this.isMini && g > 0.6 && noteDue(this.lastDanceT, t)) {
+    if (actFloatsNotes(this.shown) && want && !this.isMini && g > 0.6 && noteDue(this.lastDanceT, t)) {
       this.emit("note", 1);
     }
     this.lastDanceT = t;
@@ -1041,6 +1043,10 @@ export class BotEngine {
         // lastActAge: a one-shot's age, or the free clock for a continuous act.
         drawClaudeProp(x, { R: R * PROP_SCALE, rx, ry, t: this.lastActAge }, act.name, act.variant);
         break;
+      case "music":
+      case "musicCue":
+        drawMusicProp(x, { R: R * PROP_SCALE, rx, ry, t: this.lastActAge }, act.name, act.variant);
+        break;
     }
     x.restore();
   }
@@ -1348,7 +1354,7 @@ export class BotEngine {
   ) {
     if (this.isMini) return;
     // Some acts bring the hands out too, independent of the greet's own tween.
-    const amount = Math.max(this.hands, this.shown && ACT_HANDS.has(this.shown.name) ? this.actAmt : 0);
+    const amount = Math.max(this.hands, actShowsHands(this.shown) ? this.actAmt : 0);
     if (amount <= 0.01) return;
     if (R <= 14) return; // meaningless at compact/peek sizes
 

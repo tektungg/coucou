@@ -478,6 +478,12 @@ identity. It is Windows-only: the Mac app keeps the App Store look.
     settings…) with fake sessions and cards.
   - `dev/settings-preview.html?open=Chat` (or `?preview` for the hooks diff)
     does the same for Settings.
+  - `dev/music-acts-options.html` shows every Music act option on the real
+    Mochi (green, as on the Music pill), at a roomy size and at island size,
+    one design per state (playing, singing, paused, track change, resume)
+    to pick from. The props are drawn in `src/mochi/musicProps.ts`, and
+    `tests/musicProps.test.ts` keeps each one inside the bot canvas and off
+    the eyes.
   - `dev/messages-card-preview.html` shows the Messages card alone with fake
     chats: `?many`, `?one` (no chips), `?long`, `?expanded`, `?hover`,
     `?filter=whatsapp`.
