@@ -7,14 +7,15 @@ import { h, svg, clear, dot } from "./dom";
 import { API_KEY_SECRET, Bridge } from "../core/bridge";
 import { ICONS } from "./icons";
 import { buildBoardView } from "./boardView";
-import { State, type AgentTask } from "../core/state";
+import { State, type AgentTask, type QuestionInfo } from "../core/state";
 import { washRGBA, type IslandViewName, type Wash } from "../core/layout";
 import { buildPrompt } from "./chat";
 import { buildChoose, buildUpload, buildUploading } from "./upload";
 import { renderIntegrationCard, type IntegrationCardHooks } from "./integrations";
-import { buildAnswers, type AskAnswer } from "../island/askQuestion";
+import { buildAnswers, type AskAnswer, type AskItem } from "../island/askQuestion";
 import { isSessionPill } from "../island/sessions";
 import { SwipeAccumulator, dragDirection, slideDirection, stepFocus } from "./carousel";
+import { createClickGuard, type ClickGuard } from "./clickGuard";
 
 // The header lives in header.ts; island.ts takes it from here with the views.
 export { buildHeader, headerMicBadge } from "./header";
@@ -258,9 +259,11 @@ function buildApproval(actions: ViewActions): ViewHost {
   const row = h("div", { class: "actions" });
   const el = h("div", { class: "view" }, card("amber", stack(116, 16, who, code, row)));
   let rowKey = "";
+  const guard = createClickGuard();
   return {
     el,
     sync() {
+      guard.arm(State.pendingApproval?.requestId ?? null);
       clear(who);
       who.append(agentWho(State.focusTask, "needs permission"));
       // The whole point of approving here rather than in the terminal: this line
@@ -274,8 +277,8 @@ function buildApproval(actions: ViewActions): ViewHost {
       rowKey = "built";
       clear(row);
       row.append(
-        btn("Deny", "secondary", () => actions.decide("deny"), "N"),
-        btn("Allow", "allow", () => actions.decide("allow"), "Y"),
+        btn("Deny", "secondary", guard.wrap(() => actions.decide("deny")), "N"),
+        btn("Allow", "allow", guard.wrap(() => actions.decide("allow")), "Y"),
       );
     },
   };
@@ -327,6 +330,39 @@ function textField(
   return { el, input };
 }
 
+/** How long a text field waits for the card to settle before taking the focus. */
+const FIELD_FOCUS_DELAY_MS = 120;
+
+/** Shows a text field in `parent` and gives it the keyboard. */
+function showTextField(parent: HTMLElement, field: { el: HTMLElement; input: HTMLInputElement }, actions: ViewActions) {
+  parent.append(field.el);
+  actions.wantKeyboard(true);
+  window.setTimeout(() => field.input.focus(), FIELD_FOCUS_DELAY_MS);
+}
+
+/** The plan card's buttons: the terminal's three "Yes" choices and "Change plan…". */
+function planChoiceRow(actions: ViewActions, guard: ClickGuard, onChange: () => void): HTMLElement {
+  const row = h("div", { class: "actions" });
+  for (const c of PLAN_CHOICES) {
+    const kind = c.mode === "bypassPermissions" ? "primary" : "secondary";
+    const b = btn(c.label, kind, guard.wrap(() => actions.decidePlan({ mode: c.mode })));
+    b.title = c.hint;
+    row.append(b);
+  }
+  const change = btn("Change plan…", "secondary", guard.wrap(onChange));
+  change.title = "No, tell Claude what to change";
+  row.append(change);
+  return row;
+}
+
+/** Who has the plan ready, and the plan itself from its top. */
+function showPlan(head: HTMLElement, text: HTMLElement, plan: string | undefined) {
+  clear(head);
+  head.append(agentWho(State.focusTask, "has a plan ready"));
+  text.textContent = plan?.trim() || "The plan is in the terminal.";
+  text.scrollTop = 0;
+}
+
 function buildPlan(actions: ViewActions): ViewHost {
   const head = h("div", { class: "card-head" });
   const text = h("div", { class: "plan-text" });
@@ -342,199 +378,192 @@ function buildPlan(actions: ViewActions): ViewHost {
   // mouse-down and a mouse-up would swallow the click.
   let key = "";
   let writing = false;
+  const guard = createClickGuard();
 
-  function closeField() {
-    writing = false;
-    actions.wantKeyboard(false);
+  function setWriting(on: boolean) {
+    writing = on;
+    if (!on) actions.wantKeyboard(false);
     key = "";
     State.notify();
   }
+  const sendFeedback = (note: string) => {
+    writing = false;
+    actions.decidePlan({ feedback: note });
+  };
 
   return {
     el,
     sync() {
       const req = State.pendingApproval;
+      guard.arm(req?.requestId ?? null);
       const k = `${req?.requestId ?? ""}~${writing}`;
       if (k === key) return;
       if (req?.requestId !== key.split("~")[0]) writing = false;
       key = `${req?.requestId ?? ""}~${writing}`;
 
-      clear(head);
-      head.append(agentWho(State.focusTask, "has a plan ready"));
-      text.textContent = req?.plan?.trim() || "The plan is in the terminal.";
-      text.scrollTop = 0;
-
+      showPlan(head, text, req?.plan);
       clear(bottom);
       if (writing) {
-        const field = textField(
-          "Tell Claude what to change…",
-          (note) => {
-            writing = false;
-            actions.decidePlan({ feedback: note });
-          },
-          closeField,
-        );
-        bottom.append(field.el);
-        actions.wantKeyboard(true);
-        window.setTimeout(() => field.input.focus(), 120);
+        showTextField(bottom, textField("Tell Claude what to change…", sendFeedback, () => setWriting(false)), actions);
         return;
       }
-      const row = h("div", { class: "actions" });
-      for (const c of PLAN_CHOICES) {
-        const b = btn(c.label, c.mode === "bypassPermissions" ? "primary" : "secondary", () =>
-          actions.decidePlan({ mode: c.mode }),
-        );
-        b.title = c.hint;
-        row.append(b);
-      }
-      const change = btn("Change plan…", "secondary", () => {
-        writing = true;
-        State.notify();
-      });
-      change.title = "No, tell Claude what to change";
-      row.append(change);
-      bottom.append(row);
+      bottom.append(planChoiceRow(actions, guard, () => setWriting(true)));
     },
   };
 }
 
 // ── Question ──────────────────────────────────────────────────────────────────
 
-function buildQuestion(actions: ViewActions): ViewHost {
-  const head = h("div", { class: "card-head" });
-  const header = h("div", { class: "ask-header" });
-  const title = h("div", { class: "ask-question" });
-  const body = h("div");
-  const el = h("div", { class: "view" }, card("cyan", stack(116, 16, head, header, title, body)));
-  const stackEl = el.querySelector(".stack") as HTMLElement;
-
-  let key = "";
+/** The AskUserQuestion card: one question at a time, as chips or an "Other" field. */
+class QuestionCard implements ViewHost {
+  readonly el: HTMLElement;
+  private readonly actions: ViewActions;
+  private readonly head = h("div", { class: "card-head" });
+  private readonly header = h("div", { class: "ask-header" });
+  private readonly title = h("div", { class: "ask-question" });
+  private readonly body = h("div");
+  private readonly stackEl: HTMLElement;
+  private readonly guard = createClickGuard();
+  /** What is on screen: rebuilt only when it changes, so a click is never swallowed. */
+  private key = "";
   /** Typing an "Other" answer for the question on screen. */
-  let other = false;
+  private other = false;
   /** Multi-select picks for the question on screen. */
-  let picks = new Set<string>();
+  private picks = new Set<string>();
+
+  constructor(actions: ViewActions) {
+    this.actions = actions;
+    this.el = h("div", { class: "view" }, card("cyan", stack(116, 16, this.head, this.header, this.title, this.body)));
+    this.stackEl = this.el.querySelector(".stack") as HTMLElement;
+  }
+
+  sync() {
+    const q = State.pendingQuestion;
+    // Per question: the next one comes up right under the click that answered this one.
+    this.guard.arm(q ? `${q.requestId}~${q.index}` : null);
+    if (!q) {
+      this.key = "";
+      this.legacy();
+      return;
+    }
+    const k = `${q.requestId}~${q.index}~${this.other}~${[...this.picks].join("|")}`;
+    if (k === this.key) return;
+    this.key = k;
+    this.stackEl.classList.add("top");
+
+    const item = q.items[q.index];
+    this.renderHead(q);
+    this.header.textContent = item.header;
+    this.title.textContent = item.question;
+    this.title.title = item.question;
+
+    clear(this.body);
+    if (this.other) {
+      const field = textField("Your answer…", (text) => this.commit({ kind: "other", text }), () => this.closeOther());
+      showTextField(this.body, field, this.actions);
+      return;
+    }
+    this.body.append(this.chips(item, q.index + 1 >= q.items.length));
+  }
+
+  /** Who asks, which question of how many, and "Reply in terminal". */
+  private renderHead(q: QuestionInfo) {
+    clear(this.head);
+    this.head.append(agentWho(State.focusTask, "is asking"));
+    if (q.items.length > 1) {
+      this.head.append(h("span", { class: "count", text: `${q.index + 1}/${q.items.length}` }));
+    }
+    this.head.append(h("button", {
+      class: "link-btn",
+      text: "Reply in terminal",
+      onclick: () => {
+        if (this.other) this.actions.wantKeyboard(false);
+        this.other = false;
+        this.actions.answerQuestion(null);
+      },
+    }));
+  }
+
+  /** A chip per option, "Other…", and Next / Send for a multi-select. */
+  private chips(item: AskItem, isLast: boolean): HTMLElement {
+    const chips = h("div", { class: "ask-chips" });
+    for (const o of item.options) {
+      chips.append(h("button", {
+        class: this.picks.has(o.label) ? "ask-chip on" : "ask-chip",
+        text: o.label,
+        title: o.description || o.label,
+        onclick: this.guard.wrap(() => this.choose(item, o.label)),
+      }));
+    }
+    chips.append(h("button", {
+      class: "ask-chip other",
+      text: "Other…",
+      onclick: this.guard.wrap(() => {
+        this.other = true;
+        State.notify();
+      }),
+    }));
+    if (item.multiSelect) {
+      const next = btn(isLast ? "Send" : "Next", "primary", this.guard.wrap(() => this.sendPicks(item)));
+      if (this.picks.size === 0) next.style.opacity = "0.4";
+      // In the chip row itself: a row of its own falls off a short card.
+      chips.append(next);
+    }
+    return chips;
+  }
+
+  /** A chip click: answers a single-select, toggles a multi-select pick. */
+  private choose(item: AskItem, label: string) {
+    if (!item.multiSelect) {
+      this.commit({ kind: "labels", labels: [label] });
+      return;
+    }
+    if (this.picks.has(label)) this.picks.delete(label);
+    else this.picks.add(label);
+    State.notify();
+  }
+
+  private sendPicks(item: AskItem) {
+    // Keep the options' order, not the click order.
+    const labels = item.options.map((o) => o.label).filter((l) => this.picks.has(l));
+    if (labels.length) this.commit({ kind: "labels", labels });
+  }
+
+  private closeOther() {
+    this.other = false;
+    this.actions.wantKeyboard(false);
+    this.key = "";
+    State.notify();
+  }
 
   /** Records this question's answer, then shows the next one or sends them all. */
-  function commit(answer: AskAnswer) {
+  private commit(answer: AskAnswer) {
     const q = State.pendingQuestion;
     if (!q) return;
     q.answers[q.index] = answer;
-    if (other) actions.wantKeyboard(false);
-    other = false;
-    picks = new Set();
+    if (this.other) this.actions.wantKeyboard(false);
+    this.other = false;
+    this.picks = new Set();
     if (q.index + 1 < q.items.length) {
       q.index += 1;
-      key = "";
-      actions.blip();
+      this.key = "";
+      this.actions.blip();
       State.notify();
     } else {
-      actions.answerQuestion(buildAnswers(q.items, q.answers));
+      this.actions.answerQuestion(buildAnswers(q.items, q.answers));
     }
   }
 
-  function legacy() {
-    // A question seen only through a Notification: nothing to answer here.
-    stackEl.classList.remove("top");
-    clear(head);
-    head.append(agentWho(State.focusTask, "Claude Code is asking a question"));
-    header.textContent = "";
-    title.textContent = State.focusTask?.steps.at(-1) ?? "Claude needs an answer.";
-    clear(body);
-    body.append(h("div", { class: "sub", text: "Answer in your terminal." }));
+  /** A question seen only through a Notification: nothing to answer here. */
+  private legacy() {
+    this.stackEl.classList.remove("top");
+    clear(this.head);
+    this.head.append(agentWho(State.focusTask, "Claude Code is asking a question"));
+    this.header.textContent = "";
+    this.title.textContent = State.focusTask?.steps.at(-1) ?? "Claude needs an answer.";
+    clear(this.body);
+    this.body.append(h("div", { class: "sub", text: "Answer in your terminal." }));
   }
-
-  return {
-    el,
-    sync() {
-      const q = State.pendingQuestion;
-      if (!q) {
-        key = "";
-        legacy();
-        return;
-      }
-      const k = `${q.requestId}~${q.index}~${other}~${[...picks].join("|")}`;
-      if (k === key) return;
-      key = k;
-      stackEl.classList.add("top");
-
-      const item = q.items[q.index];
-      clear(head);
-      head.append(agentWho(State.focusTask, "is asking"));
-      if (q.items.length > 1) {
-        head.append(h("span", { class: "count", text: `${q.index + 1}/${q.items.length}` }));
-      }
-      head.append(h("button", {
-        class: "link-btn",
-        text: "Reply in terminal",
-        onclick: () => {
-          if (other) actions.wantKeyboard(false);
-          other = false;
-          actions.answerQuestion(null);
-        },
-      }));
-      header.textContent = item.header;
-      title.textContent = item.question;
-      title.title = item.question;
-
-      clear(body);
-      if (other) {
-        const field = textField(
-          "Your answer…",
-          (text) => commit({ kind: "other", text }),
-          () => {
-            other = false;
-            actions.wantKeyboard(false);
-            key = "";
-            State.notify();
-          },
-        );
-        body.append(field.el);
-        actions.wantKeyboard(true);
-        window.setTimeout(() => field.input.focus(), 120);
-        return;
-      }
-
-      const chips = h("div", { class: "ask-chips" });
-      for (const o of item.options) {
-        const chip = h("button", {
-          class: picks.has(o.label) ? "ask-chip on" : "ask-chip",
-          text: o.label,
-          title: o.description || o.label,
-          onclick: () => {
-            if (!item.multiSelect) {
-              commit({ kind: "labels", labels: [o.label] });
-              return;
-            }
-            if (picks.has(o.label)) picks.delete(o.label);
-            else picks.add(o.label);
-            State.notify();
-          },
-        });
-        chips.append(chip);
-      }
-      chips.append(h("button", {
-        class: "ask-chip other",
-        text: "Other…",
-        onclick: () => {
-          other = true;
-          State.notify();
-        },
-      }));
-      body.append(chips);
-
-      if (item.multiSelect) {
-        const last = q.index + 1 >= q.items.length;
-        const next = btn(last ? "Send" : "Next", "primary", () => {
-          // Keep the options' order, not the click order.
-          const labels = item.options.map((o) => o.label).filter((l) => picks.has(l));
-          if (labels.length) commit({ kind: "labels", labels });
-        });
-        if (picks.size === 0) next.style.opacity = "0.4";
-        // In the chip row itself: a row of its own falls off a short card.
-        chips.append(next);
-      }
-    },
-  };
 }
 
 // ── Error ─────────────────────────────────────────────────────────────────────
@@ -721,7 +750,7 @@ export function buildViews(
   map.set("empty", buildEmpty(actions));
   map.set("approval", buildApproval(actions));
   map.set("plan", buildPlan(actions));
-  map.set("question", buildQuestion(actions));
+  map.set("question", new QuestionCard(actions));
   map.set("error", buildError(actions));
   map.set("finished", buildFinished(actions));
   map.set("confused", buildConfused());

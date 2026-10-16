@@ -102,6 +102,12 @@ It works from any terminal — Windows Terminal, PowerShell, VS Code, Git Bash.
   (descriptions on hover), one question at a time with an `i/N` counter.
   Multi-select questions toggle chips then **Next / Send**; **Other…** takes free
   text; **Reply in terminal** closes the card and leaves the terminal dialog.
+- **No click by accident.** A permission, plan or question card comes up under
+  a cursor that was busy with another window, so for its first 600 ms it
+  ignores clicks on Deny / Allow, the plan's choices and the answer chips
+  (`views/clickGuard.ts`, from upstream `5b06e1c`). The clock restarts for each
+  new request and for each next question, which also stops a double click
+  from answering two questions at once.
 - **Answer in either place.** The terminal dialog and the island card are up at
   the same time (both come from the same `PermissionRequest`); whichever is
   answered first wins.
