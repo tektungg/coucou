@@ -41,6 +41,30 @@ interface HookPayload {
 /** Clears the question card if no answer was given before the hook gave up. */
 let questionTimeout: number | null = null;
 
+/** The return to idle that Stop arms, per pill, so the next turn can cancel it. */
+const stopTimers = new Map<string, number>();
+
+/**
+ * Events that start new work on a pill (upstream 3491a2b): the timer the last
+ * Stop armed would otherwise put it back to idle over the new state.
+ */
+const SUPERSEDES_STOP: ReadonlySet<string> = new Set([
+  "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure", "StopFailure", "PermissionRequest",
+]);
+
+function cancelStopTimer(id: string): boolean {
+  const timer = stopTimers.get(id);
+  if (timer == null) return false;
+  window.clearTimeout(timer);
+  stopTimers.delete(id);
+  return true;
+}
+
+/** A newer state replaces `finished`; the badge that timer was going to clear goes now. */
+function supersedeStop(id: string) {
+  if (cancelStopTimer(id)) State.setPillBadge(id, null);
+}
+
 /** Same rule as HookServer.validateAgent on macOS. "claude" is reserved. */
 function validateAgent(raw: string | undefined): string | null {
   if (!raw || raw.length > 24 || raw === "claude") return null;
@@ -280,6 +304,7 @@ function handleHook(island: Island, payload: HookPayload) {
   if (cardTool && resolvesCard(name, payload.tool_name, cardTool)) {
     dismissCard(island, (card) => card.taskId === ctx.agentId);
   }
+  if (SUPERSEDES_STOP.has(name)) supersedeStop(ctx.agentId);
 
   HOOK_HANDLERS[name]?.(ctx);
   State.notify();
@@ -326,9 +351,11 @@ function onNotification(c: HookCtx) {
   const message = c.payload.message ?? "";
   const lower = message.toLowerCase();
   if (lower.includes("rate limit") || lower.includes("limite d")) {
+    supersedeStop(c.agentId);
     State.updateTask(c.agentId, "ratelimit");
     Sound.play("rate");
   } else if (message.endsWith("?")) {
+    supersedeStop(c.agentId);
     State.updateTask(c.agentId, "question");
     State.appendStep(c.agentId, message);
   }
@@ -353,14 +380,16 @@ function onStop(c: HookCtx) {
   Sound.play("finish");
   if (c.focused) c.surface("finished", true);
   else State.setPillBadge(agentId, "finished");
-  window.setTimeout(() => {
+  cancelStopTimer(agentId);
+  stopTimers.set(agentId, window.setTimeout(() => {
+    stopTimers.delete(agentId);
     if (c.isExternalAgent) {
       State.removeTask(agentId);
     } else {
       State.updateTask(agentId, "idle");
       State.setPillBadge(agentId, null);
     }
-  }, FINISHED_MS);
+  }, FINISHED_MS));
 }
 
 function onStopFailure(c: HookCtx) {
@@ -372,6 +401,9 @@ function onStopFailure(c: HookCtx) {
 
 function onSessionEnd(c: HookCtx) {
   const { agentId } = c;
+  // Nothing left for the timer to do, and it must not outlive the session: a
+  // pill recreated within 5.2 s would be removed by it.
+  cancelStopTimer(agentId);
   sessionDiffs.clear(agentId);
   if (c.isExternalAgent) {
     State.removeTask(agentId);
