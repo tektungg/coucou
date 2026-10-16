@@ -397,11 +397,6 @@ export class Island {
     this.fileDrop.keepOnShelf();
   }
 
-  /** "Open terminal": the focused session's folder. */
-  openTerminal() {
-    void Bridge.openInVSCode(State.focusTask?.sessionCwd ?? null);
-  }
-
   // ── Geometry ────────────────────────────────────────────────────────────────
 
   private targetSize(): { w: number; h: number; r: number } {

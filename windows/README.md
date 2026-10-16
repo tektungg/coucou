@@ -53,6 +53,14 @@ Everything else happens on its own: a Claude Code permission request opens the
 island with **Deny / Allow**, a finished session shows what it did, and
 your integrations sit in the coloured pills next to Mochi.
 
+**Open terminal** (a session's card, or its ↗) brings forward the window that
+session runs in: Windows Terminal, VS Code, Cursor… When the relay connects,
+Rust walks up its process tree (`session_window.rs`, once per session, kept in
+memory by session ID) to the nearest ancestor that owns a window, and picks the
+one titled after the project when an editor has several. A classic console
+(`cmd.exe`, whose window belongs to conhost) has no such ancestor, so there the
+folder opens in VS Code as before. From upstream `c90d30b`.
+
 A permission, plan or question card takes the focus for the session that asks.
 Once it is answered (here or in the terminal) or times out, the pill you were on
 before, Music for instance, gets the focus back, the same way it does after a
@@ -444,6 +452,7 @@ never cherry-picked.
 | `4207be9` | Pick the display the island lives on | `island.rs monitor_choices`, `settings/general.ts` |
 | `62e43c6` | Auto-close follows Settings live | `fsm.ts homeCollapseDueAt` |
 | `2261334` | Open on hover as a setting, your own sounds | on by default here (this build always opened on hover); `sounds.rs` |
+| `c90d30b` | Open terminal brings the session's window forward | `session_window.rs`; the Claude Desktop part needs agents.rs, left out |
 
 Not ported: `66be53e` (Antigravity's `PreToolUse` answer): this build's relay
 has no Antigravity path. Upstream's bigger features (live diff, more agents,
@@ -687,5 +696,5 @@ What changes on Linux:
 - **Files**: preferences in `~/.config/coucou/`, the log at
   `~/.local/share/coucou/coucou.log`.
 - What the Windows build leaves out, this one does too: sending a file by
-  email, dragging Mochi onto a window, and jumping to a specific terminal
-  window — "Open terminal" opens the folder in VS Code.
+  email and dragging Mochi onto a window. "Open terminal" opens the folder in
+  VS Code here: Wayland lets no app raise another app's window.

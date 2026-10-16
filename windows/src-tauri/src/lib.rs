@@ -27,6 +27,7 @@ mod shelf;
 mod sounds;
 mod startup;
 mod secrets;
+mod session_window;
 mod settings;
 mod space;
 mod tray;
@@ -163,6 +164,20 @@ fn fit_zoom(app: AppHandle, dpr: f64) -> bool {
 #[tauri::command]
 fn list_monitors(app: AppHandle) -> Vec<island::MonitorChoice> {
     island::monitor_choices(&app)
+}
+
+/// "Open terminal": brings forward the terminal or editor window the session
+/// runs in, when it was found (Windows, see session_window.rs); otherwise opens
+/// the folder in VS Code, as before.
+#[tauri::command]
+fn open_session(session_id: Option<String>, path: Option<String>) -> bool {
+    if let Some(owner) = session_id.as_deref().and_then(session_window::lookup) {
+        let folder = path.as_deref().map(session_window::folder_name).unwrap_or_default();
+        if platform::focus_process_window(owner, folder) {
+            return true;
+        }
+    }
+    open_in_vscode(path)
 }
 
 #[tauri::command]
@@ -577,6 +592,7 @@ pub fn run() {
             sounds::reload_sounds,
             open_url,
             open_in_vscode,
+            open_session,
             quit_app,
             hooks_status,
             hooks_preview,

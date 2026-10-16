@@ -27,15 +27,19 @@ export interface ViewActionHost {
   finishCard(): void;
   /** The choose card's "Keep on shelf". */
   keepDropOnShelf(): void;
-  /** "Open terminal" for the focused session. */
-  openTerminal(): void;
+}
+
+/** "Open terminal": the focused session's own window, else its folder in VS Code. */
+function openTerminal() {
+  const task = State.focusTask;
+  void Bridge.openSession(task?.sessionId ?? null, task?.sessionCwd ?? null);
 }
 
 /** The ↗ button: opens whatever the focused pill points at. */
-function openTarget(host: ViewActionHost) {
+function openTarget() {
   const task = State.focusTask;
   if (!task) return;
-  if (task.id === "integration_claude") host.openTerminal();
+  if (task.id === "integration_claude" || task.sessionId) openTerminal();
   else if (task.id === "integration_n8n") void Bridge.openN8n();
   else if (TARGET_URLS[task.id]) void Bridge.openUrl(TARGET_URLS[task.id]);
 }
@@ -111,8 +115,8 @@ export function buildViewActions(host: ViewActionHost): ViewActions {
       State.setFocus(id);
       Sound.play("blip");
     },
-    openTerminal: () => host.openTerminal(),
-    openTarget: () => openTarget(host),
+    openTerminal,
+    openTarget,
     openUrl: (url) => {
       if (url) void Bridge.openUrl(url);
     },

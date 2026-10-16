@@ -60,8 +60,11 @@ windows = { version = "0.61", features = [
   "Win32_System_Com",
   "Win32_System_Com_StructuredStorage",
   "Win32_System_DataExchange",
+  # "Open terminal": the relay's process tree leads to the session's window.
+  "Win32_System_Diagnostics_ToolHelp",
   "Win32_System_Memory",
   "Win32_System_Ole",
+  "Win32_System_Pipes",
   "Win32_System_Registry",
   "Win32_System_SystemServices",
   "Win32_System_Variant",

@@ -1,5 +1,7 @@
 // Windows: Win32 for the island window and the cursor, %APPDATA% for files.
 
+use std::collections::HashMap;
+use std::os::windows::io::RawHandle;
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Command;
@@ -15,7 +17,11 @@ use ::windows::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT
 use ::windows::Win32::UI::Accessibility::{SetWinEventHook, HWINEVENTHOOK};
 use ::windows::Win32::Security::Authorization::ConvertSidToStringSidW;
 use ::windows::Win32::Security::{GetTokenInformation, TokenUser, TOKEN_QUERY, TOKEN_USER};
+use ::windows::Win32::System::Diagnostics::ToolHelp::{
+    CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
+};
 use ::windows::Win32::System::Ole::RevokeDragDrop;
+use ::windows::Win32::System::Pipes::GetNamedPipeClientProcessId;
 use ::windows::Win32::System::SystemInformation::GetLocalTime;
 use ::windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 use ::windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
@@ -26,14 +32,16 @@ use ::windows::Win32::UI::Shell::{
     SHQueryUserNotificationState, QUNS_BUSY, QUNS_PRESENTATION_MODE, QUNS_RUNNING_D3D_FULL_SCREEN,
 };
 use ::windows::Win32::UI::WindowsAndMessaging::{
-    EnumChildWindows, GetClassNameW, GetCursorPos, GetDesktopWindow, GetForegroundWindow,
-    GetShellWindow, GetWindowLongPtrW, GetWindowRect, GetWindowThreadProcessId, IsZoomed,
-    SetWindowLongPtrW, SetWindowPos, EVENT_SYSTEM_FOREGROUND, GWL_EXSTYLE, GWL_STYLE, HWND_TOPMOST,
+    EnumChildWindows, EnumWindows, GetClassNameW, GetCursorPos, GetDesktopWindow, GetForegroundWindow,
+    GetShellWindow, GetWindow, GetWindowLongPtrW, GetWindowRect, GetWindowTextW, GetWindowThreadProcessId,
+    IsIconic, IsWindowVisible, IsZoomed, SetForegroundWindow, SetWindowLongPtrW, SetWindowPos, ShowWindow,
+    EVENT_SYSTEM_FOREGROUND, GWL_EXSTYLE, GWL_STYLE, GW_OWNER, HWND_TOPMOST, SW_RESTORE,
     SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE,
     WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WS_CAPTION, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
 };
 
 use super::LocalTime;
+use crate::session_window::{self, Proc};
 
 /// File name of the Claude Code relay.
 pub const HOOK_EXE: &str = "coucou-hook.exe";
@@ -426,4 +434,95 @@ pub fn alert(title: &str, text: &str) {
     use ::windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK, MB_SETFOREGROUND};
     let (t, x) = (wide(title), wide(text));
     unsafe { MessageBoxW(None, PCWSTR(x.as_ptr()), PCWSTR(t.as_ptr()), MB_OK | MB_ICONERROR | MB_SETFOREGROUND) };
+}
+
+// ── Session windows ("Open terminal") ─────────────────────────────────────────
+//
+// See session_window.rs: the relay's ancestors lead to the terminal or editor
+// window a Claude Code session runs in. From upstream c90d30b.
+
+/// The process on the other end of a relay connection.
+pub fn pipe_client_pid(handle: RawHandle) -> Option<u32> {
+    let mut pid = 0u32;
+    unsafe { GetNamedPipeClientProcessId(HANDLE(handle), &mut pid).ok()? };
+    (pid != 0).then_some(pid)
+}
+
+/// Every process, by ID: its parent and its executable's name.
+fn process_table() -> HashMap<u32, Proc> {
+    let mut out = HashMap::new();
+    unsafe {
+        let Ok(snapshot) = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) else { return out };
+        let mut entry = PROCESSENTRY32W {
+            dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+            ..Default::default()
+        };
+        let mut more = Process32FirstW(snapshot, &mut entry).is_ok();
+        while more {
+            let len = entry.szExeFile.iter().position(|c| *c == 0).unwrap_or(entry.szExeFile.len());
+            let exe = String::from_utf16_lossy(&entry.szExeFile[..len]);
+            out.insert(entry.th32ProcessID, Proc { parent: entry.th32ParentProcessID, exe });
+            more = Process32NextW(snapshot, &mut entry).is_ok();
+        }
+        let _ = CloseHandle(snapshot);
+    }
+    out
+}
+
+/// The ancestors of a process, nearest first, below the desktop shell.
+pub fn process_ancestors(pid: u32) -> Vec<u32> {
+    session_window::ancestors(&process_table(), pid)
+}
+
+/// Visible top-level windows that are nobody's dialog and have a title:
+/// (handle, process ID, title).
+fn top_windows() -> Vec<(isize, u32, String)> {
+    unsafe extern "system" fn collect(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        let list = unsafe { &mut *(lparam.0 as *mut Vec<(isize, u32, String)>) };
+        unsafe {
+            if !IsWindowVisible(hwnd).as_bool() || GetWindow(hwnd, GW_OWNER).is_ok() {
+                return true.into();
+            }
+            let mut pid = 0u32;
+            GetWindowThreadProcessId(hwnd, Some(&mut pid as *mut u32));
+            let mut text = [0u16; 512];
+            let len = GetWindowTextW(hwnd, &mut text);
+            if len > 0 {
+                list.push((hwnd.0 as isize, pid, String::from_utf16_lossy(&text[..len as usize])));
+            }
+        }
+        true.into()
+    }
+    let mut list: Vec<(isize, u32, String)> = Vec::new();
+    unsafe {
+        let _ = EnumWindows(Some(collect), LPARAM(&mut list as *mut _ as isize));
+    }
+    list
+}
+
+/// The first of `pids` that owns a window.
+pub fn first_with_window(pids: &[u32]) -> Option<u32> {
+    let windows = top_windows();
+    pids.iter().copied().find(|pid| windows.iter().any(|(_, owner, _)| owner == pid))
+}
+
+fn bring_forward(raw: isize) -> bool {
+    let hwnd = HWND(raw as *mut _);
+    unsafe {
+        if IsIconic(hwnd).as_bool() {
+            let _ = ShowWindow(hwnd, SW_RESTORE);
+        }
+        // Allowed: the click on the island that asked for this was the last input.
+        SetForegroundWindow(hwnd).as_bool()
+    }
+}
+
+/// Brings `pid`'s window forward: the one titled after `folder` if there are several.
+pub fn focus_process_window(pid: u32, folder: &str) -> bool {
+    let candidates: Vec<(isize, String)> = top_windows()
+        .into_iter()
+        .filter(|(_, owner, _)| *owner == pid)
+        .map(|(hwnd, _, title)| (hwnd, title))
+        .collect();
+    session_window::pick_window(&candidates, folder).is_some_and(|hwnd| bring_forward(*hwnd))
 }
