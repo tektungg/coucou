@@ -3,36 +3,21 @@
 import "./style.css";
 import { Bridge, IS_TAURI, onEvent } from "./core/bridge";
 import { Sound } from "./core/sound";
+import { blockPageZoom, fitZoom, watchPixelRatio } from "./core/zoom";
 import { State, type Settings } from "./core/state";
 import { Island } from "./island/island";
 import { registerHookHandlers } from "./island/hooks";
 import { registerIntegrationHandlers, refreshConfigured } from "./island/integrations";
 
-async function main() {
-  const root = document.getElementById("root");
-  if (!root) return;
+/** Pause has to reach Rust too, or the pollers keep calling out. */
+function setPaused(on: boolean) {
+  if (State.paused === on) return;
+  State.paused = on;
+  void Bridge.setPaused(on);
+}
 
-  void Sound.preload();
-
-  const island = new Island(root);
-
-  const boot = await Bridge.boot();
-  if (boot) {
-    State.settings = { ...State.settings, ...boot.settings };
-  }
-  island.applySettings();
-  State.loadIntegrationTasks();
-  if (boot && !boot.cursorPoll) island.followPageCursor();
-
-  await onEvent<{ x: number; y: number }>("cursor", ({ x, y }) => island.onCursor(x, y));
-
-  /** Pause has to reach Rust too, or the pollers keep calling out. */
-  const setPaused = (on: boolean) => {
-    if (State.paused === on) return;
-    State.paused = on;
-    void Bridge.setPaused(on);
-  };
-
+/** The tray menu: Settings, Open, Pause / Resume. */
+async function registerTrayHandler(island: Island) {
   await onEvent<string>("tray", (what) => {
     switch (what) {
       case "settings":
@@ -50,8 +35,15 @@ async function main() {
         break;
     }
   });
+}
 
-  await onEvent<null>("screen-changed", () => void Bridge.reposition());
+/** Display, pixel ratio and preference changes. */
+async function registerWindowEvents(island: Island) {
+  await onEvent<null>("screen-changed", async () => {
+    await fitZoom();
+    void Bridge.reposition();
+  });
+  watchPixelRatio(() => void fitZoom());
 
   // The settings window writes preferences; apply them here without a restart.
   await onEvent<Settings>("settings-changed", (s) => {
@@ -60,6 +52,33 @@ async function main() {
     State.loadIntegrationTasks();
     void refreshConfigured();
   });
+}
+
+async function main() {
+  const root = document.getElementById("root");
+  if (!root) return;
+
+  void Sound.preload();
+
+  // Before the island: its canvases size their bitmaps from the pixel ratio
+  // once, so the zoom correction has to land first.
+  await fitZoom();
+  blockPageZoom();
+
+  const island = new Island(root);
+
+  const boot = await Bridge.boot();
+  if (boot) {
+    State.settings = { ...State.settings, ...boot.settings };
+  }
+  island.applySettings();
+  State.loadIntegrationTasks();
+  if (boot && !boot.cursorPoll) island.followPageCursor();
+
+  await onEvent<{ x: number; y: number }>("cursor", ({ x, y }) => island.onCursor(x, y));
+
+  await registerTrayHandler(island);
+  await registerWindowEvents(island);
 
   registerHookHandlers(island);
   registerIntegrationHandlers(island);

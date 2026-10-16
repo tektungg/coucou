@@ -175,6 +175,86 @@ pub fn apply_geometry(app: &AppHandle, pref: &str, collapsed: bool) {
     // Moving across displays can rescale the window: re-assert the physical size.
     let _ = win.set_size(PhysicalSize::new(pw, ph));
     let _ = win.set_always_on_top(true);
+
+    // Windows can still clamp or lag the resize (a display change, waking from
+    // the strip): when the size did not land, say so and ask once more.
+    if let Ok(got) = win.inner_size() {
+        if got.width != pw || got.height != ph {
+            crate::log::line(format!(
+                "window size mismatch: wanted {pw}x{ph}, got {}x{} (scale {scale}, monitor {}x{})",
+                got.width, got.height, ms.width, ms.height
+            ));
+            let _ = win.set_size(PhysicalSize::new(pw, ph));
+            let _ = win.set_position(PhysicalPosition::new(x, y));
+        }
+    }
+}
+
+/// A pixel ratio this close to the window's scale (relative) needs no correction.
+const ZOOM_TOLERANCE: f64 = 0.02;
+/// The webview zoom is kept within these bounds, whatever the ratio says.
+const ZOOM_MIN: f64 = 0.25;
+const ZOOM_MAX: f64 = 4.0;
+
+/// The webview zoom that makes one CSS pixel one logical window pixel again,
+/// or `None` when it already is. WebView2's `devicePixelRatio` folds in the
+/// Windows text size (and can lag a display change), so it can differ from the
+/// window's scale: a 720 px window then holds fewer CSS px than the island is
+/// laid out for, and the expanded island is cut on both sides. Ported from
+/// upstream (Louis-CFM/coucou b9b9217).
+pub fn calculate_zoom_correction(current_zoom: f64, scale: f64, dpr: f64) -> Option<f64> {
+    let valid = |v: f64| v.is_finite() && v > 0.0;
+    if !valid(dpr) || !valid(scale) || !valid(current_zoom) {
+        return None;
+    }
+    if (dpr - scale).abs() / scale < ZOOM_TOLERANCE {
+        return None;
+    }
+    Some((current_zoom * (scale / dpr)).clamp(ZOOM_MIN, ZOOM_MAX))
+}
+
+#[cfg(test)]
+mod zoom_tests {
+    use super::*;
+
+    #[test]
+    fn no_correction_when_the_ratio_matches_the_window_scale() {
+        assert_eq!(calculate_zoom_correction(1.0, 1.0, 1.0), None);
+        assert_eq!(calculate_zoom_correction(1.0, 1.25, 1.25), None);
+        assert_eq!(calculate_zoom_correction(1.0, 1.0, 1.01), None, "within the tolerance");
+    }
+
+    #[test]
+    fn a_mismatched_ratio_is_zoomed_back_to_the_window_scale() {
+        // 100 % display, Windows text size 125 %.
+        assert_eq!(calculate_zoom_correction(1.0, 1.0, 1.25), Some(0.8));
+        // 125 % display with 125 % text size.
+        assert_eq!(calculate_zoom_correction(1.0, 1.25, 1.5625), Some(0.8));
+        // 150 % display, the webview still on 100 %.
+        assert_eq!(calculate_zoom_correction(1.0, 1.5, 1.0), Some(1.5));
+    }
+
+    #[test]
+    fn once_corrected_the_ratio_matches_and_nothing_more_happens() {
+        let zoom = calculate_zoom_correction(1.0, 1.0, 1.25).unwrap();
+        // The webview's ratio after the zoom: 1.25 × 0.8.
+        assert_eq!(calculate_zoom_correction(zoom, 1.0, 1.25 * zoom), None);
+    }
+
+    #[test]
+    fn the_zoom_stays_within_bounds() {
+        assert_eq!(calculate_zoom_correction(1.0, 1.0, 100.0), Some(ZOOM_MIN));
+        assert_eq!(calculate_zoom_correction(1.0, 100.0, 1.0), Some(ZOOM_MAX));
+    }
+
+    #[test]
+    fn nonsense_inputs_change_nothing() {
+        assert_eq!(calculate_zoom_correction(1.0, 0.0, 1.0), None);
+        assert_eq!(calculate_zoom_correction(1.0, 1.0, -1.0), None);
+        assert_eq!(calculate_zoom_correction(1.0, f64::NAN, 1.0), None);
+        assert_eq!(calculate_zoom_correction(1.0, 1.0, f64::INFINITY), None);
+        assert_eq!(calculate_zoom_correction(0.0, 1.0, 1.25), None);
+    }
 }
 
 /// Position, size and scale of the monitor the island lives on. Any change here

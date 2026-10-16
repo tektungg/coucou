@@ -138,6 +138,26 @@ fn reposition(app: AppHandle, shared: State<Shared>) {
     island::apply_geometry(&app, &pref, collapsed);
 }
 
+/// The island is laid out in CSS px against the window's own scale. When the
+/// webview reports another `devicePixelRatio`, its zoom is corrected so one
+/// CSS px is one logical px again (island.rs calculate_zoom_correction). True
+/// when the zoom changed: the page then waits for the new ratio.
+#[tauri::command]
+fn fit_zoom(app: AppHandle, dpr: f64) -> bool {
+    static ZOOM: std::sync::Mutex<f64> = std::sync::Mutex::new(1.0);
+    let Some(win) = island::window(&app) else { return false };
+    let scale = win.scale_factor().unwrap_or(1.0);
+    let mut zoom = ZOOM.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let Some(new_zoom) = island::calculate_zoom_correction(*zoom, scale, dpr) else { return false };
+    if let Err(err) = win.set_zoom(new_zoom) {
+        log::line(format!("zoom: could not set {new_zoom:.3}: {err}"));
+        return false;
+    }
+    log::line(format!("zoom: webview ratio {dpr} != window scale {scale}, zoom set to {new_zoom:.3}"));
+    *zoom = new_zoom;
+    true
+}
+
 #[tauri::command]
 fn open_url(url: String) {
     if !(url.starts_with("http://") || url.starts_with("https://")) {
@@ -542,6 +562,7 @@ pub fn run() {
             set_island_rect,
             focus_window,
             reposition,
+            fit_zoom,
             open_url,
             open_in_vscode,
             quit_app,

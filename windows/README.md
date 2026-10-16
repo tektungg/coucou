@@ -532,6 +532,19 @@ windows/
   dev/                 browser previews: island views, Settings, upload, Mochi acts, Music card
 ```
 
+### Display scaling
+
+The island is laid out in CSS px against the window's own scale. WebView2's
+`devicePixelRatio` also folds in **Settings → Accessibility → Text size** (and
+can lag a display change), so it can differ from that scale: the 720 px window
+then holds fewer CSS px than the island needs and the expanded island is cut.
+At launch, on a display change and whenever the ratio changes, the page asks
+Rust (`fit_zoom`) to correct the webview zoom so one CSS px is one logical px
+again (`island.rs calculate_zoom_correction`, `core/zoom.ts`, from upstream
+`b9b9217`). The log says `zoom: webview ratio … != window scale …` when it
+does. Ctrl + wheel and Ctrl + / - / 0 no longer zoom the island, and a resize
+that did not land is logged (`window size mismatch`) and asked once more.
+
 ### Log
 
 `%LOCALAPPDATA%\Coucou\coucou.log` — hook events, permission decisions, poller

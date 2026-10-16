@@ -53,6 +53,8 @@ export const Bridge = {
   focusWindow: (focused: boolean) => call<void>("focus_window", { focused }),
 
   reposition: () => call<void>("reposition"),
+  /** Corrects the webview zoom when its pixel ratio is not the window's scale; true when it changed. */
+  fitZoom: (dpr: number) => call<boolean>("fit_zoom", { dpr }),
 
   openUrl: (url: string) => call<void>("open_url", { url }),
 
