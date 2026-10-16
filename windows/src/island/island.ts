@@ -53,6 +53,13 @@ const CHAT_FOCUS_DELAY_MS = 120;
 /** The three views the drop sequence owns; leaving them stops the engine. */
 const UPLOAD_VIEWS: ReadonlySet<IslandViewName> = new Set(["upload", "uploading", "choose"]);
 
+/**
+ * The page's real width: PANEL_W, unless the zoom correction was clamped or
+ * the pixel ratio has not settled yet (upstream b9b9217 / #467). The island is
+ * centred in it, so the hit test must be too.
+ */
+const viewportWidth = () => (window.innerWidth > 0 ? window.innerWidth : PANEL_W);
+
 const modeOrder = (m: IslandMode) => (m === "hidden" ? 0 : m === "compact" ? 1 : 2);
 
 export class Island {
@@ -460,7 +467,7 @@ export class Island {
     this.greetingCanvas.style.left = `${(w - EXPANDED_W) / 2}px`;
     this.uploadCanvas.el.style.left = `${(w - EXPANDED_W) / 2}px`;
 
-    const rect = { x: (PANEL_W - w) / 2, y: 0, w, h: hh };
+    const rect = { x: (viewportWidth() - w) / 2, y: 0, w, h: hh };
     const p = this.pushedRect;
     if (Math.abs(p.x - rect.x) > 0.5 || Math.abs(p.w - rect.w) > 0.5 || Math.abs(p.h - rect.h) > 0.5) {
       this.pushedRect = rect;
@@ -472,7 +479,7 @@ export class Island {
   private islandRect(): { x: number; y: number; w: number; h: number } {
     const w = this.width.value;
     const hh = this.height.value;
-    return { x: (PANEL_W - w) / 2, y: 0, w, h: hh };
+    return { x: (viewportWidth() - w) / 2, y: 0, w, h: hh };
   }
 
   // ── Input ───────────────────────────────────────────────────────────────────
