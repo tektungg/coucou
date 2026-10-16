@@ -19,6 +19,11 @@ pub struct Settings {
     /// What Mochi wears (src/mochi/wardrobe.ts): "none" until one is picked in
     /// the wardrobe, "auto" for the seasons. Unknown values read as "none".
     pub mochi_outfit: String,
+    /// The plan pills in the island header (views/plan.ts): Claude's from the
+    /// Claude pill's status line files, Codex's from `codex app-server`. Off by
+    /// default, so the header looks as it always has.
+    pub show_plan_in_notch: bool,
+    pub show_codex_plan_in_notch: bool,
     pub absence_interval: f64,
     pub active_integrations: Vec<String>,
     /// "primary" = the main display, "cursor" = whichever display the mouse is on.
@@ -174,6 +179,8 @@ impl Default for Settings {
             sound_volume: 0.12,
             auto_close_interval: 15.0,
             open_on_hover: true,
+            show_plan_in_notch: false,
+            show_codex_plan_in_notch: false,
             mochi_outfit: "none".into(),
             absence_interval: 180.0,
             active_integrations: personal_defaults(),
@@ -330,6 +337,18 @@ mod tests {
         assert!(!s.lyrics_enabled);
         assert_eq!(s.space_timebox_dir, r"D:\mcp\timebox");
         assert_eq!(s.chat_provider, "cli");
+    }
+
+    #[test]
+    fn the_plan_pills_stay_off_until_turned_on_and_round_trip() {
+        let old: Settings = crate::prefs_file::parse(br#"{"model":"some-model"}"#).unwrap();
+        assert!(!old.show_plan_in_notch && !old.show_codex_plan_in_notch);
+        let on = Settings { show_plan_in_notch: true, ..Settings::default() };
+        let json = serde_json::to_value(&on).unwrap();
+        assert_eq!(json["showPlanInNotch"], true);
+        assert_eq!(json["showCodexPlanInNotch"], false);
+        let back: Settings = serde_json::from_value(json).unwrap();
+        assert!(back.show_plan_in_notch);
     }
 
     #[test]

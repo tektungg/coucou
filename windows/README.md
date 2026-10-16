@@ -217,6 +217,43 @@ one line (the whole message on hover), until the next turn starts. From
 upstream `4b0a411`, `fbc4605`, `122e130`; the ticker those draw in is not part
 of this build, so the counts live on the board instead.
 
+### Plan usage pills
+
+Two pills can sit in the open island's header, before the mic, Settings and
+sound buttons, on Home only: **Claude 73%** and **Codex 12%**, each the higher
+of its 5-hour and weekly use. The dot is green below 50 %, orange up to 80 %,
+red above, grey without numbers. Both are off by default; turn them on in
+**Settings → General → Claude plan / Codex plan in the island header**. While a
+pill shows, the pill chips in the middle of the header give up its room
+(`views/pager.ts` `pagerBudget`). With both off the header is exactly as before.
+
+Click a pill and its card takes Home's card: the 5 hours and Week rows with a
+gauge, when each resets and how old the numbers are; Codex adds its plan and the
+free resets left, and names a free plan's 30-day window as such. Mochi wears the
+plan's colour while the card is open. It closes when the island shuts, Home is
+left, another pill is focused, or the pill (or the card's back button) is
+clicked again. Its countdowns move every 30 s, only while it is open.
+
+- **Claude**: no status line relay is installed. The numbers are the ones the
+  Claude pill reads from the status line files (`quota.rs`, polled whether or
+  not that pill is on), mapped by `core/plan.ts` `planFromQuota`. The Claude
+  pill, its card, its alerts and the 90 % sweat do not change. They come from
+  the Claude Code command-line tool only: the Claude desktop app does not run
+  the status line, so the pill shows no number if you only use the desktop app.
+- **Codex**: nothing is installed. When the pill comes into view or is clicked,
+  and neither an answer nor an attempt is less than a minute old, Coucou starts
+  `codex app-server` and asks it `account/rateLimits/read`, as Codex's `/status`
+  does, then stops it, the whole process tree on Windows (`codex_plan.rs`: 15 s
+  at most, one at a time, bounded reads, never while paused). Only the limits
+  and the free resets reach the island. The CLI is looked for on `PATH`, then
+  in npm's global folder, OpenAI's installer (`%LOCALAPPDATA%\Programs\OpenAI\Codex\bin`),
+  Volta, Bun, pnpm and, on Linux, nvm with its newest Node first.
+
+From upstream `c02923e`, `49a00ed` and the Codex part of `5bddaec`, in the Mochi
+Pop look (`views/plan.ts`, `views/planState.ts`, `tests/plan.test.ts`). Preview:
+`dev/pop-preview.html?view=overview&plan` (`&plan=open` or `&plan=codex` opens a
+card).
+
 ### Plans and questions
 
 - **Plan approval (ExitPlanMode).** The island shows the plan itself (scrollable)

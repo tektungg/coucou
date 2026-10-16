@@ -11,6 +11,8 @@
 //   &focus=integration_github[&detail]  the GitHub pulse card (its lists)
 //   &outfit=<selection>  what Mochi wears (mochi/wardrobe.ts); view=wardrobe for the wardrobe
 //   view=prompt&md     the answer in Markdown (views/markdown.ts)
+//   &plan              both plan pills in the header, with sample Claude and Codex numbers
+//   &plan=open|codex   …and the Claude (or Codex) plan card open
 // Mochi still animates; screenshots are taken after it has settled.
 
 import type { AskItem } from "../src/island/askQuestion";
@@ -126,6 +128,25 @@ if (params.get("focus") === "integration_github") {
     },
   });
 }
+// ?plan: the Claude pill's numbers (quota.rs snapshot) and an answer from Codex.
+if (params.has("plan")) {
+  Object.assign(State.settings, { showPlanInNotch: true, showCodexPlanInNotch: true });
+  const nowS = Math.floor(now / 1000);
+  State.integrations.integration_quota = ok({
+    fiveHour: { pct: 73, resetsAt: nowS + 4800 }, sevenDay: { pct: 41, resetsAt: nowS + 3 * 86_400 },
+    sessions: [], totalCost: 3.4, updated: now - 120_000,
+  });
+  const { parseCodexPlan } = await import("../src/core/plan");
+  const { setCodexPlanUsage } = await import("../src/views/planState");
+  setCodexPlanUsage(parseCodexPlan({
+    rateLimits: {
+      planType: "plus",
+      primary: { usedPercent: 12, resetsAt: nowS + 9000, windowDurationMins: 300 },
+      secondary: { usedPercent: 58, resetsAt: nowS + 5 * 86_400, windowDurationMins: 10_080 },
+    },
+    rateLimitResetCredits: { availableCount: 2, credits: [{ status: "available", expiresAt: nowS + 9 * 86_400 }] },
+  }, now));
+}
 State.integrations.integration_media = ok({
   app: "Spotify", title: "Placeholder Song", artist: "Some Artist", album: "Preview",
   playing: false, durationMs: 215_000, positionMs: 64_000, positionAtMs: now,
@@ -188,6 +209,11 @@ if (view === "recap" && params.has("share")) {
 }
 if (params.has("detail")) {
   window.setTimeout(() => (document.querySelector(".gh-stat") as HTMLElement | null)?.click(), 400);
+}
+const planCard = params.get("plan");
+if (planCard === "open" || planCard === "codex") {
+  const index = planCard === "codex" ? 1 : 0;
+  window.setTimeout(() => (document.querySelectorAll(".plan-pill")[index] as HTMLElement | undefined)?.click(), 400);
 }
 if (params.get("diff") === "open") {
   window.setTimeout(() => (document.querySelector(".btile-diff") as HTMLElement | null)?.click(), 400);

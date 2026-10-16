@@ -14,6 +14,8 @@ import { ICONS } from "./icons";
 import { renderIntegrationCard, type IntegrationCardHooks } from "./integrations";
 import { card } from "./parts";
 import { personalDataKey } from "./personal";
+import { PLAN_CLOCK_MS, buildPlanCard, planCardKey } from "./plan";
+import { closePlanCard, openPlanKind } from "./planState";
 import type { ViewActions, ViewCommand, ViewHost } from "./views";
 
 // ── Overview ──────────────────────────────────────────────────────────────────
@@ -32,13 +34,15 @@ interface Overview {
   board: ReturnType<typeof buildBoardView>;
   detailOpen: boolean;
   lastFocus: string | null;
-  mode: "board" | "card" | "diff" | null;
+  mode: "board" | "card" | "diff" | "plan" | null;
   /** The live diff open over the board (a tile's +N −M was clicked). */
   diff: { pillId: string; diffId: number } | null;
   /** What the shown card was built from; a change rebuilds it. */
   cardKey: string;
   /** Pending re-sync that moves the board's "3 min" labels along. */
   clockTimer: number | null;
+  /** Pending re-sync that moves an open plan card's countdowns along. */
+  planTimer: number | null;
   /** The list row highlighted at the last sync, to scroll only when it moves. */
   shownSelection: number | null;
 }
@@ -146,6 +150,42 @@ function syncDiff(o: Overview): boolean {
   return true;
 }
 
+/** Leaving the plan card: whatever was under it is drawn again, and its clock stops. */
+function leavePlan(o: Overview) {
+  o.mode = null;
+  o.cardKey = "";
+  if (o.planTimer !== null) window.clearTimeout(o.planTimer);
+  o.planTimer = null;
+}
+
+/**
+ * The plan card a header pill opened (views/plan.ts) covers the board or the
+ * pill's card; false once it is closed. Its countdowns move every 30 s, and
+ * only while it is on screen, so a hidden island stays at 0 % CPU.
+ */
+function syncPlan(o: Overview): boolean {
+  const kind = openPlanKind();
+  if (!kind) {
+    if (o.mode === "plan") leavePlan(o);
+    return false;
+  }
+  const key = planCardKey(kind);
+  if (o.mode !== "plan") setDiff(o, null);
+  if (o.mode !== "plan" || key !== o.cardKey) {
+    o.mode = "plan";
+    o.cardKey = key;
+    clear(o.leftBody);
+    o.leftBody.append(buildPlanCard(kind));
+  }
+  if (o.planTimer === null) {
+    o.planTimer = window.setTimeout(() => {
+      o.planTimer = null;
+      State.notify();
+    }, PLAN_CLOCK_MS);
+  }
+  return true;
+}
+
 function syncBoard(o: Overview, task: AgentTask) {
   if (o.mode !== "board") {
     clear(o.leftBody);
@@ -207,7 +247,10 @@ function runCommand(o: Overview, command: ViewCommand) {
   }
   const task = State.focusTask;
   const latest = task ? sessionDiffs.latest(task.id) : null;
-  if (task && latest) openDiff(o, task.id, latest.id);
+  if (!task || !latest) return;
+  // The diff takes Home's card from an open plan card.
+  closePlanCard();
+  openDiff(o, task.id, latest.id);
 }
 
 export function buildOverview(actions: ViewActions): ViewHost {
@@ -222,7 +265,7 @@ export function buildOverview(actions: ViewActions): ViewHost {
     slot, leftBody,
     board: buildBoardView((id) => actions.setFocus(id), (id, diffId) => openDiff(o, id, diffId)),
     detailOpen: false, lastFocus: null, mode: null, diff: null, cardKey: "", clockTimer: null,
-    shownSelection: null,
+    planTimer: null, shownSelection: null,
   };
   const hooks = cardHooks(o, actions);
   return {
@@ -230,14 +273,14 @@ export function buildOverview(actions: ViewActions): ViewHost {
     sync() {
       const task = State.focusTask;
       if ((task?.id ?? null) !== o.lastFocus) onFocusChange(o, task?.id ?? null);
-      // An open diff card covers the board; it has its own ↗ for the file.
-      const diffShown = syncDiff(o);
-      if (!diffShown && task) {
+      // A plan card or an open diff card covers the board; each has its own back button.
+      const covered = syncPlan(o) || syncDiff(o);
+      if (!covered && task) {
         // An agent session shows the board of every session.
         if (isBoardSession(task)) syncBoard(o, task);
         else syncCard(o, task, hooks);
       }
-      jump.style.display = o.detailOpen || diffShown ? "none" : "";
+      jump.style.display = o.detailOpen || covered ? "none" : "";
       syncListSelection(o);
     },
     command: (command) => runCommand(o, command),

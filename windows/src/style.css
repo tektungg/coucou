@@ -3479,3 +3479,151 @@ body.shelf-drop .card:has(.shelf-card) {
   height: 28px;
   pointer-events: none;
 }
+
+/* ── Plan usage (views/plan.ts): the header pills and Home's plan card ──────
+   ClaudePlanHeaderPill / ClaudePlanCardView / CodexPlanCardView on the Mac, in
+   the Mochi Pop look. Both pills are off by default and take no room then. */
+
+.header-actions .hbtn.plan-pill {
+  width: auto;
+  max-width: 98px; /* pager.ts PLAN_PILL_W, less the gap */
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px 0 8px;
+  border-radius: var(--r-pill);
+  font: 650 11.5px var(--font);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.plan-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.plan-pill-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.plan-card {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px 10px 108px;
+  box-sizing: border-box;
+}
+
+.plan-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.plan-head .grow {
+  flex: 1 1 auto;
+}
+
+.plan-back {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 4px 10px 4px 7px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--soft-2);
+  color: var(--ink);
+  cursor: default;
+}
+
+.plan-back:hover {
+  background: var(--soft-3);
+}
+
+.plan-back b {
+  font: 600 12px var(--font);
+}
+
+.plan-sub {
+  flex: 0 1 auto; /* the one part that gives way, with an ellipsis */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font: 500 11px var(--font);
+  color: var(--dim-2);
+}
+
+.plan-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  padding: 3px 9px;
+  border-radius: var(--r-pill);
+  background: var(--soft-2);
+  font: 500 10.5px var(--font);
+  color: var(--dim-2);
+}
+
+.plan-chip b {
+  font-weight: 650;
+  color: var(--ink-2);
+}
+
+.plan-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.plan-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 26px;
+  padding: 0 12px;
+  border-radius: 13px;
+  background: var(--soft-2);
+  font: 500 11px var(--font);
+  white-space: nowrap;
+}
+
+.plan-label {
+  flex: 0 0 46px;
+  font-weight: 650;
+  color: var(--dim);
+}
+
+.plan-row .gauge {
+  height: 6px;
+}
+
+.plan-pct {
+  flex: 0 0 34px;
+  text-align: right;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.plan-reset {
+  flex: 0 0 92px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--dim-2);
+  font-size: 10.5px;
+}
+
+.plan-none {
+  color: var(--dim-3);
+}

@@ -217,6 +217,13 @@ export const Bridge = {
   desktopFlyHome: (forget: boolean) => call<boolean>("desktop_mochi_fly_home", { forget }),
   /** Asleep, Rust stops the cursor poll and the window listens for the pointer. */
   desktopSetAsleep: (asleep: boolean) => call<void>("desktop_mochi_set_asleep", { asleep }),
+  /**
+   * Asks the Codex CLI (`codex app-server`) for its plan limits, as Codex's
+   * /status does (codex_plan.rs). Only the limits and the free resets of the
+   * `account/rateLimits/read` result, or null when Codex is missing, not
+   * signed in, slow (15 s), already being asked, or Coucou is paused.
+   */
+  codexPlanUsage: () => call<unknown>("codex_plan_usage"),
 };
 
 export type ShortcutStatus =

@@ -7,6 +7,7 @@ mod desktop;
 #[cfg(windows)]
 mod webdrop;
 mod claude_cli;
+mod codex_plan;
 mod dropped;
 mod editor;
 mod files;
@@ -668,6 +669,7 @@ fn commands() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
         desktop::commands::desktop_mochi_set_asleep,
         shortcuts::commands::shortcuts_status,
         shortcuts::commands::shortcuts_suspend,
+        codex_plan::codex_plan_usage,
     ]
 }
 

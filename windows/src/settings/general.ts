@@ -1,5 +1,6 @@
 // General screen: sound, auto-close, which display the island lives on,
-// launching at startup and the weekly recap's history.
+// launching at startup, the plan pills in the island's header and the weekly
+// recap's history.
 
 import { Bridge, type DisplayChoice } from "../core/bridge";
 import { SOUND_NAMES } from "../core/sound";
@@ -51,6 +52,23 @@ function openOnHoverRows(ctx: SettingsCtx): HTMLElement[] {
   return [
     row("Open on hover", toggle(ctx.settings.openOnHover, (v) => { ctx.settings.openOnHover = v; void ctx.save(); })),
     hint("On: the island opens when the pointer reaches it and closes when it leaves. Off: hovering shows the compact island, a click opens it."),
+  ];
+}
+
+type PlanSetting = "showPlanInNotch" | "showCodexPlanInNotch";
+
+/** The plan pills in the open island's header (views/plan.ts), both off by default. */
+function planRows(ctx: SettingsCtx): HTMLElement[] {
+  const sw = (key: PlanSetting) => toggle(ctx.settings[key], (v) => {
+    ctx.settings[key] = v;
+    void ctx.save();
+  });
+  return [
+    // The label column is narrow: the rest of the name reads after the switch, as Weekly recap does.
+    row("Claude plan", sw("showPlanInNotch"), hint("in the island header")),
+    hint("Shows your Claude plan usage (5-hour and weekly limits) as a pill in the island's header; a click opens the details. The numbers are the ones the Claude pill reads from the Claude Code status line files. They come from the Claude Code command-line tool only: the Claude desktop app does not run the status line, so the pill shows no number if you only use the desktop app. Pro and Max plans only."),
+    row("Codex plan", sw("showCodexPlanInNotch"), hint("in the island header")),
+    hint("Shows your Codex plan usage (5-hour and weekly limits, free resets left). Coucou asks the Codex CLI (codex app-server) when the pill shows, at most once a minute and never while paused; nothing is installed. Codex must be signed in with ChatGPT."),
   ];
 }
 
@@ -129,6 +147,7 @@ export function generalDetail(ctx: SettingsCtx): HTMLElement {
     autoCloseRow(ctx),
     row("Island lives on", screenSelect(ctx)),
     row("Launch at startup", toggle(ctx.settings.autostart, (v) => { ctx.settings.autostart = v; void ctx.save(); })),
+    ...planRows(ctx),
     ...recapRows(),
   );
 }

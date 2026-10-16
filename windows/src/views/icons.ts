@@ -20,6 +20,8 @@ export const ICONS = {
   // chevron.right
   chevronRight: "M9 5.5 15.5 12 9 18.5",
   chevronLeft: "M15 5.5 8.5 12 15 18.5",
+  // arrow.clockwise (stroke)
+  arrowClockwise: "M19 12a7 7 0 1 1-2.05-4.95M19 4.5V8h-3.5",
   // checkmark
   check: "M5 12.5 9.5 17 19 7.5",
   // arrow.up (send)

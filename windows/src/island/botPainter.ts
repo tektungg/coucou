@@ -7,6 +7,7 @@ import { actFor, type MusicContext } from "../mochi/acts";
 import { hexToRGB, type BotEngine } from "../mochi/engine";
 import { h } from "../views/dom";
 import { SeasonCache, parseOutfit } from "../mochi/wardrobe";
+import { planCardColor } from "../views/planState";
 
 /** Extra canvas height above and below Mochi for his particles and props. */
 export const BOT_OVERHANG = 40;
@@ -104,11 +105,13 @@ export class BotPainter {
     this.engine.setOutfit(shows ? outfit : "none", !inWardrobe);
   }
 
-  /** The focused pill's colour and act, where he looks, and the drop slot. */
+  /** The focused pill's (or the open plan card's) colour and act, where he looks, and the drop slot. */
   private dress(music: MusicContext, screenCx: number, cy: number) {
     const engine = this.engine;
     const focus = State.focusTask;
-    engine.bodyColor = focus?.isIntegration ? hexToRGB(focus.color) : null;
+    // While a plan card is open Mochi wears the plan's colour, like its pill.
+    const color = planCardColor() ?? (focus?.isIntegration ? focus.color : null);
+    engine.bodyColor = color ? hexToRGB(color) : null;
     engine.act = actFor(focus, focus ? State.integrations[focus.id]?.data : null, performance.now(), music);
     engine.particleOverhang = BOT_OVERHANG;
     engine.lookX = Math.tanh((State.mouse.x - screenCx) / LOOK_X_PX);

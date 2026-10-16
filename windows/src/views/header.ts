@@ -8,7 +8,9 @@ import { h, svg, clear, face } from "./dom";
 import { ICONS } from "./icons";
 import { State } from "../core/state";
 import type { IslandViewName } from "../core/layout";
-import { PAGER_MAX_W, pagerChips, pillLabel, type PagerChip } from "./pager";
+import { pagerBudget, pagerChips, pillLabel, type PagerChip } from "./pager";
+import { buildPlanPills } from "./plan";
+import { visiblePlanPills } from "./planState";
 import { sessionChips, type StopPill } from "./carousel";
 import type { ViewActions, ViewHost } from "./views";
 
@@ -70,8 +72,10 @@ function buildPager(actions: ViewActions) {
     const tasks = State.visibleTasks;
     const focus = State.focusTask?.id ?? "";
     const show = State.view === "overview" && tasks.length > 0;
+    // Plan pills in the header take their room from the strip.
+    const budget = pagerBudget(visiblePlanPills());
     const next = show
-      ? `${focus}|${tasks.map((t) => `${t.id}:${t.color}:${t.name}:${t.pillBadge ?? ""}`).join(",")}`
+      ? `${budget}|${focus}|${tasks.map((t) => `${t.id}:${t.color}:${t.name}:${t.pillBadge ?? ""}`).join(",")}`
       : "";
     if (next === key) return;
     key = next;
@@ -81,7 +85,7 @@ function buildPager(actions: ViewActions) {
       tasks.map((t) => ({ id: t.id, name: t.name, color: t.color, badge: t.pillBadge })), focus, SESSIONS_CHIP);
     // The open header is always 640 px wide, so the strip's room is a constant
     // (measuring it would read the island mid-animation, while it still grows).
-    const layout = pagerChips(grouped.pills, grouped.focusChip, PAGER_MAX_W);
+    const layout = pagerChips(grouped.pills, grouped.focusChip, budget);
     const byId = new Map(grouped.pills.map((p) => [p.id, p]));
     for (const chip of layout.chips) el.append(chipEl(chip, byId.get(chip.id), actions));
     const more = layout.overflow;
@@ -91,8 +95,9 @@ function buildPager(actions: ViewActions) {
   return { el, sync };
 }
 
-/** Mic (while an app records), Settings and sound, as round soft buttons. */
+/** Plan pills (when turned on), mic (while an app records), Settings and sound, as round soft buttons. */
 function buildHeaderActions(actions: ViewActions, go: Go) {
+  const plans = buildPlanPills();
   const gear = h("button", { class: "hbtn", title: "Settings", onclick: () => go("settings") }, svg(ICONS.gear, 14));
   const sound = h("button", { class: "hbtn", title: "Mute", onclick: () => actions.toggleSound() }, svg(ICONS.speakerOn, 14));
   // One click mutes or unmutes the microphone, from any pill.
@@ -114,7 +119,7 @@ function buildHeaderActions(actions: ViewActions, go: Go) {
     mic.title = badge === "live" ? `${users} is using the mic. Click to mute` : `Mic muted (${users}). Click to unmute`;
   }
   return {
-    el: h("div", { class: "header-actions" }, mic, gear, sound),
+    el: h("div", { class: "header-actions" }, ...plans.els, mic, gear, sound),
     sync(v: IslandViewName) {
       gear.classList.toggle("on", v === "settings");
       clear(gear);
@@ -122,6 +127,7 @@ function buildHeaderActions(actions: ViewActions, go: Go) {
       clear(sound);
       sound.append(svg(State.settings.soundEnabled ? ICONS.speakerOn : ICONS.speakerOff, 14));
       syncMic();
+      plans.sync();
     },
   };
 }

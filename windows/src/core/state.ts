@@ -180,6 +180,10 @@ export interface Settings {
   pillLayout: number;
   /** Global shortcuts the user changed, by action id; the others keep their default (core/shortcuts.ts). */
   shortcuts: Bindings;
+  /** The "Claude 73%" plan pill in the open island's header (views/plan.ts); off by default. */
+  showPlanInNotch: boolean;
+  /** The "Codex 12%" plan pill in the open island's header; off by default. */
+  showCodexPlanInNotch: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -203,6 +207,8 @@ export const DEFAULT_SETTINGS: Settings = {
   lyricsEnabled: true,
   lyricsRomanized: false,
   pillLayout: 1,
+  showPlanInNotch: false,
+  showCodexPlanInNotch: false,
 };
 
 type Listener = () => void;

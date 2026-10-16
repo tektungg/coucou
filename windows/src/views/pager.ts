@@ -29,6 +29,14 @@ export interface PagerLayout {
  * header: about 370 px with the mic button showing, less a margin.
  */
 export const PAGER_MAX_W = 340;
+/**
+ * Room one plan pill takes from the strip (views/plan.ts): "Claude 100%" at
+ * most (style.css .plan-pill max-width) and the gap before it.
+ */
+export const PLAN_PILL_W = 104;
+
+/** The strip's room with `planPills` plan pills in the header. */
+export const pagerBudget = (planPills: number) => PAGER_MAX_W - planPills * PLAN_PILL_W;
 /** A chip with only its face, and the gap between chips (style.css .pchip). */
 export const CHIP_W = 24;
 export const CHIP_GAP = 4;
