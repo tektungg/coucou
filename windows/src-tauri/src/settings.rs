@@ -4,8 +4,10 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// A field the file lacks takes its value from `Default`, so a settings.json
+/// written by an older build still loads, whatever has been added since.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct Settings {
     pub sound_enabled: bool,
     pub sound_volume: f64,
@@ -160,26 +162,25 @@ fn settings_path() -> PathBuf {
     config_dir().join("settings.json")
 }
 
+/// The preferences on disk. A corrupt or unreadable settings.json gives the
+/// defaults but is never lost (prefs_file.rs).
 pub fn load() -> Settings {
-    let mut settings: Settings = match std::fs::read(settings_path()) {
-        Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_default(),
-        Err(_) => Settings::default(),
-    };
+    let mut settings: Settings = crate::prefs_file::load_from(&settings_path());
     settings.active_integrations = migrate_integrations(&settings.active_integrations);
     if migrate_pills(&mut settings) {
         // Saved at once: a migration that ran on every start would bring back
         // a pill the user later switched off.
-        let _ = save(&settings);
+        if let Err(err) = save(&settings) {
+            crate::log::line(format!("settings: could not save the pill migration: {err}"));
+        }
     }
     settings
 }
 
+/// Writes the preferences whole (temporary file, then rename).
 pub fn save(settings: &Settings) -> std::io::Result<()> {
-    let dir = config_dir();
-    crate::platform::ensure_private_dir(&dir)?;
-    let json = serde_json::to_vec_pretty(settings)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-    std::fs::write(settings_path(), json)
+    crate::platform::ensure_private_dir(&config_dir())?;
+    crate::prefs_file::save_to(&settings_path(), settings)
 }
 
 #[cfg(test)]
@@ -262,6 +263,20 @@ mod tests {
         assert_eq!(json["lyricsEnabled"], false);
         let back: Settings = serde_json::from_value(json).unwrap();
         assert!(!back.lyrics_enabled);
+    }
+
+    /// One bad value (hand-edited, or from a bug) must not cost every other
+    /// preference: this build's own fields survive it.
+    #[test]
+    fn a_bad_field_keeps_this_builds_other_preferences() {
+        let file = r#"{"soundVolume":"loud","messageApps":["discord"],"lyricsEnabled":false,
+            "spaceTimeboxDir":"D:\\mcp\\timebox","chatProvider":"cli"}"#;
+        let s: Settings = crate::prefs_file::parse(file.as_bytes()).expect("salvaged, not thrown away");
+        assert_eq!(s.sound_volume, Settings::default().sound_volume);
+        assert_eq!(s.message_apps, vec!["discord".to_string()]);
+        assert!(!s.lyrics_enabled);
+        assert_eq!(s.space_timebox_dir, r"D:\mcp\timebox");
+        assert_eq!(s.chat_provider, "cli");
     }
 
     /// A settings.json written before the CLI chat existed must still load,

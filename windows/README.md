@@ -555,6 +555,22 @@ Debug builds can exercise these paths: `COUCOU_PANIC_AT_SETUP=1` panics in
 setup, and `COUCOU_FAIL_ISLAND=<n>` fails the first `n` island attempts (5 or
 more takes the message-box path).
 
+### Preferences file
+
+`%APPDATA%\Coucou\settings.json` never loses what you had in it
+(`src-tauri/src/prefs_file.rs`, ported from upstream `d8d2939`):
+
+- A UTF-8 BOM (Notepad, PowerShell 5) or an empty file is fine. A value of
+  the wrong kind falls back to its default on its own; the other settings stay.
+- A file that is not JSON at all is copied aside as
+  `settings.json.corrupt-YYYYMMDD-HHMMSS` (once per content) and Coucou starts
+  on the defaults. The log says `settings: … is not usable, kept as …`.
+- A file that can't be read at launch (locked by another program) is never
+  saved over unseen: the next save copies it aside as `settings.json.unread-…`,
+  or is refused while it is still locked.
+- Saves write a temporary file and rename it over, so a crash or a full disk
+  leaves the previous file whole.
+
 ## What's different from the Mac version
 
 - No notch, so the island lives at the top centre of the screen and retracts into

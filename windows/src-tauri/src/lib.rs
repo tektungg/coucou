@@ -19,6 +19,7 @@ mod notify;
 mod personal;
 mod pipe;
 mod platform;
+mod prefs_file;
 mod quota;
 mod rc_guard;
 mod romanize;
@@ -86,7 +87,7 @@ fn save_settings(app: AppHandle, shared: State<Shared>, settings: Settings) {
         (screen_changed, autostart_changed)
     };
     if let Err(err) = settings::save(&settings) {
-        eprintln!("[coucou] could not save settings: {err}");
+        log::line(format!("settings: could not save: {err}"));
     }
     if autostart_changed {
         autostart::sync(&app, settings.autostart);
@@ -217,7 +218,9 @@ fn hooks_apply(
     let updated = {
         let mut current = shared.settings.lock().unwrap();
         current.hooks_installed = install;
-        let _ = settings::save(&current);
+        if let Err(err) = settings::save(&current) {
+            log::line(format!("settings: could not save the hooks state: {err}"));
+        }
         current.clone()
     };
     let _ = app.emit("settings-changed", updated);
