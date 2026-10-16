@@ -811,6 +811,12 @@ identity. It is Windows-only: the Mac app keeps the App Store look.
   `node scripts/shoot.mjs <dir> <url>... --size=900x340 --wait=2200`
   screenshots them in headless Edge, in real time. Edge's own `--screenshot`
   runs on virtual time, which stops the island halfway through opening.
+  It drives Edge over `--remote-debugging-pipe` (`scripts/cdp-pipe.mjs`), not
+  a debugging port: when the script ends, even killed by a timeout or Ctrl+C,
+  the pipe closes and Edge exits with every page window it opened. The port
+  version left orphan Edges behind, and their hidden "Coucou — Mochi Pop
+  preview" windows piled up in Alt+Tab. Profiles of killed runs
+  (`%TEMP%\coucou-shoot-*`) are swept by the next run after an hour.
 
 ### Layout
 
@@ -824,7 +830,7 @@ windows/
   src-tauri/           Rust backend: window, named pipe, Claude API, pollers
   hook/                coucou-hook.exe, the Claude Code relay
   patches/             vendored tauri-runtime-wry with the Rc race fix
-  scripts/             icon generator, packaging, rc-stress.ps1, shoot.mjs
+  scripts/             icon generator, packaging, rc-stress.ps1, shoot.mjs + cdp-pipe.mjs
   dev/                 browser previews: island views, Settings, upload, Mochi acts, Music card
 ```
 
