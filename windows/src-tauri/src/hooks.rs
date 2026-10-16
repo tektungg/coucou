@@ -307,8 +307,7 @@ pub fn write(install: bool, fingerprint: &str) -> Result<String, String> {
 
     // A dotfiles setup often makes settings.json a symlink: write to the file it
     // points at, so the link survives the rename below.
-    #[cfg(unix)]
-    let path = std::fs::canonicalize(&path).unwrap_or(path);
+    let path = resolve_link(&path);
 
     // Write beside the target and rename over it: a crash or a full disk leaves
     // the original settings.json intact rather than half a file.
@@ -329,6 +328,18 @@ pub fn write(install: bool, fingerprint: &str) -> Result<String, String> {
 /// On Linux a fresh file would get the umask's 0644, and settings.json can hold
 /// API keys in its `env` block: the new file is created readable by us only,
 /// then given the original's permissions, so the rename never widens them.
+/// The file a symlinked settings.json points at (on Windows too, upstream
+/// 5bddaec), else `path` itself. Only a link is resolved: canonicalizing a plain
+/// file on Windows would hand back a verbatim (`\\?\`) path for no reason.
+fn resolve_link(path: &Path) -> PathBuf {
+    let is_link = std::fs::symlink_metadata(path).map(|m| m.file_type().is_symlink()).unwrap_or(false);
+    if is_link {
+        std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+    } else {
+        path.to_path_buf()
+    }
+}
+
 fn write_like(temp: &Path, original: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     let mut options = std::fs::OpenOptions::new();
@@ -512,6 +523,36 @@ fn unified_diff(before: &str, after: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_plain_settings_file_is_written_where_it_is() {
+        let dir = std::env::temp_dir().join(format!("coucou-link-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("settings.json");
+        std::fs::write(&file, "{}").unwrap();
+        assert_eq!(super::resolve_link(&file), file);
+        // Not there at all: still itself (a first install creates it).
+        assert_eq!(super::resolve_link(&dir.join("missing.json")), dir.join("missing.json"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_symlinked_settings_file_is_written_through_the_link() {
+        let dir = std::env::temp_dir().join(format!("coucou-link2-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let target = dir.join("dotfiles-settings.json");
+        std::fs::write(&target, "{}").unwrap();
+        let link = dir.join("settings.json");
+        #[cfg(windows)]
+        let made = std::os::windows::fs::symlink_file(&target, &link);
+        #[cfg(unix)]
+        let made = std::os::unix::fs::symlink(&target, &link);
+        // Windows needs Developer Mode or admin rights for a symlink: skip without them.
+        if made.is_ok() {
+            assert_eq!(super::resolve_link(&link), std::fs::canonicalize(&target).unwrap());
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     use super::*;
 
     const WHERE: &str = "settings.json";
