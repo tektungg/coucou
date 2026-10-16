@@ -82,7 +82,7 @@ fn salvage<T: Serialize + DeserializeOwned + Default>(fields: Map<String, Value>
 /// The log line for a field `salvage` dropped. The name comes from the file,
 /// so it is escaped: a line break in it cannot fake another log line.
 fn unusable_field(key: &str) -> String {
-    format!("settings: field {key:?} is not usable, its default is used instead")
+    format!("prefs: field {key:?} is not usable, its default is used instead")
 }
 
 /// Loads the file at `path`, or the defaults when it is missing or unusable.
@@ -91,7 +91,7 @@ pub fn load_from<T: Serialize + DeserializeOwned + Default>(path: &Path) -> T {
         Ok(bytes) => bytes,
         Err(err) if err.kind() == ErrorKind::NotFound => return T::default(),
         Err(err) => {
-            note(format!("settings: can't read {}: {err}, using the defaults", path.display()));
+            note(format!("prefs: can't read {}: {err}, using the defaults", path.display()));
             protect(path);
             return T::default();
         }
@@ -99,12 +99,12 @@ pub fn load_from<T: Serialize + DeserializeOwned + Default>(path: &Path) -> T {
     parse(&bytes).unwrap_or_else(|| {
         match set_aside(path, "corrupt", &bytes) {
             Ok(copy) => note(format!(
-                "settings: {} is not usable, kept as {}, using the defaults",
+                "prefs: {} is not usable, kept as {}, using the defaults",
                 path.display(),
                 copy.display()
             )),
             Err(err) => {
-                note(format!("settings: {} is not usable and could not be copied: {err}", path.display()));
+                note(format!("prefs: {} is not usable and could not be copied: {err}", path.display()));
                 protect(path);
             }
         }
@@ -130,7 +130,7 @@ fn keep_what_was_not_loaded(path: &Path) -> std::io::Result<()> {
     match std::fs::read(path) {
         Ok(bytes) => {
             let copy = set_aside(path, "unread", &bytes)?;
-            note(format!("settings: {} was never loaded, kept as {}", path.display(), copy.display()));
+            note(format!("prefs: {} was never loaded, kept as {}", path.display(), copy.display()));
         }
         // Gone since: nothing is left to protect.
         Err(err) if err.kind() == ErrorKind::NotFound => {}

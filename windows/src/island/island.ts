@@ -26,6 +26,7 @@ import {
 import { BotHover } from "./botHover";
 import { BotPainter } from "./botPainter";
 import { CompactBar, lyricMode } from "./compactBar";
+import { Dizzy } from "./dizzy";
 import { FileDrop } from "./fileDrop";
 import { IslandStateMachine } from "./fsm";
 import { buildViewActions } from "./viewActions";
@@ -96,8 +97,10 @@ export class Island {
   /** The overview was last sized for the Messages card (MESSAGES_OVERVIEW_H). */
   private tallOverview = false;
 
-  private confusedRecovery: number | null = null;
-  private prevViewBeforeConfused: IslandViewName = "overview";
+  private dizzy = new Dizzy(this);
+  /** Moments the Monday recap may open (recap/recap.ts): greeting over, waking up. */
+  onGreetingDone: (() => void) | null = null;
+  onWake: (() => void) | null = null;
   private lastSyncedView: IslandViewName | null = null;
 
   constructor(root: HTMLElement) {
@@ -127,8 +130,11 @@ export class Island {
       this.tallOverview = tall;
       if (State.mode === "expanded" && State.view === "overview") this.animateGeometry(!tall);
     });
-    this.engine.onDizzy = () => this.handleDizzy();
-    this.greeting.onComplete = () => this.fsm.greetComplete();
+    this.engine.onDizzy = () => this.dizzy.start();
+    this.greeting.onComplete = () => {
+      this.fsm.greetComplete();
+      this.onGreetingDone?.();
+    };
     State.subscribe(() => {
       this.dirty = true;
       this.ensureRunning();
@@ -229,6 +235,7 @@ export class Island {
           break;
       }
       State.notify();
+      if (from === "hidden") this.onWake?.();
     };
   }
 
@@ -583,26 +590,6 @@ export class Island {
     const cy = rect.y + this.botCy.value;
     const radius = this.botSize.value / 2;
     return (x - cx) ** 2 + (y - cy) ** 2 <= radius * radius;
-  }
-
-  /** Three slaps → dizzy + confused view for 3.3 s, then back. */
-  private handleDizzy() {
-    this.prevViewBeforeConfused = State.view;
-    State.stateOverride = "dizzy";
-    this.engine.setState("dizzy");
-    Sound.play("dizzy");
-    this.alert("confused");
-    if (this.confusedRecovery != null) window.clearTimeout(this.confusedRecovery);
-    this.confusedRecovery = window.setTimeout(() => {
-      this.confusedRecovery = null;
-      State.stateOverride = null;
-      this.engine.setState(State.effectiveState);
-      if (State.view === "confused") {
-        const fallback = State.defaultView();
-        this.setView(this.prevViewBeforeConfused === "confused" ? fallback : this.prevViewBeforeConfused);
-      }
-      this.engine.triggerEmote("happy");
-    }, 3300);
   }
 
   // ── Frame loop ──────────────────────────────────────────────────────────────

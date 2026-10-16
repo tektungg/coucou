@@ -205,6 +205,8 @@ async fn handle(app: AppHandle, mut pipe: impl Relay) {
         .to_string();
 
     note_session_window(&pipe, &payload, &event);
+    // Counts for the weekly recap: never the command, path or prompt itself.
+    crate::recap::observe(&app, &payload);
 
     // AskUserQuestion comes in through the relay's `--ask` PreToolUse hook and
     // waits for the island's answers, exactly like a permission request.
@@ -222,6 +224,7 @@ async fn handle(app: AppHandle, mut pipe: impl Relay) {
         let pending = app.state::<Pending>();
         pending.0.lock().unwrap().insert(id.clone(), tx);
     }
+    crate::recap::note_request(&app, &id, &payload);
     payload["request_id"] = json!(id);
     log::line(format!("hook {} id={id}", if is_ask { "AskUserQuestion" } else { "PermissionRequest" }));
     let _ = app.emit_to(WINDOW_LABEL, "hook", payload);

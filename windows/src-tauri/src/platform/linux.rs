@@ -39,6 +39,38 @@ fn xdg(var: &str, fallback: &str) -> PathBuf {
         .unwrap_or_else(|| home_dir().join(fallback))
 }
 
+/// Where a saved image goes, best first: the XDG pictures folder named in
+/// ~/.config/user-dirs.dirs, then ~/Pictures, ~/Downloads and the home folder.
+/// The caller takes the first one that exists. From upstream 8d47969.
+pub fn picture_dirs() -> Vec<PathBuf> {
+    let home = home_dir();
+    let mut dirs = Vec::new();
+    let user_dirs = xdg("XDG_CONFIG_HOME", ".config").join("user-dirs.dirs");
+    if let Ok(text) = std::fs::read_to_string(user_dirs) {
+        if let Some(dir) = xdg_user_dir(&text, "XDG_PICTURES_DIR", &home) {
+            dirs.push(dir);
+        }
+    }
+    dirs.push(home.join("Pictures"));
+    dirs.push(home.join("Downloads"));
+    dirs.push(home);
+    dirs
+}
+
+/// `XDG_PICTURES_DIR="$HOME/Pictures"` → /home/me/Pictures. Only the two forms
+/// xdg-user-dirs writes are understood: "$HOME/…" and an absolute path.
+fn xdg_user_dir(text: &str, key: &str, home: &Path) -> Option<PathBuf> {
+    let line = text.lines().map(str::trim).find(|l| l.starts_with(key))?;
+    let value = line.strip_prefix(key)?.trim_start().strip_prefix('=')?.trim();
+    let value = value.strip_prefix('"')?.strip_suffix('"')?;
+    let path = match value.strip_prefix("$HOME") {
+        Some(rest) => home.join(rest.trim_start_matches('/')),
+        None => PathBuf::from(value),
+    };
+    // "$HOME/" alone means "no pictures folder", by the spec.
+    (path.is_absolute() && path != home).then_some(path)
+}
+
 /// ~/.config/coucou — preferences.
 pub fn config_dir() -> PathBuf {
     xdg("XDG_CONFIG_HOME", ".config").join("coucou")

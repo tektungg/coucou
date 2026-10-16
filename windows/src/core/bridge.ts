@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { Settings } from "./state";
+import type { RecapHistory, RecapPrefs } from "../recap/summary";
 import type { Lyrics, LyricHit } from "../views/lyrics";
 
 /** Credential Manager entry of the chat's Anthropic API key. */
@@ -66,6 +67,20 @@ export const Bridge = {
   revealSoundsFolder: () => call<void>("reveal_sounds_folder"),
   /** Tells the island to read the sounds folder again ("sounds-changed"). */
   reloadSounds: () => call<void>("reload_sounds"),
+  // ── Weekly recap ──────────────────────────────────────────────────────────
+  /** Turns and decisions from `since` (Unix seconds) on, plus the recap prefs. */
+  recapHistory: (since: number) => call<RecapHistory>("recap_history", { since: Math.floor(since) }),
+  recapPrefs: () => call<RecapPrefs>("recap_prefs"),
+  recapSetEnabled: (enabled: boolean) => call<void>("recap_set_enabled", { enabled }),
+  recapSetHideProjects: (hide: boolean) => call<void>("recap_set_hide_projects", { hide }),
+  /** `week` is the Monday (YYYY-MM-DD) the recap opened on its own for. */
+  recapMarkShown: (week: string) => call<void>("recap_mark_shown", { week }),
+  recapClear: () => call<void>("recap_clear"),
+  /** Writes the PNG (a data URL) into Pictures or Downloads; returns its path. */
+  recapSavePng: (data: string, week: string) => callOrThrow<string>("recap_save_png", { data, week }),
+  /** Opens the folder of the image saved last. */
+  recapRevealSaved: () => call<void>("recap_reveal_saved"),
+
   /** Displays the island can be pinned to: `key` is what `settings.screen` stores. */
   listMonitors: () => call<DisplayChoice[]>("list_monitors"),
   /** Corrects the webview zoom when its pixel ratio is not the window's scale; true when it changed. */

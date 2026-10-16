@@ -8,6 +8,7 @@ import { State, type Settings } from "./core/state";
 import { Island } from "./island/island";
 import { registerHookHandlers } from "./island/hooks";
 import { registerIntegrationHandlers, refreshConfigured } from "./island/integrations";
+import { Recap } from "./recap/recap";
 
 /** Pause has to reach Rust too, or the pollers keep calling out. */
 function setPaused(on: boolean) {
@@ -16,7 +17,7 @@ function setPaused(on: boolean) {
   void Bridge.setPaused(on);
 }
 
-/** The tray menu: Settings, Open, Pause / Resume. */
+/** The tray menu: Open, Weekly recap, Settings, Pause / Resume. */
 async function registerTrayHandler(island: Island) {
   await onEvent<string>("tray", (what) => {
     switch (what) {
@@ -27,6 +28,10 @@ async function registerTrayHandler(island: Island) {
       case "open":
         setPaused(false);
         island.alert(State.defaultView());
+        break;
+      case "recap":
+        setPaused(false);
+        void Recap.open(island);
         break;
       case "pause":
         setPaused(!State.paused);
@@ -87,6 +92,12 @@ async function main() {
 
   registerHookHandlers(island);
   registerIntegrationHandlers(island);
+
+  // Monday recap: app start (greeting over), an agent starting work, waking up.
+  const checkRecap = () => void Recap.check(island);
+  island.onGreetingDone = checkRecap;
+  island.onWake = checkRecap;
+  await onEvent<null>("recap-check", checkRecap);
 
   island.launch();
 

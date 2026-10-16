@@ -2994,3 +2994,121 @@ body.shelf-drop .card:has(.shelf-card) {
   background: rgba(255, 255, 255, 0.08);
   color: var(--dim-2);
 }
+
+/* ── Weekly recap (views/recap.ts), Mochi Pop ──────────────────────────────
+   WeeklyRecapCardView from upstream 9806b66: text from the 116 px gutter,
+   indigo wash, the week's numbers as pastel chips. */
+
+.recap-stack {
+  padding: 6px 16px 6px 116px;
+  gap: 6px;
+}
+
+/* The one-line meta rows clip their text, so flex would shrink them to nothing. */
+.recap-stack > * {
+  flex-shrink: 0;
+}
+
+.recap-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.recap-title {
+  font: 700 12.5px var(--font);
+  color: var(--acc-2);
+}
+
+.recap-range {
+  font: 500 11px var(--font);
+  color: var(--dim-2);
+  white-space: nowrap;
+}
+
+.recap-chips {
+  display: flex;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.recap-chip {
+  padding: 5px 10px 4px;
+  border-radius: 14px;
+  background: var(--soft-2);
+}
+
+.recap-chip .v {
+  font: 800 15px var(--font);
+  color: var(--ink);
+}
+
+.recap-chip .l {
+  font: 500 10px var(--font);
+  color: var(--dim-2);
+}
+
+.recap-meta {
+  display: flex;
+  gap: 5px;
+  font: 500 11px var(--font);
+  color: var(--dim-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recap-meta .n {
+  color: var(--ink-2);
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recap-meta .sep {
+  color: var(--dim-4);
+}
+
+.recap-stack .actions {
+  margin-top: 2px;
+}
+
+.recap-share {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 16px;
+  padding: 8px 16px 8px 116px;
+}
+
+.recap-thumb {
+  flex: 0 0 64px;
+  width: 64px;
+  height: 114px;
+  border-radius: 10px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+}
+
+.recap-share-side {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.recap-status {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-height: 14px;
+  font: 500 11px var(--font);
+  color: var(--dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recap-link {
+  color: var(--acc-2);
+  padding: 0;
+}

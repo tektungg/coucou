@@ -10,6 +10,7 @@ import { State, type QuestionInfo } from "../core/state";
 import type { IslandViewName } from "../core/layout";
 import { buildPrompt } from "./chat";
 import { buildChoose, buildUpload, buildUploading } from "./upload";
+import { buildRecap } from "./recap";
 import { buildAnswers, type AskAnswer, type AskItem } from "../island/askQuestion";
 import { buildOverview } from "./overview";
 import { agentWho, btn, card, stack } from "./parts";
@@ -583,6 +584,7 @@ export function buildViews(
   map.set("upload", buildUpload());
   map.set("uploading", buildUploading());
   map.set("choose", buildChoose(actions));
+  map.set("recap", buildRecap(actions));
   // Not in the Windows v1: sending a file by email, window attach + web result.
   map.set("mail", buildPlaceholder("Sending by email isn't in this version.", ""));
   map.set("searching", buildPlaceholder("Claude is searching…", ""));

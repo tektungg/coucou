@@ -22,7 +22,8 @@ export type IslandViewName =
   | "result"
   | "note"
   | "settings"
-  | "greeting";
+  | "greeting"
+  | "recap";
 
 export type BotStateName =
   | "idle"
@@ -94,6 +95,10 @@ export const VIEW_LAYOUTS: Record<IslandViewName, ViewLayout> = {
   note: { height: 160, botX: 60, botY: null, botDiameter: 50, agentMode: "column" },
   settings: { height: 160, botX: 54, botY: null, botDiameter: 46, agentMode: "none" },
   greeting: { height: 150, botX: 320, botY: 90, botDiameter: 0, agentMode: "none" },
+  // Mac: 160; upstream Windows 184 for the two lines with top agent, project,
+  // busiest day, longest session, permissions and questions (9806b66). Taller
+  // here: the Mochi Pop header and chips take more room.
+  recap: { height: 214, botX: 62, botY: null, botDiameter: 58, agentMode: "column" },
 };
 
 // The upload views above are only the fallback geometry. Once a file is actually

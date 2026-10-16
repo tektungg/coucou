@@ -1,5 +1,5 @@
-// General screen: sound, auto-close, which display the island lives on, and
-// launching at startup.
+// General screen: sound, auto-close, which display the island lives on,
+// launching at startup and the weekly recap's history.
 
 import { Bridge, type DisplayChoice } from "../core/bridge";
 import { SOUND_NAMES } from "../core/sound";
@@ -54,6 +54,35 @@ function openOnHoverRows(ctx: SettingsCtx): HTMLElement[] {
   ];
 }
 
+/** How long "History cleared." stays before the button can be used again. */
+const CLEARED_MS = 2400;
+
+/** Weekly recap: keep the history or not, and clear it. The prefs live with it in Rust. */
+function recapRows(): HTMLElement[] {
+  const feedback = hint("");
+  const sw = toggle(true, (v) => void Bridge.recapSetEnabled(v));
+  void Bridge.recapPrefs().then((prefs) => {
+    if (prefs) sw.classList.toggle("on", prefs.enabled);
+  });
+  const clearBtn = h("button", {
+    class: "danger",
+    text: "Clear history",
+    onclick: async () => {
+      clearBtn.disabled = true;
+      await Bridge.recapClear();
+      feedback.textContent = "History cleared.";
+      window.setTimeout(() => {
+        clearBtn.disabled = false;
+        feedback.textContent = "";
+      }, CLEARED_MS);
+    },
+  }) as HTMLButtonElement;
+  return [
+    row("Weekly recap", sw, hint("Keep a history of my coding sessions"), clearBtn, feedback),
+    hint("Counts and project names only, never commands, files or prompts. Kept on this computer for 12 weeks; the recap opens on Mondays from 8 am, or from the tray."),
+  ];
+}
+
 function autoCloseRow(ctx: SettingsCtx): HTMLElement {
   const field = h("input", {
     class: "num", type: "number", min: String(AUTO_CLOSE_MIN), max: String(AUTO_CLOSE_MAX), step: "1",
@@ -100,5 +129,6 @@ export function generalDetail(ctx: SettingsCtx): HTMLElement {
     autoCloseRow(ctx),
     row("Island lives on", screenSelect(ctx)),
     row("Launch at startup", toggle(ctx.settings.autostart, (v) => { ctx.settings.autostart = v; void ctx.save(); })),
+    ...recapRows(),
   );
 }

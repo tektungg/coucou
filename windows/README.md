@@ -47,7 +47,7 @@ installs for the current user only — no admin prompt.
 | Rest the pointer on Mochi for two seconds | Hearts |
 | Drag a file onto the island | Mochi turns into a box, swallows it, then offers to answer questions about it |
 | `Esc` | Closes the island |
-| Tray icon | Open, Settings…, Pause, Quit |
+| Tray icon | Open, Weekly recap, Settings…, Pause, Quit |
 
 Everything else happens on its own: a Claude Code permission request opens the
 island with **Deny / Allow**, a finished session shows what it did, and
@@ -116,6 +116,26 @@ never blocked or slowed down by Coucou.** If nobody answers a permission request
 in time, Coucou stays quiet and Claude Code asks in the terminal as usual.
 
 It works from any terminal — Windows Terminal, PowerShell, VS Code, Git Bash.
+
+### Weekly recap
+
+On Monday from 8 am, the first time Coucou starts, an agent starts work or the
+island wakes up, and nothing else is on screen (no card waiting, no chat), the
+island opens on **last week**: time coding, sessions, files, +lines / −lines,
+commands, then the top agent, top project, busiest day, longest session,
+permissions allowed and denied, and questions answered. Once a week; the tray's
+**Weekly recap** opens it any day. **Share image** draws a 1080×1920 picture of
+the week (project names can be left out), which **Save image** puts in
+Pictures (or Downloads) and **Copy** puts on the clipboard.
+
+Only counts and two names are kept per turn (the agent's pill and the project
+folder's last component), never a command, a path, file contents or a prompt,
+in `%LOCALAPPDATA%\Coucou\recap.json`, for 12 weeks (`src-tauri/src/recap/`,
+read and written through `prefs_file.rs`, so a corrupt file is set aside, not
+lost). The weeks, the busiest day and the rest are worked out on the island in
+the user's own time zone (`recap/summary.ts`). Settings → General → Weekly
+recap turns the history off or clears it. From upstream `8d47969`, `43c13ed`,
+`9806b66`; restyled as Mochi Pop and a little taller here.
 
 ### Live diff
 
@@ -473,10 +493,11 @@ never cherry-picked.
 | `2261334` | Open on hover as a setting, your own sounds | on by default here (this build always opened on hover); `sounds.rs` |
 | `c90d30b` | Open terminal brings the session's window forward | `session_window.rs`; the Claude Desktop part needs agents.rs, left out |
 | `4b0a411`, `fbc4605`, `122e130` | Live diff and Claude's final line | on the board tiles and Home's card here, not a ticker |
+| `8d47969`, `43c13ed`, `9806b66` | Weekly recap | `recap/` split by job, history through `prefs_file.rs`, Mochi Pop card |
 
 Not ported: `66be53e` (Antigravity's `PreToolUse` answer): this build's relay
 has no Antigravity path. Upstream's bigger features (more agents,
-shortcuts, wardrobe, desktop Mochi, GitHub pulse, weekly recap, Flow dictation,
+shortcuts, wardrobe, desktop Mochi, GitHub pulse, Flow dictation,
 Notetaker, « OK Coucou ») are not in this build yet.
 
 ## Build it yourself
@@ -664,7 +685,7 @@ more takes the message-box path).
   the wrong kind falls back to its default on its own; the other settings stay.
 - A file that is not JSON at all is copied aside as
   `settings.json.corrupt-YYYYMMDD-HHMMSS` (once per content) and Coucou starts
-  on the defaults. The log says `settings: … is not usable, kept as …`.
+  on the defaults. The log says `prefs: … is not usable, kept as …`.
 - A file that can't be read at launch (locked by another program) is never
   saved over unseen: the next save copies it aside as `settings.json.unread-…`,
   or is refused while it is still locked.

@@ -7,6 +7,7 @@
 //   &many              four agent sessions instead of two (the board's +N)
 //   &diff              the working session has just edited a file (+N −M chip)
 //   &diff=open         …and its diff card is open
+//   view=recap[&share] the weekly recap of the sample week (its share panel)
 // Mochi still animates; screenshots are taken after it has settled.
 
 import type { AskItem } from "../src/island/askQuestion";
@@ -130,7 +131,17 @@ State.isPinned = true;
 const root = document.getElementById("root")!;
 const island = new Island(root);
 island.applySettings();
+if (view === "recap") {
+  const { Recap } = await import("../src/recap/recap");
+  const { previousWeekStart, sampleHistory, summarize } = await import("../src/recap/summary");
+  const start = previousWeekStart(new Date());
+  Recap.summary = summarize(sampleHistory(start), start);
+  Recap.version++;
+}
 island.alert(view);
+if (view === "recap" && params.has("share")) {
+  window.setTimeout(() => (document.querySelector(".recap-stack .btn.primary") as HTMLElement | null)?.click(), 400);
+}
 if (params.get("diff") === "open") {
   window.setTimeout(() => (document.querySelector(".btile-diff") as HTMLElement | null)?.click(), 400);
 }

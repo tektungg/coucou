@@ -21,6 +21,7 @@ mod personal;
 mod pipe;
 mod platform;
 mod prefs_file;
+mod recap;
 mod quota;
 mod rc_guard;
 mod romanize;
@@ -272,6 +273,7 @@ fn hooks_apply(
 
 #[tauri::command]
 fn approval_decision(app: AppHandle, request_id: String, decision: String) {
+    recap::record_decision(&app, &request_id, &decision);
     pipe::answer(&app, &request_id, &decision);
 }
 
@@ -287,6 +289,7 @@ fn approval_ack(app: AppHandle, request_id: String) {
 /// already up. Claude Code falls back to asking in the terminal immediately.
 #[tauri::command]
 fn approval_decline(app: AppHandle, request_id: String) {
+    recap::forget_request(&app, &request_id);
     pipe::decline(&app, &request_id);
 }
 
@@ -578,6 +581,7 @@ pub fn run() {
         })
         .manage(Pending::default())
         .manage(Chat::default())
+        .manage(recap::load())
         .invoke_handler(tauri::generate_handler![
             boot,
             save_settings,
@@ -591,6 +595,14 @@ pub fn run() {
             sounds::custom_sound,
             sounds::reveal_sounds_folder,
             sounds::reload_sounds,
+            recap::recap_history,
+            recap::recap_prefs,
+            recap::recap_set_enabled,
+            recap::recap_set_hide_projects,
+            recap::recap_mark_shown,
+            recap::recap_clear,
+            recap::recap_save_png,
+            recap::recap_reveal_saved,
             open_url,
             open_in_vscode,
             open_session,
