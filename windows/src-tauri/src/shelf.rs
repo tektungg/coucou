@@ -619,7 +619,7 @@ mod tests {
         let dropped = dropped.to_string_lossy().to_string();
         assert!(!may_pin(&dropped), "never dropped");
         // Refused before anything touches the pinned list or the disk.
-        assert!(pin_paths(&[dropped.clone()]).unwrap_err().contains("dropped"));
+        assert!(pin_paths(std::slice::from_ref(&dropped)).unwrap_err().contains("dropped"));
         crate::dropped::allow([dropped.clone()]);
         assert!(may_pin(&dropped));
         let copy = crate::files::inbox_dir().join("note.txt");

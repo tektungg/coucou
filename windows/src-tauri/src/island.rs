@@ -213,50 +213,6 @@ pub fn calculate_zoom_correction(current_zoom: f64, scale: f64, dpr: f64) -> Opt
     Some((current_zoom * (scale / dpr)).clamp(ZOOM_MIN, ZOOM_MAX))
 }
 
-#[cfg(test)]
-mod zoom_tests {
-    use super::*;
-
-    #[test]
-    fn no_correction_when_the_ratio_matches_the_window_scale() {
-        assert_eq!(calculate_zoom_correction(1.0, 1.0, 1.0), None);
-        assert_eq!(calculate_zoom_correction(1.0, 1.25, 1.25), None);
-        assert_eq!(calculate_zoom_correction(1.0, 1.0, 1.01), None, "within the tolerance");
-    }
-
-    #[test]
-    fn a_mismatched_ratio_is_zoomed_back_to_the_window_scale() {
-        // 100 % display, Windows text size 125 %.
-        assert_eq!(calculate_zoom_correction(1.0, 1.0, 1.25), Some(0.8));
-        // 125 % display with 125 % text size.
-        assert_eq!(calculate_zoom_correction(1.0, 1.25, 1.5625), Some(0.8));
-        // 150 % display, the webview still on 100 %.
-        assert_eq!(calculate_zoom_correction(1.0, 1.5, 1.0), Some(1.5));
-    }
-
-    #[test]
-    fn once_corrected_the_ratio_matches_and_nothing_more_happens() {
-        let zoom = calculate_zoom_correction(1.0, 1.0, 1.25).unwrap();
-        // The webview's ratio after the zoom: 1.25 × 0.8.
-        assert_eq!(calculate_zoom_correction(zoom, 1.0, 1.25 * zoom), None);
-    }
-
-    #[test]
-    fn the_zoom_stays_within_bounds() {
-        assert_eq!(calculate_zoom_correction(1.0, 1.0, 100.0), Some(ZOOM_MIN));
-        assert_eq!(calculate_zoom_correction(1.0, 100.0, 1.0), Some(ZOOM_MAX));
-    }
-
-    #[test]
-    fn nonsense_inputs_change_nothing() {
-        assert_eq!(calculate_zoom_correction(1.0, 0.0, 1.0), None);
-        assert_eq!(calculate_zoom_correction(1.0, 1.0, -1.0), None);
-        assert_eq!(calculate_zoom_correction(1.0, f64::NAN, 1.0), None);
-        assert_eq!(calculate_zoom_correction(1.0, 1.0, f64::INFINITY), None);
-        assert_eq!(calculate_zoom_correction(0.0, 1.0, 1.25), None);
-    }
-}
-
 /// Position, size and scale of the monitor the island lives on. Any change here
 /// means the island has to be placed again.
 fn current_screen_key(app: &AppHandle) -> Option<(i32, i32, u32, u32, u64)> {
@@ -418,5 +374,49 @@ pub fn refresh_click_through(app: &AppHandle, gate: &PollGate) {
 pub fn set_ignore_cursor(app: &AppHandle, ignore: bool) {
     if let Some(win) = window(app) {
         let _ = win.set_ignore_cursor_events(ignore);
+    }
+}
+
+#[cfg(test)]
+mod zoom_tests {
+    use super::*;
+
+    #[test]
+    fn no_correction_when_the_ratio_matches_the_window_scale() {
+        assert_eq!(calculate_zoom_correction(1.0, 1.0, 1.0), None);
+        assert_eq!(calculate_zoom_correction(1.0, 1.25, 1.25), None);
+        assert_eq!(calculate_zoom_correction(1.0, 1.0, 1.01), None, "within the tolerance");
+    }
+
+    #[test]
+    fn a_mismatched_ratio_is_zoomed_back_to_the_window_scale() {
+        // 100 % display, Windows text size 125 %.
+        assert_eq!(calculate_zoom_correction(1.0, 1.0, 1.25), Some(0.8));
+        // 125 % display with 125 % text size.
+        assert_eq!(calculate_zoom_correction(1.0, 1.25, 1.5625), Some(0.8));
+        // 150 % display, the webview still on 100 %.
+        assert_eq!(calculate_zoom_correction(1.0, 1.5, 1.0), Some(1.5));
+    }
+
+    #[test]
+    fn once_corrected_the_ratio_matches_and_nothing_more_happens() {
+        let zoom = calculate_zoom_correction(1.0, 1.0, 1.25).unwrap();
+        // The webview's ratio after the zoom: 1.25 × 0.8.
+        assert_eq!(calculate_zoom_correction(zoom, 1.0, 1.25 * zoom), None);
+    }
+
+    #[test]
+    fn the_zoom_stays_within_bounds() {
+        assert_eq!(calculate_zoom_correction(1.0, 1.0, 100.0), Some(ZOOM_MIN));
+        assert_eq!(calculate_zoom_correction(1.0, 100.0, 1.0), Some(ZOOM_MAX));
+    }
+
+    #[test]
+    fn nonsense_inputs_change_nothing() {
+        assert_eq!(calculate_zoom_correction(1.0, 0.0, 1.0), None);
+        assert_eq!(calculate_zoom_correction(1.0, 1.0, -1.0), None);
+        assert_eq!(calculate_zoom_correction(1.0, f64::NAN, 1.0), None);
+        assert_eq!(calculate_zoom_correction(1.0, 1.0, f64::INFINITY), None);
+        assert_eq!(calculate_zoom_correction(0.0, 1.0, 1.25), None);
     }
 }

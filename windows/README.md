@@ -406,6 +406,26 @@ summary, session routing) and `npm test`. Live evals, counts only, never content
 No telemetry. The only network requests Coucou makes are to the services you
 configure yourself.
 
+## Synced from upstream
+
+This build forked from Louis-CFM/coucou at `7314790` (2026-10-05). Upstream's
+Windows app has since gone to 0.5.0; its commits touch the same files as this
+build's (`views.ts`, `style.css`, `settings.rs`…), so they are ported by hand,
+never cherry-picked.
+
+| Upstream | What | Here |
+|---|---|---|
+| `452df97` | Only files a real drop delivered can be ingested | `dropped.rs`, also guards `shelf_pin` |
+| `d8d2939` | settings.json kept when corrupt, atomic saves | `prefs_file.rs` (generic) |
+| `5b06e1c` | Fresh permission card ignores clicks for 600 ms | `views/clickGuard.ts`, also plan and question cards |
+| `b9b9217` | Webview zoom follows the window scale | `fit_zoom`, `core/zoom.ts` |
+| `32484d4` | Vite ignores `target/` (EBUSY) | `vite.config.ts` |
+
+Not ported: `66be53e` (Antigravity's `PreToolUse` answer): this build's relay
+has no Antigravity path. Upstream's bigger features (live diff, more agents,
+shortcuts, wardrobe, desktop Mochi, GitHub pulse, weekly recap, Flow dictation,
+Notetaker, « OK Coucou ») are not in this build yet.
+
 ## Build it yourself
 
 You need [Rust](https://rustup.rs), [Node 20+](https://nodejs.org), and the
