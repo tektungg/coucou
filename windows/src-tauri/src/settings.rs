@@ -1,7 +1,8 @@
 // Preferences, stored as plain JSON in settings.json under platform::config_dir().
 // No secret ever lands here — API keys live in the OS keychain (see secrets.rs).
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 /// A field the file lacks takes its value from `Default`, so a settings.json
@@ -30,14 +31,28 @@ pub struct Settings {
     pub screen: String,
     pub autostart: bool,
     pub hooks_installed: bool,
-    /// Claude model used by the chat. Changeable in the settings window.
-    /// Defaulted explicitly so a settings.json written by an older build still loads.
+    /// Claude model used by the chat (Anthropic, and the CLI until it has its
+    /// own in `chat_models`). Defaulted explicitly so a settings.json written by
+    /// an older build still loads.
     #[serde(default = "default_model")]
     pub model: String,
-    /// "api" = Anthropic API key, "cli" = the Claude Code CLI with the user's
-    /// own login (claude_cli.rs).
-    #[serde(default = "default_chat_provider")]
+    /// Who the chat talks to: "anthropic" (API key), "claude-cli" (the Claude
+    /// Code CLI on the user's own login), a cloud provider of
+    /// chat/openai_compat.rs ("openai", "google", "openrouter"), or a model
+    /// server of chat/local_chat.rs ("ollama", "lmstudio", "custom"). The older
+    /// "api" and "cli" are read as "anthropic" and "claude-cli", anything
+    /// unknown as "anthropic" (chat::provider_id).
+    #[serde(default = "default_chat_provider", deserialize_with = "chat_provider_from")]
     pub chat_provider: String,
+    /// The model picked for each provider other than Anthropic (whose model is
+    /// `model`), by provider id.
+    pub chat_models: BTreeMap<String, String>,
+    /// Addresses of the model servers once connected; empty means not connected.
+    pub ollama_url: String,
+    pub lmstudio_url: String,
+    /// Any other OpenAI-compatible server; its key, if any, is in the keychain,
+    /// bound to this address.
+    pub custom_url: String,
     /// CLAUDE_CONFIG_DIR handed to the CLI. Empty = Claude Code's default profile.
     #[serde(default)]
     pub claude_config_dir: String,
@@ -143,7 +158,7 @@ pub const PERSONAL_INTEGRATIONS: &[&str] = &[
 ];
 
 fn default_model() -> String {
-    crate::claude::DEFAULT_MODEL.to_string()
+    crate::chat::claude::DEFAULT_MODEL.to_string()
 }
 
 fn default_message_apps() -> Vec<String> {
@@ -169,7 +184,14 @@ fn migrate_integrations(active: &[String]) -> Vec<String> {
 }
 
 fn default_chat_provider() -> String {
-    "api".into()
+    crate::chat::ANTHROPIC.into()
+}
+
+/// A stored or saved provider id, in this build's ids. Both settings.json and
+/// a page's save go through it, so an older value never sticks around.
+fn chat_provider_from<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
+    let stored = String::deserialize(deserializer)?;
+    Ok(crate::chat::provider_id(&stored))
 }
 
 impl Default for Settings {
@@ -189,6 +211,10 @@ impl Default for Settings {
             hooks_installed: false,
             model: default_model(),
             chat_provider: default_chat_provider(),
+            chat_models: BTreeMap::new(),
+            ollama_url: String::new(),
+            lmstudio_url: String::new(),
+            custom_url: String::new(),
             claude_config_dir: String::new(),
             slack_workspace: String::new(),
             space_timebox_dir: String::new(),
@@ -336,7 +362,16 @@ mod tests {
         assert_eq!(s.message_apps, vec!["discord".to_string()]);
         assert!(!s.lyrics_enabled);
         assert_eq!(s.space_timebox_dir, r"D:\mcp\timebox");
-        assert_eq!(s.chat_provider, "cli");
+        assert_eq!(s.chat_provider, "claude-cli");
+    }
+
+    #[test]
+    fn a_file_from_before_the_desktop_mochi_keeps_him_in_the_island() {
+        let old = r#"{"soundEnabled":true,"model":"some-model","mochiOutfit":"witchHat"}"#;
+        let s: Settings = crate::prefs_file::parse(old.as_bytes()).unwrap();
+        assert_eq!(s.desktop_mochi, DesktopMochiPref::default());
+        assert!(!s.desktop_mochi.on_desktop);
+        assert_eq!(s.mochi_outfit, "witchHat");
     }
 
     #[test]
@@ -349,15 +384,6 @@ mod tests {
         assert_eq!(json["showCodexPlanInNotch"], false);
         let back: Settings = serde_json::from_value(json).unwrap();
         assert!(back.show_plan_in_notch);
-    }
-
-    #[test]
-    fn a_file_from_before_the_desktop_mochi_keeps_him_in_the_island() {
-        let old = r#"{"soundEnabled":true,"model":"some-model","mochiOutfit":"witchHat"}"#;
-        let s: Settings = crate::prefs_file::parse(old.as_bytes()).unwrap();
-        assert_eq!(s.desktop_mochi, DesktopMochiPref::default());
-        assert!(!s.desktop_mochi.on_desktop);
-        assert_eq!(s.mochi_outfit, "witchHat");
     }
 
     #[test]
@@ -433,8 +459,60 @@ mod tests {
             "absenceInterval":180,"activeIntegrations":[],"screen":"primary",
             "autostart":false,"hooksInstalled":true,"model":"claude-sonnet-5"}"#;
         let s: Settings = serde_json::from_str(old).unwrap();
-        assert_eq!(s.chat_provider, "api");
+        assert_eq!(s.chat_provider, "anthropic");
         assert_eq!(s.claude_config_dir, "");
         assert_eq!(s.model, "claude-sonnet-5");
+        assert!(s.chat_models.is_empty());
+        assert_eq!((s.ollama_url.as_str(), s.lmstudio_url.as_str(), s.custom_url.as_str()), ("", "", ""));
+    }
+
+    /// The CLI-era values move to this build's provider ids on load, and so
+    /// does what a page still holding them saves.
+    #[test]
+    fn older_chat_provider_values_are_migrated() {
+        let read = |value: serde_json::Value| -> Settings {
+            let file = serde_json::json!({ "model": "some-model", "chatProvider": value }).to_string();
+            crate::prefs_file::parse(file.as_bytes()).unwrap()
+        };
+        assert_eq!(read("api".into()).chat_provider, "anthropic");
+        assert_eq!(read("cli".into()).chat_provider, "claude-cli");
+        assert_eq!(read("claude-cli".into()).chat_provider, "claude-cli");
+        assert_eq!(read("ollama".into()).chat_provider, "ollama");
+        assert_eq!(read("gpt-9000".into()).chat_provider, "anthropic");
+        assert_eq!(read("".into()).chat_provider, "anthropic");
+        // Not a string: that field alone falls back.
+        let s = read(42.into());
+        assert_eq!((s.chat_provider.as_str(), s.model.as_str()), ("anthropic", "some-model"));
+        let page: Settings = serde_json::from_value(serde_json::json!({ "chatProvider": "cli" })).unwrap();
+        assert_eq!(page.chat_provider, "claude-cli");
+    }
+
+    #[test]
+    fn the_chat_provider_settings_are_written_in_camel_case_and_read_back() {
+        let file = r#"{"model":"some-model","chatProvider":"ollama",
+            "chatModels":{"ollama":"llama3.2","openai":"gpt-x"},
+            "ollamaUrl":"http://127.0.0.1:11434","lmstudioUrl":"http://127.0.0.1:1234",
+            "customUrl":"https://llm.example.com"}"#;
+        let s: Settings = crate::prefs_file::parse(file.as_bytes()).unwrap();
+        assert_eq!(s.chat_provider, "ollama");
+        assert_eq!(s.chat_models["openai"], "gpt-x");
+        assert_eq!(s.ollama_url, "http://127.0.0.1:11434");
+        assert_eq!(s.custom_url, "https://llm.example.com");
+        let json = serde_json::to_value(&s).unwrap();
+        for key in ["chatProvider", "chatModels", "ollamaUrl", "lmstudioUrl", "customUrl"] {
+            assert!(json.get(key).is_some(), "{key}");
+        }
+        assert_eq!(json["chatModels"], serde_json::json!({ "ollama": "llama3.2", "openai": "gpt-x" }));
+    }
+
+    /// A broken chat field costs only itself (prefs_file salvage).
+    #[test]
+    fn a_bad_chat_models_field_costs_only_the_chat_models() {
+        let file = r#"{"model":"some-model","chatProvider":"cli","chatModels":"gpt-x","ollamaUrl":7}"#;
+        let s: Settings = crate::prefs_file::parse(file.as_bytes()).expect("salvaged, not thrown away");
+        assert!(s.chat_models.is_empty());
+        assert_eq!(s.ollama_url, "");
+        assert_eq!(s.chat_provider, "claude-cli");
+        assert_eq!(s.model, "some-model");
     }
 }

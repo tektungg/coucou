@@ -1,66 +1,36 @@
-// Chat screen: how Mochi's chat reaches Claude. An API key (kept in the Windows
-// Credential Manager, never on disk) or the Claude Code CLI on your own login.
+// Chat screen: who Mochi's chat talks to. A cloud provider with its key (kept in
+// the Windows Credential Manager, never on disk), a model server you run
+// yourself, or the Claude Code CLI on your own login. The model is picked from
+// the chat itself (the model name above the text field).
 
-import { API_KEY_SECRET, Bridge } from "../core/bridge";
-import { h, clear } from "../views/dom";
-import { DOT_MISSING, DOT_OK, hint, notice, panel, row, select, statusDot, textInput, type SettingsCtx } from "./ui";
+import { PROVIDERS, providerDef, type ProviderId } from "../core/providers";
+import { h } from "../views/dom";
+import { keysPanel } from "./chatKeys";
+import { localPanel } from "./chatLocal";
+import { DOT_MISSING, DOT_OK, hint, panel, row, select, statusDot, textInput, type SettingsCtx } from "./ui";
 
-const MODELS: [string, string][] = [
-  ["claude-opus-5", "Claude Opus 5"],
-  ["claude-sonnet-5", "Claude Sonnet 5"],
-  ["claude-haiku-4-5", "Claude Haiku 4.5"],
-];
-const PROVIDERS: [string, string][] = [["api", "API key"], ["cli", "Claude Code login"]];
-const STORED = "••••••••••••  (stored)";
-const KEY_PLACEHOLDER = "sk-ant-...";
-
-/** The status line and dot under the screen title, for the chosen provider. */
-function chatStatus(ctx: SettingsCtx): { ok: boolean; text: string } {
-  if (ctx.settings.chatProvider === "cli") {
+/** The status line under the screen title, for the provider in use. */
+export function chatStatus(ctx: SettingsCtx): { ok: boolean; text: string } {
+  const s = ctx.settings;
+  const p = providerDef(s.chatProvider);
+  if (p.id === "claude-cli") {
     return ctx.cli.found
       ? { ok: true, text: `Chat runs through Claude Code at ${ctx.cli.path}. No API key needed.` }
-      : { ok: false, text: "Claude Code not found. Install it, or chat with an API key." };
+      : { ok: false, text: "Claude Code not found. Install it, or pick another provider." };
   }
-  return ctx.hasKey
-    ? { ok: true, text: "Key saved in the Windows Credential Manager." }
-    : { ok: false, text: "No key yet. The chat needs one." };
+  if (p.urlField) {
+    return s[p.urlField]
+      ? { ok: true, text: `Chat runs on ${p.name} at ${s[p.urlField]}.` }
+      : { ok: false, text: `${p.name} is not connected yet: connect it under Local models.` };
+  }
+  const saved = p.id === "anthropic" ? ctx.hasKey : ctx.present[p.key ?? ""] === true;
+  return saved
+    ? { ok: true, text: `Chat runs on ${p.name}. Its key is in the Windows Credential Manager.` }
+    : { ok: false, text: `No ${p.name} key yet: add it under API keys.` };
 }
 
-/** Save and Remove for the API key; `changed` runs after either. */
-function keyRow(ctx: SettingsCtx, feedback: HTMLElement, changed: () => void): HTMLElement {
-  const field = textInput({ type: "password", placeholder: ctx.hasKey ? STORED : KEY_PLACEHOLDER });
-  const remove = h("button", { class: "danger", text: "Remove" });
-  const sync = () => {
-    field.placeholder = ctx.hasKey ? STORED : KEY_PLACEHOLDER;
-    remove.style.display = ctx.hasKey ? "" : "none";
-    changed();
-  };
-  /** Runs a Credential Manager change; true when it went through. */
-  const run = async (action: () => Promise<unknown>, done: string, failed: string): Promise<boolean> => {
-    clear(feedback);
-    try {
-      await action();
-      ctx.hasKey = (await Bridge.secretPresent(API_KEY_SECRET)) ?? false;
-      feedback.append(notice("ok", done));
-      sync();
-      return true;
-    } catch (err) {
-      feedback.append(notice("err", `${failed}: ${String(err)}`));
-      return false;
-    }
-  };
-  const save = h("button", { class: "primary", text: "Save key" });
-  save.addEventListener("click", () => {
-    const value = field.value.trim();
-    if (!value) return;
-    void run(() => Bridge.secretSet(API_KEY_SECRET, value), "Saved. It never touches disk.", "Could not save")
-      .then((saved) => {
-        if (saved) field.value = "";
-      });
-  });
-  remove.addEventListener("click", () => void run(() => Bridge.secretClear(API_KEY_SECRET), "Key removed.", "Could not remove"));
-  sync();
-  return row("API key", field, save, remove);
+function providerOptions(): [string, string][] {
+  return PROVIDERS.map((p) => [p.id, p.id === "custom" ? "OpenAI-compatible server" : p.name]);
 }
 
 export function chatDetail(ctx: SettingsCtx): HTMLElement {
@@ -72,24 +42,22 @@ export function chatDetail(ctx: SettingsCtx): HTMLElement {
     void ctx.save();
   });
   const configRow = row("Config dir", configDir);
+  const provider = select(providerOptions(), ctx.settings.chatProvider, (v) => {
+    ctx.settings.chatProvider = providerDef(v).id as ProviderId;
+    showMode();
+    void ctx.save();
+  });
   const showMode = () => {
     const s = chatStatus(ctx);
     dot.style.background = s.ok ? DOT_OK : DOT_MISSING;
     status.textContent = s.text;
-    configRow.style.display = ctx.settings.chatProvider === "cli" ? "" : "none";
+    configRow.style.display = ctx.settings.chatProvider === "claude-cli" ? "" : "none";
+    provider.value = ctx.settings.chatProvider;
   };
-  const provider = select(PROVIDERS, ctx.settings.chatProvider, (v) => {
-    ctx.settings.chatProvider = v === "cli" ? "cli" : "api";
-    showMode();
-    void ctx.save();
-  });
-  const model = select(MODELS, ctx.settings.model, (v) => {
-    ctx.settings.model = v;
-    void ctx.save();
-  });
-  const feedback = h("div", {});
-  const key = keyRow(ctx, feedback, showMode);
+  const main = panel(null, h("div", { class: "status-line" }, dot, status),
+    row("Chat via", provider), configRow,
+    hint("Switch the model from the chat: click its name above the text field."));
+  const screen = h("div", { class: "stack" }, main, keysPanel(ctx, () => showMode()), localPanel(ctx, () => showMode()));
   showMode();
-  return panel(null, h("div", { class: "status-line" }, dot, status),
-    row("Chat via", provider), configRow, key, row("Model", model), feedback);
+  return screen;
 }

@@ -8,6 +8,13 @@ const SERVICE: &str = "fr.louisraille.coucou";
 /// Every key Coucou may store. Anything outside this list is refused.
 pub const KNOWN_KEYS: &[&str] = &[
     "anthropic-api-key",
+    // Chat providers (chat/openai_compat.rs).
+    "openai-api-key",
+    "google-api-key",
+    "openrouter-api-key",
+    // The custom model server's key, bound to its address: stored only through
+    // local_set_key (chat/local_chat.rs), never through secret_set.
+    "openai-compatible-key",
     "n8n-url",
     "n8n-api-key",
     "vercel-token",

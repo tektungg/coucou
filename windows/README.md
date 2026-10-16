@@ -331,13 +331,46 @@ out (it needs a screenshot of another app's window).
 
 ## Chat and keys
 
-**Settings… → Claude** takes your Anthropic API key. Keys live in the **Windows
-Credential Manager**, never on disk and never in the interface — the island can
-only ask whether a key exists. Same for every integration key.
+Keys live in the **Windows Credential Manager**, never on disk and never in the
+interface: the island can only ask whether a key exists. Same for every
+integration key.
+
+### Chat providers, local models and Markdown
+
+**Settings… → Chat** picks who the chat talks to, and the model name above the
+chat box switches provider and model in place (provider chips, then that
+provider's models, fetched only once it has a key or a server).
+
+| Provider | Needs | Talks to |
+|---|---|---|
+| Anthropic | API key | `api.anthropic.com` (or `COUCOU_ANTHROPIC_BASE_URL`: https, or http to this PC only) |
+| Claude Code | the Claude Code CLI, your login | Claude Code itself (see below) |
+| Google AI, OpenAI, OpenRouter | API key | `generativelanguage.googleapis.com`, `api.openai.com`, `openrouter.ai` |
+| Ollama, LM Studio, any OpenAI-compatible server | Connect in **Local models** | the address you give (empty = the usual one on this PC) |
+
+- Settings from before keep working: `"api"` reads as Anthropic and `"cli"` as
+  Claude Code (`chat/mod.rs`).
+- A local model streams its answer into the bubble (`chat-delta` events, about
+  15 a second, `<think>` blocks hidden). The others answer in one go.
+- Google AI, OpenAI, OpenRouter and the local servers get no web search and no
+  tools: they can answer, never act on this computer.
+- The custom server's key is stored with the address it was entered for and is
+  only ever sent there, over https or to this PC (`local_set_key`). Settings
+  says when an address is another machine, and when it is plain http.
+- A dropped file goes along only if it is Coucou's own copy in its inbox
+  (`chat::checked_context`); any other path the page names is left out.
+- Answers render as Markdown: headings, lists, quotes, bold, italic, inline
+  code, http(s) links (opened through Rust) and code blocks with a copy button.
+  Everything is built from text nodes, never HTML (`views/markdown.ts`).
+- The system prompt uses your first name from Windows (`chat/identity.rs`).
+
+From upstream `b2ad213`, `cab5e74`, `6fd7743`, `5b4ee61`, `741aab2`,
+`e7a4831` and the chat fixes of `5bddaec`; the Claude Code provider is this
+build's own.
 
 ### Chat with your Claude Code login instead of a key
 
-**Settings… → Claude → Chat via → Claude Code login** runs each chat turn
+**Settings… → Chat → Chat via → Claude Code** (or its chip in the chat) runs each chat turn
 through the Claude Code CLI (`claude -p`), signed in with your own Claude Code
 account, so no API key is needed and the chat uses your subscription.
 
@@ -352,7 +385,9 @@ account, so no API key is needed and the chat uses your subscription.
 - Tools are limited to `WebSearch`, `WebFetch` and `Read` (for a dropped file).
   Nothing that edits files or runs commands.
 - Turns continue with `--resume <session id>`. As with the API chat, the
-  conversation lasts until a file is dropped or Coucou restarts. Sessions are kept under the profile's `projects`
+  conversation lasts until a file is dropped, a new chat starts or Coucou
+  restarts. Switching to Claude Code mid-conversation starts a new CLI session
+  with the conversation so far handed over once. Sessions are kept under the profile's `projects`
   folder for `%LOCALAPPDATA%\Coucou\chat`, out of your projects' `/resume` lists.
 - Each turn starts the CLI, so expect a few seconds more than the API path.
   `coucou.log` gets `chat via claude-cli ok (<ms> ms)` or the error.
@@ -646,7 +681,13 @@ never cherry-picked.
 | `23c09b9`, `396cf29`, `c97dec1` | Outfits and the wardrobe | `outfits/` split by part; default "none"; hats make way for head props |
 | `d02f820` | Greeting v2 and its sound | split into one function per part, same poses and pixels |
 | `dde859e`, `64bb85e`, `b52bbe3`, `7a8d5e6` | Mochi on the desktop | `desktop/` (Rust, split), `island/desktop.ts`, `island/botDrag.ts`; acts and pill colour sent too |
+| `b2ad213`, `cab5e74`, `6fd7743`, `741aab2`, `e7a4831` | Chat providers, local models, the model picker | `chat/` (Rust, split), Claude Code kept as a provider, Settings → Chat panels |
+| `5b4ee61` | Markdown in chat answers | `views/markdown.ts`, split by block kind, Mochi Pop colours |
+| `3491a2b` | Stale Stop timers | `island/hooks.ts`, `tests/hooks.test.ts` |
+| `5bddaec` (parts) | Chat file context from the inbox only, custom key bound to its address, symlinked settings.json on Windows, no innerHTML | `chat/`, `hooks.rs`, `views/dom.ts` |
+| `d3cd2cf` | source-map-js 1.2.2 (GHSA-68fv-2mgg-jv7q) | `package-lock.json` |
 | `deab632`, `2363550`, `21a8a86`, `322e2ab` | Global and in-island shortcuts | `shortcuts/` (Rust, split), Settings → Shortcuts tile, the GitHub list keys |
+| `c02923e`, `49a00ed` | Plan usage pills | opt-in header pills; the numbers come from the usage pill's status line files, no relay; `codex_plan.rs` |
 
 Not ported: `66be53e` (Antigravity's `PreToolUse` answer): this build's relay
 has no Antigravity path. Upstream's bigger features (more agents,

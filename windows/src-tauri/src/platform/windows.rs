@@ -189,6 +189,70 @@ pub fn current_user_sid() -> Option<String> {
     }
 }
 
+// The display name only feeds Mochi's greeting (chat/identity.rs). The calls
+// are declared here by hand, with their documented C signatures, so they need
+// no extra `windows` crate features. Ported from upstream (b2ad213).
+#[link(name = "secur32")]
+extern "system" {
+    fn GetUserNameExW(name_format: i32, name_buffer: *mut u16, size: *mut u32) -> u8;
+}
+
+#[link(name = "netapi32")]
+extern "system" {
+    fn NetUserGetInfo(server: *const u16, user: *const u16, level: u32, buffer: *mut *mut u8) -> u32;
+    fn NetApiBufferFree(buffer: *mut core::ffi::c_void) -> u32;
+}
+
+/// EXTENDED_NAME_FORMAT::NameDisplay.
+const NAME_DISPLAY: i32 = 3;
+/// Longest display name read, in UTF-16 units.
+const MAX_NAME_UNITS: usize = 256;
+/// USER_INFO_10 { name, comment, usr_comment, full_name }: four wide-string
+/// pointers; any user may read it about themselves.
+const USER_INFO_LEVEL: u32 = 10;
+const FULL_NAME_FIELD: usize = 3;
+
+/// The account's display name ("Louis Raille"): the directory's for a domain
+/// or Entra account, else the local account's "Full name", else nothing.
+pub fn user_full_name() -> Option<String> {
+    directory_display_name().or_else(local_full_name).filter(|n| !n.trim().is_empty())
+}
+
+fn directory_display_name() -> Option<String> {
+    let mut buf = [0u16; MAX_NAME_UNITS];
+    let mut size = buf.len() as u32;
+    // On success `size` is the length copied, without the terminating null.
+    let ok = unsafe { GetUserNameExW(NAME_DISPLAY, buf.as_mut_ptr(), &mut size) } != 0;
+    if !ok || size as usize > buf.len() {
+        return None;
+    }
+    String::from_utf16(&buf[..size as usize]).ok()
+}
+
+fn local_full_name() -> Option<String> {
+    let user = std::env::var("USERNAME").ok().filter(|u| !u.is_empty())?;
+    let wide: Vec<u16> = user.encode_utf16().chain(std::iter::once(0)).collect();
+    let mut info: *mut u8 = std::ptr::null_mut();
+    let status = unsafe { NetUserGetInfo(std::ptr::null(), wide.as_ptr(), USER_INFO_LEVEL, &mut info) };
+    if status != 0 || info.is_null() {
+        return None;
+    }
+    unsafe {
+        let full = *(info as *const *const u16).add(FULL_NAME_FIELD);
+        let text = if full.is_null() {
+            None
+        } else {
+            let mut len = 0usize;
+            while len < MAX_NAME_UNITS && *full.add(len) != 0 {
+                len += 1;
+            }
+            String::from_utf16(std::slice::from_raw_parts(full, len)).ok()
+        };
+        NetApiBufferFree(info.cast());
+        text
+    }
+}
+
 // ── Cursor ────────────────────────────────────────────────────────────────────
 
 /// The 60 Hz poll reads the cursor and flips click-through from it.

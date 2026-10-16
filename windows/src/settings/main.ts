@@ -8,6 +8,8 @@ import { DEFAULT_SETTINGS, HIDDEN_INTEGRATIONS, MAX_ACTIVE_PILLS, type Settings 
 import { h, clear, face, svg } from "../views/dom";
 import { ICONS } from "../views/icons";
 import { INTEGRATION_KEYS, visibleIntegrations } from "./catalog";
+import { CHAT_KEYS } from "./chatKeys";
+import { CUSTOM_SERVER_KEY } from "../core/providers";
 import { chatDetail } from "./chat";
 import { claudeCodeDetail } from "./claudeCode";
 import { generalDetail } from "./general";
@@ -25,6 +27,9 @@ const DETAIL_FACE = 34;
 const HOME_FACE = 40;
 const NO_HOOKS = { installed: false, settingsPath: "", hookPath: "", hookReady: false };
 
+/** Keys the screens say are there or not: the pills', the chat providers', the custom server's. */
+const PRESENCE_KEYS = [...INTEGRATION_KEYS, ...CHAT_KEYS, CUSTOM_SERVER_KEY];
+
 /** The tile open on screen, or null for the grid. */
 let screen: string | null = null;
 
@@ -35,12 +40,12 @@ async function loadCtx(): Promise<SettingsCtx> {
     Bridge.hooksStatus(),
     Bridge.secretPresent(API_KEY_SECRET),
     Bridge.claudeCliStatus(),
-    Promise.all(INTEGRATION_KEYS.map((k) => Bridge.secretPresent(k))),
+    Promise.all(PRESENCE_KEYS.map((k) => Bridge.secretPresent(k))),
   ]);
   const ctx: SettingsCtx = {
     settings, version: boot?.version ?? "", hooks: hooks ?? NO_HOOKS, hasKey: hasKey ?? false,
     cli: cli ?? { found: false, path: "" },
-    present: Object.fromEntries(INTEGRATION_KEYS.map((k, i) => [k, stored[i] ?? false])),
+    present: Object.fromEntries(PRESENCE_KEYS.map((k, i) => [k, stored[i] ?? false])),
     save: async () => void (await Bridge.saveSettings(ctx.settings)),
   };
   return ctx;
@@ -48,7 +53,7 @@ async function loadCtx(): Promise<SettingsCtx> {
 
 function tiles(ctx: SettingsCtx): Tile[] {
   return settingsTiles({
-    settings: ctx.settings, hooks: ctx.hooks, hasKey: ctx.hasKey, cliFound: ctx.cli.found,
+    settings: ctx.settings, hooks: ctx.hooks, hasKey: ctx.hasKey, keys: ctx.present, cliFound: ctx.cli.found,
     pills: visibleIntegrations(HIDDEN_INTEGRATIONS),
   });
 }

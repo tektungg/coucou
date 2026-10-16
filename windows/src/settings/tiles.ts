@@ -2,6 +2,7 @@
 // you can set up, each with a mini Mochi, a one-line status and a chip. Pure, so
 // tests/settingsTiles.test.ts covers every state.
 
+import { providerDef } from "../core/providers";
 import { activeKeys } from "../core/shortcuts";
 import type { Settings } from "../core/state";
 
@@ -19,10 +20,14 @@ export interface Tile {
 export interface TileInput {
   settings: Pick<
     Settings,
-    "activeIntegrations" | "chatProvider" | "soundEnabled" | "soundVolume" | "autoCloseInterval" | "shortcuts"
+    | "activeIntegrations" | "chatProvider" | "soundEnabled" | "soundVolume" | "autoCloseInterval" | "shortcuts"
+    | "ollamaUrl" | "lmstudioUrl" | "customUrl"
   >;
   hooks: { installed: boolean; hookReady: boolean };
+  /** The Anthropic key is saved. */
   hasKey: boolean;
+  /** The other chat providers' keys saved, by credential store name. */
+  keys?: Record<string, boolean>;
   cliFound: boolean;
   pills: { id: string; name: string; color: string; short: string }[];
 }
@@ -47,14 +52,23 @@ function claudeCodeTile(hooks: TileInput["hooks"]): Tile {
 
 function chatTile(input: TileInput): Tile {
   const base = { id: CHAT_TILE, name: "Chat", color: CHAT_BLUE };
-  if (input.settings.chatProvider === "cli") {
+  const p = providerDef(input.settings.chatProvider);
+  if (p.id === "claude-cli") {
     return input.cliFound
       ? { ...base, status: "Claude Code login", chip: "ON" }
       : { ...base, status: "Claude Code not found", chip: "SETUP" };
   }
-  return input.hasKey
-    ? { ...base, status: "API key saved", chip: "ON" }
-    : { ...base, status: "No API key yet", chip: "SETUP" };
+  if (p.urlField) {
+    return input.settings[p.urlField]
+      ? { ...base, status: `${p.name} connected`, chip: "ON" }
+      : { ...base, status: `${p.name} not connected`, chip: "SETUP" };
+  }
+  // Anthropic keeps its own wording; the others name themselves.
+  const saved = p.id === "anthropic" ? input.hasKey : input.keys?.[p.key ?? ""] === true;
+  const who = p.id === "anthropic" ? "API" : p.name;
+  return saved
+    ? { ...base, status: `${who} key saved`, chip: "ON" }
+    : { ...base, status: `No ${who} key yet`, chip: "SETUP" };
 }
 
 function generalTile(settings: TileInput["settings"]): Tile {

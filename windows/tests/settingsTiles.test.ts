@@ -12,7 +12,8 @@ const MAX_ACTIVE_PILLS = 6;
 
 const input = (over: Partial<TileInput> = {}, settings: Partial<TileInput["settings"]> = {}): TileInput => ({
   settings: {
-    activeIntegrations: ["integration_messages"], chatProvider: "api",
+    activeIntegrations: ["integration_messages"], chatProvider: "anthropic",
+    ollamaUrl: "", lmstudioUrl: "", customUrl: "",
     soundEnabled: true, soundVolume: 0.1, autoCloseInterval: 15, shortcuts: {}, ...settings,
   },
   hooks: { installed: true, hookReady: true },
@@ -57,10 +58,21 @@ test("Claude Code tile follows the hooks", () => {
 test("Chat tile reads the chosen provider: API key or Claude Code login", () => {
   assert.equal(tile(input(), CHAT_TILE).chip, "ON");
   assert.equal(tile(input({ hasKey: false }), CHAT_TILE).status, "No API key yet");
-  const cliMissing = tile(input({}, { chatProvider: "cli" }), CHAT_TILE);
+  const cliMissing = tile(input({}, { chatProvider: "claude-cli" }), CHAT_TILE);
   assert.deepEqual([cliMissing.chip, cliMissing.status], ["SETUP", "Claude Code not found"]);
-  const cli = tile(input({ cliFound: true, hasKey: false }, { chatProvider: "cli" }), CHAT_TILE);
+  const cli = tile(input({ cliFound: true, hasKey: false }, { chatProvider: "claude-cli" }), CHAT_TILE);
   assert.deepEqual([cli.chip, cli.status], ["ON", "Claude Code login"], "the CLI needs no key");
+});
+
+test("Chat tile names the other providers: their own key, or their server", () => {
+  const google = tile(input({}, { chatProvider: "google" }), CHAT_TILE);
+  assert.deepEqual([google.chip, google.status], ["SETUP", "No Google key yet"], "the Anthropic key does not count");
+  const withKey = tile(input({ keys: { "google-api-key": true } }, { chatProvider: "google" }), CHAT_TILE);
+  assert.deepEqual([withKey.chip, withKey.status], ["ON", "Google key saved"]);
+  const ollama = tile(input({}, { chatProvider: "ollama" }), CHAT_TILE);
+  assert.deepEqual([ollama.chip, ollama.status], ["SETUP", "Ollama not connected"]);
+  const on = tile(input({}, { chatProvider: "ollama", ollamaUrl: "http://127.0.0.1:11434" }), CHAT_TILE);
+  assert.deepEqual([on.chip, on.status], ["ON", "Ollama connected"]);
 });
 
 test("pill tiles are ON when shown next to Mochi, OFF otherwise", () => {

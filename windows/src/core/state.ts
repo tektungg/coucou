@@ -2,6 +2,7 @@
 
 import type { BotEmoteName, BotStateName, IslandMode, IslandViewName } from "./layout";
 import type { Bindings } from "./shortcuts";
+import type { ProviderId } from "./providers";
 import type { EyeShape } from "../mochi/engine";
 import { isClaudeSessionTask, sessionEndAct, toolKind, type Act, type ToolKind } from "../mochi/acts";
 import type { AskAnswer, AskItem } from "../island/askQuestion";
@@ -160,10 +161,16 @@ export interface Settings {
   screen: string;
   autostart: boolean;
   hooksInstalled: boolean;
-  /** Claude model used by the chat. */
+  /** Anthropic model used by the chat (the CLI's too, unless chatModels names one). */
   model: string;
-  /** "api" = Anthropic API key, "cli" = Claude Code CLI with the user's login. */
-  chatProvider: "api" | "cli";
+  /** Who the chat talks to (core/providers.ts); Rust maps the old "api" / "cli". */
+  chatProvider: ProviderId;
+  /** The model picked per provider other than Anthropic. */
+  chatModels: Record<string, string>;
+  /** Model servers' addresses, empty until connected in Settings → Chat. */
+  ollamaUrl: string;
+  lmstudioUrl: string;
+  customUrl: string;
   /** CLAUDE_CONFIG_DIR for the CLI chat. Empty = Claude Code's default profile. */
   claudeConfigDir: string;
   /** Slack toasts never name the workspace, so the Messages pill shows this one. */
@@ -199,7 +206,11 @@ export const DEFAULT_SETTINGS: Settings = {
   autostart: false,
   hooksInstalled: false,
   model: "claude-opus-5",
-  chatProvider: "api",
+  chatProvider: "anthropic",
+  chatModels: {},
+  ollamaUrl: "",
+  lmstudioUrl: "",
+  customUrl: "",
   claudeConfigDir: "",
   slackWorkspace: "",
   spaceTimeboxDir: "",

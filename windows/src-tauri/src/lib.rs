@@ -2,12 +2,11 @@
 
 mod audio;
 mod autostart;
-mod claude;
+mod chat;
+mod codex_plan;
 mod desktop;
 #[cfg(windows)]
 mod webdrop;
-mod claude_cli;
-mod codex_plan;
 mod dropped;
 mod editor;
 mod files;
@@ -46,7 +45,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_autostart::MacosLauncher;
 
-use claude::{Chat, ChatContext, ChatReply};
+use chat::Chat;
 use files::DroppedFile;
 use hooks::{HookPreview, HookStatus};
 use island::{PollGate, ScreenInfo};
@@ -304,37 +303,7 @@ fn approval_decline(app: AppHandle, request_id: String) {
     pipe::decline(&app, &request_id);
 }
 
-// ── Chat, files and secrets ───────────────────────────────────────────────────
-
-/// One chat turn. The API key and any file bytes stay on the Rust side.
-#[tauri::command]
-async fn chat_send(
-    shared: State<'_, Shared>,
-    chat: State<'_, Chat>,
-    query: String,
-    context: Option<ChatContext>,
-) -> Result<ChatReply, String> {
-    let (model, provider, config_dir) = {
-        let s = shared.settings.lock().unwrap();
-        (s.model.clone(), s.chat_provider.clone(), s.claude_config_dir.clone())
-    };
-    if provider == "cli" {
-        claude_cli::send(&chat, &model, &config_dir, query, context).await
-    } else {
-        claude::send(&chat, &model, query, context).await
-    }
-}
-
-/// Whether the Claude Code CLI the chat can run through is installed, and where.
-#[tauri::command]
-fn claude_cli_status() -> claude_cli::CliStatus {
-    claude_cli::status()
-}
-
-#[tauri::command]
-fn chat_reset(chat: State<Chat>) {
-    chat.reset();
-}
+// ── Files and secrets ─────────────────────────────────────────────────────────
 
 /// Copies a dropped file into the inbox and reports its name back.
 #[tauri::command]
@@ -350,6 +319,10 @@ fn secret_present(key: String) -> bool {
 
 #[tauri::command]
 fn secret_set(app: AppHandle, key: String, value: String) -> Result<(), String> {
+    // Bound to its server's address: only local_set_key may store it.
+    if key == chat::CUSTOM_KEY {
+        return Err("use local_set_key".into());
+    }
     let before = (key == "github-token").then(|| secrets::get(&key));
     secrets::set(&key, &value)?;
     if let Some(before) = before {
@@ -626,9 +599,13 @@ fn commands() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
         approval_ack,
         approval_decline,
         log_line,
-        chat_send,
-        chat_reset,
-        claude_cli_status,
+        chat::commands::chat_send,
+        chat::commands::chat_models,
+        chat::commands::chat_reset,
+        chat::commands::claude_cli_status,
+        chat::commands::local_connect,
+        chat::commands::local_set_key,
+        codex_plan::codex_plan_usage,
         ingest_file,
         secret_present,
         secret_set,
@@ -669,7 +646,6 @@ fn commands() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
         desktop::commands::desktop_mochi_set_asleep,
         shortcuts::commands::shortcuts_status,
         shortcuts::commands::shortcuts_suspend,
-        codex_plan::codex_plan_usage,
     ]
 }
 

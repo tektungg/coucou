@@ -11,6 +11,7 @@
 //   &focus=integration_github[&detail]  the GitHub pulse card (its lists)
 //   &outfit=<selection>  what Mochi wears (mochi/wardrobe.ts); view=wardrobe for the wardrobe
 //   view=prompt&md     the answer in Markdown (views/markdown.ts)
+//   view=prompt&picker the provider and model picker open (views/chatPicker.ts)
 //   &plan              both plan pills in the header, with sample Claude and Codex numbers
 //   &plan=open|codex   …and the Claude (or Codex) plan card open
 // Mochi still animates; screenshots are taken after it has settled.
@@ -218,3 +219,6 @@ if (planCard === "open" || planCard === "codex") {
 if (params.get("diff") === "open") {
   window.setTimeout(() => (document.querySelector(".btile-diff") as HTMLElement | null)?.click(), 400);
 }
+
+// The picker opens from its button, as a click would.
+if (params.has("picker")) (document.querySelector(".model-btn") as HTMLElement | null)?.click();

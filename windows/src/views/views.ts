@@ -3,7 +3,8 @@
 // colours and shapes are the Windows "Mochi Pop" look (style.css).
 
 import { h, svg, clear, dot } from "./dom";
-import { API_KEY_SECRET, Bridge } from "../core/bridge";
+import { Bridge } from "../core/bridge";
+import { providerDef, type ProviderDef } from "../core/providers";
 import { lastTextStep } from "../core/diff";
 import { ICONS } from "./icons";
 import { State, type QuestionInfo } from "../core/state";
@@ -478,8 +479,14 @@ const CHAT_CHECK_MS = 10_000;
 const BADGE_OK = "#22C55E";
 const BADGE_MISSING = "#F4505E";
 
-/** Whether the chat can answer: a saved API key, or the Claude Code CLI found. Cached. */
+/** Whether the chat can answer: its key saved, its server connected, or the Claude Code CLI found. Cached. */
 const chatReadiness = { ready: null as boolean | null, provider: "", checkedAt: -Infinity };
+
+function providerReady(p: ProviderDef): Promise<boolean> {
+  if (p.id === "claude-cli") return Bridge.claudeCliStatus().then((r) => r?.found === true);
+  if (p.key) return Bridge.secretPresent(p.key).then((v) => v === true);
+  return Promise.resolve(p.urlField ? State.settings[p.urlField] !== "" : false);
+}
 
 function refreshChatReadiness() {
   const provider = State.settings.chatProvider;
@@ -487,9 +494,7 @@ function refreshChatReadiness() {
   if (provider === chatReadiness.provider && now - chatReadiness.checkedAt < CHAT_CHECK_MS) return;
   chatReadiness.provider = provider;
   chatReadiness.checkedAt = now;
-  const check = provider === "cli"
-    ? Bridge.claudeCliStatus().then((r) => r?.found === true)
-    : Bridge.secretPresent(API_KEY_SECRET).then((v) => v === true);
+  const check = providerReady(providerDef(provider));
   void check.then((ready) => {
     // A provider switched meanwhile has its own check on the way.
     if (provider !== chatReadiness.provider || ready === chatReadiness.ready) return;
@@ -543,7 +548,7 @@ function statusRow(actions: ViewActions) {
     sync() {
       badge(hooks, State.settings.hooksInstalled, "Claude Code");
       if (State.view === "settings") refreshChatReadiness();
-      const via = State.settings.chatProvider === "cli" ? "Chat · CLI" : "Chat · API";
+      const via = `Chat · ${providerDef(State.settings.chatProvider).name}`;
       badge(chat, chatReadiness.ready === true, via);
     },
   };

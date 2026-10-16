@@ -135,6 +135,13 @@ export const Bridge = {
   chatSend: (query: string, context: ChatContext | null) =>
     callOrThrow<{ text: string }>("chat_send", { query, context }),
   chatReset: () => call<void>("chat_reset"),
+  /** The provider's models; throws with the reason (no key, server down). */
+  chatModels: (provider: string) => callOrThrow<ModelInfo[]>("chat_models", { provider }),
+  /** Checks a model server and lists its models; `url` empty = its usual address. */
+  localConnect: (provider: string, url: string) =>
+    callOrThrow<LocalServer>("local_connect", { provider, url }),
+  /** The custom server's key, bound to the address it is entered for; empty removes it. */
+  localSetKey: (url: string, key: string) => callOrThrow<void>("local_set_key", { url, key }),
   /** Play/pause, next or previous on the media session the Music pill shows. */
   mediaControl: (action: string) => call<void>("media_control", { action }),
   /** The Music card's cover as a data URL; `id` matches the poll's `artId`. */
@@ -262,6 +269,21 @@ export interface IntegrationUpdate {
   data: Record<string, unknown>;
   error: string | null;
   event: { success: boolean; label: string; detail: string | null } | null;
+}
+
+/** One model a provider offers (chat/mod.rs ModelInfo). */
+export interface ModelInfo {
+  id: string;
+  label: string;
+}
+
+/** A model server that answered (chat/local_chat.rs Connected). */
+export interface LocalServer {
+  /** The address as normalised and stored. */
+  url: string;
+  models: string[];
+  /** The server runs on this computer. */
+  loopback: boolean;
 }
 
 export type ChatContext =
