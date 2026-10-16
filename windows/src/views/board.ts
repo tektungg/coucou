@@ -1,6 +1,9 @@
 // Home's session board (Mochi Pop): a speech bubble summing up the agent
 // sessions and a row of tiles, one per session, the ones that need you first.
-// Pure (no runtime imports), so tests/board.test.ts covers every state.
+// Pure (its only import, core/diff.ts, is pure too), so tests/board.test.ts
+// covers every state.
+
+import { parseDiffStep } from "../core/diff";
 
 /** The parts of a session pill the board reads (core/state.ts AgentTask). */
 export interface BoardSession {
@@ -19,6 +22,13 @@ export interface BoardSession {
 
 export type BoardMark = "done" | "ask" | "error";
 
+/** The +N −M of the file edit a session is on, and the diff it opens. */
+export interface BoardDiff {
+  added: number;
+  removed: number;
+  diffId: number;
+}
+
 export interface BoardTile {
   id: string;
   name: string;
@@ -28,6 +38,8 @@ export interface BoardTile {
   /** "ctx 45% · $1.20", when the statusline reported it. */
   usage: string | null;
   mark: BoardMark | null;
+  /** Set while the step is a file edit (live diff, core/diff.ts). */
+  diff: BoardDiff | null;
   /** The focused session. */
   active: boolean;
 }
@@ -76,10 +88,14 @@ export function ago(ms: number): string {
   return `${Math.floor(ms / HOUR_MS)} h`;
 }
 
-/** The step a working session is on, if it has one. */
-function currentStep(s: BoardSession): string | null {
+/** The step a working session is on, if it has one; a file edit reads "Edited <file>". */
+function currentStep(s: BoardSession): { text: string; diff: BoardDiff | null } | null {
   if (!WORKING.has(s.state) || s.steps.length === 0) return null;
-  return s.steps[Math.min(Math.max(s.stepIndex, 0), s.steps.length - 1)];
+  const step = s.steps[Math.min(Math.max(s.stepIndex, 0), s.steps.length - 1)];
+  const edit = parseDiffStep(step);
+  if (!edit) return { text: step, diff: null };
+  const { added, removed, diffId } = edit;
+  return { text: `Edited ${edit.filename}`, diff: { added, removed, diffId } };
 }
 
 export function usageOf(s: Pick<BoardSession, "ctxPct" | "costUsd">): string | null {
@@ -91,17 +107,18 @@ export function usageOf(s: Pick<BoardSession, "ctxPct" | "costUsd">): string | n
 }
 
 function tileOf(s: BoardSession, focusId: string, nowMs: number): BoardTile {
-  const what = currentStep(s) ?? stateLabel(s.state);
+  const step = currentStep(s);
+  const what = step?.text ?? stateLabel(s.state);
   const when = s.lastEventAt != null ? ` · ${ago(nowMs - s.lastEventAt)}` : "";
   return {
     id: s.id, name: s.name, color: s.color, line: what + when, usage: usageOf(s),
-    mark: MARK[s.state] ?? null, active: s.id === focusId,
+    mark: MARK[s.state] ?? null, diff: step?.diff ?? null, active: s.id === focusId,
   };
 }
 
 function clause(s: BoardSession): string {
   const step = currentStep(s);
-  return step ? `${s.name}: ${step}` : `${s.name} ${PHRASE[s.state] ?? "is idle"}`;
+  return step ? `${s.name}: ${step.text}` : `${s.name} ${PHRASE[s.state] ?? "is idle"}`;
 }
 
 function bubbleOf(ordered: BoardSession[]): string {

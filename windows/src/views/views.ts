@@ -2,19 +2,17 @@
 // and wording are copied from the Swift views so both platforms read the same;
 // colours and shapes are the Windows "Mochi Pop" look (style.css).
 
-import { personalDataKey } from "./personal";
 import { h, svg, clear, dot } from "./dom";
 import { API_KEY_SECRET, Bridge } from "../core/bridge";
+import { lastTextStep } from "../core/diff";
 import { ICONS } from "./icons";
-import { buildBoardView } from "./boardView";
-import { State, type AgentTask, type QuestionInfo } from "../core/state";
-import { washRGBA, type IslandViewName, type Wash } from "../core/layout";
+import { State, type QuestionInfo } from "../core/state";
+import type { IslandViewName } from "../core/layout";
 import { buildPrompt } from "./chat";
 import { buildChoose, buildUpload, buildUploading } from "./upload";
-import { renderIntegrationCard, type IntegrationCardHooks } from "./integrations";
 import { buildAnswers, type AskAnswer, type AskItem } from "../island/askQuestion";
-import { isSessionPill } from "../island/sessions";
-import { SwipeAccumulator, dragDirection, slideDirection, stepFocus } from "./carousel";
+import { buildOverview } from "./overview";
+import { agentWho, btn, card, stack } from "./parts";
 import { createClickGuard, type ClickGuard } from "./clickGuard";
 
 // The header lives in header.ts; island.ts takes it from here with the views.
@@ -52,185 +50,6 @@ export interface ViewHost {
   tick?(nowMs: number): void;
   /** True while the view still needs frames (a transition in flight). */
   busy?(): boolean;
-}
-
-// ── Shared pieces ─────────────────────────────────────────────────────────────
-
-function card(wash: Wash, ...children: (Node | string)[]): HTMLElement {
-  const el = h("div", { class: wash ? "card wash" : "card" }, ...children);
-  if (wash) el.style.setProperty("--wash", washRGBA(wash));
-  return el;
-}
-
-/** "allow" is the approval's Allow: green, so it never reads as the pink default action. */
-function btn(
-  label: string,
-  kind: "primary" | "secondary" | "allow",
-  onClick: () => void,
-  kbd?: string,
-): HTMLElement {
-  return h(
-    "button",
-    { class: `btn ${kind}`, onclick: onClick },
-    h("span", { text: label }),
-    kbd ? h("span", { class: "kbd", text: kbd }) : null,
-  );
-}
-
-/** AgentWho — coloured dot + task name + grey label. */
-function agentWho(task: AgentTask | null, label: string): HTMLElement {
-  const row = h("div", { class: "who-row" });
-  if (task) {
-    row.append(dot(task.color, 8), h("span", { class: "n", text: task.name }));
-  }
-  row.append(h("span", { text: label }));
-  return row;
-}
-
-function stack(padLeft: number, padRight: number, ...children: Node[]): HTMLElement {
-  const el = h("div", { class: "stack" }, ...children);
-  el.style.padding = `4px ${padRight}px 4px ${padLeft}px`;
-  return el;
-}
-
-// ── Overview ──────────────────────────────────────────────────────────────────
-
-/** A pill that is an agent session: what Home's board shows. */
-function isBoardSession(t: AgentTask): boolean {
-  if (isSessionPill(t.id) || t.id.startsWith("agent_")) return true;
-  // The Claude Code catch-all, while a session without its own pill runs.
-  return t.id === "integration_claude" && (t.state !== "idle" || t.steps.length > 0);
-}
-
-/** What the overview keeps between syncs. */
-interface Overview {
-  slot: HTMLElement;
-  leftBody: HTMLElement;
-  board: ReturnType<typeof buildBoardView>;
-  detailOpen: boolean;
-  lastFocus: string | null;
-  mode: "board" | "card" | null;
-  /** What the shown card was built from; a change rebuilds it. */
-  cardKey: string;
-  /** Pending re-sync that moves the board's "3 min" labels along. */
-  clockTimer: number | null;
-}
-
-/** The board's times read in minutes: re-sync once a minute while it is on screen. */
-const BOARD_CLOCK_MS = 60_000;
-
-const focusIds = () => State.visibleTasks.map((t) => t.id);
-
-/** Wheel, tilt and drag move to the next or previous pill (views/carousel.ts). */
-function wireCarousel(el: HTMLElement, actions: ViewActions) {
-  const go = (dir: -1 | 1) => {
-    const next = stepFocus(focusIds(), State.focusTask?.id ?? null, dir);
-    if (next && next !== State.focusTask?.id) actions.setFocus(next);
-  };
-  const swipe = new SwipeAccumulator();
-  el.addEventListener("wheel", (e) => {
-    const dir = swipe.add(e.deltaX, e.deltaY, performance.now());
-    if (dir !== 0) go(dir);
-  }, { passive: true });
-  let dragFrom: { x: number; y: number } | null = null;
-  el.addEventListener("mousedown", (e) => {
-    dragFrom = { x: e.clientX, y: e.clientY };
-  });
-  window.addEventListener("mouseup", (e) => {
-    if (!dragFrom) return;
-    const dir = dragDirection(e.clientX - dragFrom.x, e.clientY - dragFrom.y);
-    dragFrom = null;
-    if (dir !== 0) go(dir);
-  });
-}
-
-/** A pill card's detail view opens and closes through these. */
-function cardHooks(o: Overview, actions: ViewActions): IntegrationCardHooks {
-  const setDetail = (open: boolean) => {
-    o.detailOpen = open;
-    o.cardKey = "";
-    State.notify();
-  };
-  return {
-    get detailOpen() {
-      return o.detailOpen;
-    },
-    openDetail: () => setDetail(true),
-    closeDetail: () => setDetail(false),
-    openSettings: () => actions.openSettingsWindow(),
-  };
-}
-
-/** A new pill in focus: slide it in from the side its chip lives on, start afresh. */
-function onFocusChange(o: Overview, id: string | null) {
-  const dir = slideDirection(focusIds(), o.lastFocus, id);
-  if (dir !== 0) {
-    o.slot.classList.remove("slide-next", "slide-prev");
-    void o.slot.offsetWidth; // restart the animation
-    o.slot.classList.add(dir > 0 ? "slide-next" : "slide-prev");
-  }
-  o.lastFocus = id;
-  o.detailOpen = false;
-  o.cardKey = "";
-  o.mode = null;
-}
-
-function syncBoard(o: Overview, task: AgentTask) {
-  if (o.mode !== "board") {
-    clear(o.leftBody);
-    o.leftBody.append(o.board.el);
-    o.mode = "board";
-    o.cardKey = "";
-  }
-  o.board.sync(State.visibleTasks.filter(isBoardSession), task.id, performance.now());
-  // Only while the open island shows the board, so a hidden island stays at 0 % CPU.
-  if (o.clockTimer === null && State.mode === "expanded" && State.view === "overview") {
-    o.clockTimer = window.setTimeout(() => {
-      o.clockTimer = null;
-      State.notify();
-    }, BOARD_CLOCK_MS);
-  }
-}
-
-/** Every other pill shows its own card, exactly like IntegrationCardView. */
-function syncCard(o: Overview, task: AgentTask, hooks: IntegrationCardHooks) {
-  const info = State.integrations[task.id];
-  const key = [
-    task.id, o.detailOpen, task.state, task.steps.join("|"),
-    info?.loaded, info?.error, info?.configured,
-    personalDataKey(task.id, info?.data ?? {}),
-  ].join("~");
-  if (key === o.cardKey) return;
-  o.cardKey = key;
-  o.mode = "card";
-  clear(o.leftBody);
-  o.leftBody.append(renderIntegrationCard(task, hooks));
-}
-
-function buildOverview(actions: ViewActions): ViewHost {
-  const leftBody = h("div", { class: "left-body" });
-  const jump = h("button", { class: "icon-btn jump", title: "Open", onclick: () => actions.openTarget() },
-    svg(ICONS.arrowUpRight, 8));
-  // One pill at a time, full width; the chips in the header say which.
-  const slot = h("div", { class: "left" }, card(null, leftBody, jump));
-  const el = h("div", { class: "view overview" }, slot);
-  wireCarousel(el, actions);
-  const o: Overview = {
-    slot, leftBody, board: buildBoardView((id) => actions.setFocus(id)),
-    detailOpen: false, lastFocus: null, mode: null, cardKey: "", clockTimer: null,
-  };
-  const hooks = cardHooks(o, actions);
-  return {
-    el,
-    sync() {
-      const task = State.focusTask;
-      if ((task?.id ?? null) !== o.lastFocus) onFocusChange(o, task?.id ?? null);
-      // An agent session shows the board of every session.
-      if (task && isBoardSession(task)) syncBoard(o, task);
-      else if (task) syncCard(o, task, hooks);
-      jump.style.display = o.detailOpen ? "none" : "";
-    },
-  };
 }
 
 // ── Empty ─────────────────────────────────────────────────────────────────────
@@ -560,7 +379,7 @@ class QuestionCard implements ViewHost {
     clear(this.head);
     this.head.append(agentWho(State.focusTask, "Claude Code is asking a question"));
     this.header.textContent = "";
-    this.title.textContent = State.focusTask?.steps.at(-1) ?? "Claude needs an answer.";
+    this.title.textContent = lastTextStep(State.focusTask?.steps ?? []) ?? "Claude needs an answer.";
     clear(this.body);
     this.body.append(h("div", { class: "sub", text: "Answer in your terminal." }));
   }
@@ -584,7 +403,7 @@ function buildError(actions: ViewActions): ViewHost {
       clear(who);
       who.append(agentWho(task, task?.source === "n8n" ? "n8n" : "Claude Code"));
       title.textContent = task?.source === "n8n" ? "Workflow stopped." : "Session stopped on an error.";
-      detail.textContent = task?.steps.at(-1) ?? "No detail available.";
+      detail.textContent = lastTextStep(task?.steps ?? []) ?? "No detail available.";
     },
   };
 }
@@ -593,7 +412,8 @@ function buildError(actions: ViewActions): ViewHost {
 
 function buildFinished(actions: ViewActions): ViewHost {
   const who = h("div");
-  const title = h("div", { class: "title" });
+  // Claude's final message: one line, the whole of it on hover.
+  const title = h("div", { class: "title one-line" });
   const row = h("div", { class: "actions" },
     btn("Open terminal", "primary", () => actions.openTerminal()),
     btn("OK", "secondary", () => actions.collapse()),
@@ -604,7 +424,10 @@ function buildFinished(actions: ViewActions): ViewHost {
     sync() {
       clear(who);
       who.append(agentWho(State.focusTask, "Claude Code finished"));
-      title.textContent = State.focusTask?.steps.at(-1) ?? "Session finished";
+      const task = State.focusTask;
+      const text = task?.finalLine || lastTextStep(task?.steps ?? []) || "Session finished";
+      title.textContent = text;
+      title.title = text;
     },
   };
 }

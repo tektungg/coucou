@@ -2,6 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { MAX_TILES, ago, sessionBoard, stateLabel, usageOf, type BoardSession } from "../src/views/board.ts";
+import { makeDiffStep } from "../src/core/diff.ts";
 
 const NOW = 10_000_000;
 const s = (id: string, state: string, over: Partial<BoardSession> = {}): BoardSession => ({
@@ -12,7 +13,7 @@ test("one tile per session, with the step it is on and how long ago", () => {
   const b = sessionBoard([s("coucou", "working", { steps: ["Reading", "Editing engine.ts"], stepIndex: 1 })], "coucou", NOW);
   assert.equal(b.tiles.length, 1);
   assert.deepEqual(b.tiles[0], {
-    id: "coucou", name: "coucou", color: "#4F8EF7", line: "Editing engine.ts · 3 min", usage: null, mark: null, active: true,
+    id: "coucou", name: "coucou", color: "#4F8EF7", line: "Editing engine.ts · 3 min", usage: null, mark: null, diff: null, active: true,
   });
   assert.equal(b.more, null);
 });
@@ -81,4 +82,28 @@ test("ago reads short", () => {
 
 test("no sessions, an empty board", () => {
   assert.deepEqual(sessionBoard([], "x", NOW), { bubble: "No agent sessions right now.", tiles: [], more: null });
+});
+
+// ── Live diff on the board ────────────────────────────────────────────────────
+
+test("a file edit reads as Edited <file>, with its +N −M and the diff to open", () => {
+  const steps = ["Modifie · engine.ts", makeDiffStep("engine.ts", 12, 3, 7)];
+  const b = sessionBoard([s("coucou", "working", { steps, stepIndex: 1 })], "coucou", NOW);
+  assert.equal(b.tiles[0].line, "Edited engine.ts · 3 min");
+  assert.deepEqual(b.tiles[0].diff, { added: 12, removed: 3, diffId: 7 });
+  assert.equal(b.bubble, "coucou: Edited engine.ts");
+});
+
+test("the diff marker never shows, and a later step takes the chip away", () => {
+  const steps = [makeDiffStep("a.ts", 1, 0, 1), "Exécute · npm test"];
+  const b = sessionBoard([s("coucou", "working", { steps, stepIndex: 1 })], "coucou", NOW);
+  assert.equal(b.tiles[0].diff, null);
+  for (const text of [b.bubble, b.tiles[0].line]) assert.doesNotMatch(text, /|	/);
+});
+
+test("a finished session shows no diff chip", () => {
+  const steps = [makeDiffStep("a.ts", 1, 0, 1)];
+  const b = sessionBoard([s("coucou", "finished", { steps, stepIndex: 0 })], "coucou", NOW);
+  assert.equal(b.tiles[0].diff, null);
+  assert.match(b.tiles[0].line, /^done/);
 });

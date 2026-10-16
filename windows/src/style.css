@@ -654,7 +654,169 @@ body {
   color: var(--ink-2);
 }
 
+/* A tile's line, and the +N −M of the file it just edited (live diff). */
+.btile-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.btile-line > span:first-child {
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.btile .btile-diff {
+  flex: 0 0 auto;
+  display: inline-flex;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: var(--r-pill);
+  background: #241d2e;
+  opacity: 1;
+  cursor: pointer;
+}
+
+.btile .btile-diff:hover {
+  background: #3a3046;
+}
+
+.diff-counts span {
+  font: 600 10px var(--mono);
+  opacity: 1;
+}
+
+.diff-counts .plus {
+  color: var(--green-2);
+}
+
+.diff-counts .minus {
+  color: var(--red-text);
+}
+
+/* ── Diff card (Home, over the board): DiffCardView ─────────────────────── */
+
+.diff-card {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px 10px 108px;
+  box-sizing: border-box;
+}
+
+.diff-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.diff-head .grow {
+  flex: 1 1 auto;
+}
+
+.diff-head .diff-counts {
+  display: inline-flex;
+  gap: 5px;
+  flex: 0 0 auto;
+}
+
+.diff-back {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 4px 10px 4px 7px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--soft-2);
+  color: var(--ink);
+  cursor: default;
+}
+
+.diff-back:hover {
+  background: var(--soft-3);
+}
+
+.diff-back b {
+  font: 600 12px var(--font);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diff-note {
+  font: 500 11.5px var(--font);
+  color: var(--dim-3);
+}
+
+.diff-lines {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  border-radius: 12px;
+  background: var(--card-flat);
+  padding: 4px 0;
+  scrollbar-width: none;
+  user-select: text;
+}
+
+.diff-lines::-webkit-scrollbar {
+  display: none;
+}
+
+.diff-line {
+  display: flex;
+  min-height: 14px; /* an empty line still takes a row */
+  padding: 0 8px;
+  font: 400 10.5px/1.35 var(--mono);
+  color: var(--dim-2);
+}
+
+.diff-line .sym {
+  flex: 0 0 12px;
+  color: var(--dim-5);
+}
+
+.diff-line .txt {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diff-line.added {
+  background: rgba(34, 197, 94, 0.14);
+  color: #a7f3c4;
+}
+
+.diff-line.added .sym {
+  color: var(--green-2);
+}
+
+.diff-line.removed {
+  background: rgba(244, 80, 94, 0.14);
+  color: #ffb3ba;
+}
+
+.diff-line.removed .sym {
+  color: var(--red-text);
+}
+
 /* ── Generic text blocks ────────────────────────────────────────────────── */
+
+/* Claude's final message on the Finished card: one line, never past the card. */
+.title.one-line {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
 
 .title {
   font: 600 15px var(--font);

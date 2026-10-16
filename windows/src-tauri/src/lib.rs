@@ -7,6 +7,7 @@ mod claude;
 mod webdrop;
 mod claude_cli;
 mod dropped;
+mod editor;
 mod files;
 mod hooks;
 mod integrations;
@@ -593,6 +594,7 @@ pub fn run() {
             open_url,
             open_in_vscode,
             open_session,
+            editor::open_file_in_vscode,
             quit_app,
             hooks_status,
             hooks_preview,

@@ -5,6 +5,8 @@
 //   ?view=overview|prompt|approval|question|settings|plan|finished|error|empty
 //   &focus=<pill id>   (overview only; default: the session pill)
 //   &many              four agent sessions instead of two (the board's +N)
+//   &diff              the working session has just edited a file (+N −M chip)
+//   &diff=open         …and its diff card is open
 // Mochi still animates; screenshots are taken after it has settled.
 
 import type { AskItem } from "../src/island/askQuestion";
@@ -39,6 +41,21 @@ State.updateTask("cc_preview", "working");
 State.appendStep("cc_preview", "Editing engine.ts");
 State.upsertSession("cc_api", "api-session", "venturo-api", "D:/Work/api");
 State.updateTask("cc_api", "finished");
+// ?diff: the session's last step is a file edit, with the diff kept for the card.
+if (params.has("diff")) {
+  const { fromEdit, fileName, makeDiffStep } = await import("../src/core/diff");
+  const { sessionDiffs } = await import("../src/core/sessionDiffs");
+  const before = [
+    "export function greet(name) {", "  return `hi ${name}`;", "}", "", "export const VERSION = 1;", "",
+  ].join("\n");
+  const after = [
+    "export function greet(name: string): string {", "  const who = name.trim() || \"you\";",
+    "  return `hi ${who}`;", "}", "", "export const VERSION = 2;", "",
+  ].join("\n");
+  const diff = fromEdit(before, after, "D:/Personal Project/coucou/windows/src/greet.ts");
+  const id = sessionDiffs.append("cc_preview", diff);
+  State.appendStep("cc_preview", makeDiffStep(fileName(diff.path), diff.added, diff.removed, id));
+}
 Object.assign(State.tasks.find((t) => t.id === "cc_preview")!, { ctxPct: 41, costUsd: 1.2 });
 // ?many: two more sessions, one waiting on you, so the board folds into +N.
 if (params.has("many")) {
@@ -114,3 +131,6 @@ const root = document.getElementById("root")!;
 const island = new Island(root);
 island.applySettings();
 island.alert(view);
+if (params.get("diff") === "open") {
+  window.setTimeout(() => (document.querySelector(".btile-diff") as HTMLElement | null)?.click(), 400);
+}

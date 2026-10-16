@@ -117,6 +117,25 @@ in time, Coucou stays quiet and Claude Code asks in the terminal as usual.
 
 It works from any terminal — Windows Terminal, PowerShell, VS Code, Git Bash.
 
+### Live diff
+
+Each file Claude Code edits shows on its session's tile on Home: the line reads
+**Edited app.ts**, with a **+N −M** chip next to it. Click the chip and the
+diff opens in Home's card, line by line (the island grows for it, as for the
+Messages card); its ↗ opens the file in VS Code (only an existing file given by
+its full path, never launched by its type). The diff of an Edit, MultiEdit or
+Write is worked out on the island (`core/diff.ts`, a port of the Mac's
+DiffEngine: LCS with 3 lines of context; past 200 KB, 4,000 lines or a million
+LCS cells only the counts are kept). The relay forwards a finished edit's text
+whole for this, up to 256 KB per string and 512 KB per event; anything cut is
+flagged and gets no counts. Diffs are kept per session (50 at most, an hour
+after the last one, `core/sessionDiffs.ts`) and dropped when the session ends.
+
+When a session stops, its **Finished** card shows Claude's final message, as
+one line (the whole message on hover), until the next turn starts. From
+upstream `4b0a411`, `fbc4605`, `122e130`; the ticker those draw in is not part
+of this build, so the counts live on the board instead.
+
 ### Plans and questions
 
 - **Plan approval (ExitPlanMode).** The island shows the plan itself (scrollable)
@@ -453,9 +472,10 @@ never cherry-picked.
 | `62e43c6` | Auto-close follows Settings live | `fsm.ts homeCollapseDueAt` |
 | `2261334` | Open on hover as a setting, your own sounds | on by default here (this build always opened on hover); `sounds.rs` |
 | `c90d30b` | Open terminal brings the session's window forward | `session_window.rs`; the Claude Desktop part needs agents.rs, left out |
+| `4b0a411`, `fbc4605`, `122e130` | Live diff and Claude's final line | on the board tiles and Home's card here, not a ticker |
 
 Not ported: `66be53e` (Antigravity's `PreToolUse` answer): this build's relay
-has no Antigravity path. Upstream's bigger features (live diff, more agents,
+has no Antigravity path. Upstream's bigger features (more agents,
 shortcuts, wardrobe, desktop Mochi, GitHub pulse, weekly recap, Flow dictation,
 Notetaker, « OK Coucou ») are not in this build yet.
 

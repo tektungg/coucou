@@ -18,6 +18,7 @@ import { tickMiniBots } from "../mochi/minibots";
 import { UploadCanvas } from "../upload/canvas";
 import { UploadSeq } from "../upload/sequence";
 import { buildHeader, buildViews, type ViewHost } from "../views/views";
+import { diffCardOpen } from "../views/overview";
 import { h } from "../views/dom";
 import {
   hasPersonalData, lyricStripActive, lyricStripEl, lyricStripWidth, musicSinging, onLyricStripResize,
@@ -118,7 +119,8 @@ export class Island {
     onLyricStripResize(() => {
       if (lyricMode()) this.animateGeometry(lyricStripWidth() < this.width.value);
     });
-    // Focusing Messages (or its first message landing) grows the overview; leaving it shrinks it back.
+    // Focusing Messages (or its first message landing), or opening a diff card,
+    // grows the overview; leaving shrinks it back.
     State.subscribe(() => {
       const tall = this.wantsTallOverview();
       if (tall === this.tallOverview) return;
@@ -406,9 +408,10 @@ export class Island {
     return { w, h, r };
   }
 
+  /** The Messages card and an open diff card get the taller overview. */
   private wantsTallOverview(): boolean {
     const id = State.focusTask?.id;
-    return id === "integration_messages" && hasPersonalData(id);
+    return (id === "integration_messages" && hasPersonalData(id)) || diffCardOpen();
   }
 
   private animateGeometry(shrinking: boolean) {

@@ -5,6 +5,7 @@ import type { EyeShape } from "../mochi/engine";
 import { isClaudeSessionTask, sessionEndAct, toolKind, type Act, type ToolKind } from "../mochi/acts";
 import type { AskAnswer, AskItem } from "../island/askQuestion";
 import { compareSessions, isSessionPill, sessionColor, staleSessions } from "../island/sessions";
+import { sessionDiffs } from "./sessionDiffs";
 
 export type AgentSource = "claudeCode" | "n8n" | "agent";
 export type PillBadge = "approval" | "finished" | "error";
@@ -22,6 +23,8 @@ export interface AgentTask {
   miniEye?: EyeShape | null;
   pillBadge?: PillBadge | null;
   sessionCwd?: string | null;
+  /** Claude's final message after Stop, one line; cleared when a new turn starts. */
+  finalLine?: string | null;
   /** Claude Code session behind a `cc_` pill (see island/sessions.ts). */
   sessionId?: string;
   /** performance.now() of the last hook event, for ordering and sweeping. */
@@ -342,6 +345,7 @@ class AppState {
     const idx = this.tasks.findIndex((t) => t.id === id);
     if (idx < 0) return;
     this.tasks.splice(idx, 1);
+    sessionDiffs.clear(id);
     if (this.focusId === id) this.focusId = this.visibleTasks[0]?.id ?? "integration_claude";
     this.notify();
   }

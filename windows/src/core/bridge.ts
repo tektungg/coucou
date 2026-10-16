@@ -83,6 +83,9 @@ export const Bridge = {
   openSession: (sessionId: string | null, path: string | null) =>
     call<boolean>("open_session", { sessionId, path }),
 
+  /** The diff card's ↗: an existing file, in VS Code; never launched by its type. */
+  openFileInVSCode: (path: string) => call<boolean>("open_file_in_vscode", { path }),
+
   quit: () => call<void>("quit_app"),
 
   openSettingsWindow: () => call<void>("open_settings_window"),
