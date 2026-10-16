@@ -57,7 +57,12 @@ export interface ViewHost {
   tick?(nowMs: number): void;
   /** True while the view still needs frames (a transition in flight). */
   busy?(): boolean;
+  /** Ctrl+O / Ctrl+E while the view is on screen (island/shortcuts.ts). */
+  command?(command: ViewCommand): void;
 }
+
+/** What a shortcut asks the open view: open the highlighted row, toggle the diff. */
+export type ViewCommand = "openSelection" | "toggleDiff";
 
 // ── Empty ─────────────────────────────────────────────────────────────────────
 

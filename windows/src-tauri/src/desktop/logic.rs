@@ -97,6 +97,23 @@ pub fn restore_spot(spot: (f64, f64), displays: &[Display], size: f64, margin: f
     })
 }
 
+/// Where a flight out lands, given his `restored` spot (`restore_spot`).
+/// A spot on a display that is gone keeps him home, unless `anywhere`: the
+/// user sending him out with the desktop shortcut, who then gets `corner`,
+/// the first-visit spot. Otherwise one undock would leave the shortcut doing
+/// nothing until he was dragged out by hand.
+pub fn spot_or_corner(
+    restored: Option<(f64, f64)>,
+    anywhere: bool,
+    corner: impl FnOnce() -> Option<(f64, f64)>,
+) -> Option<(f64, f64)> {
+    if anywhere {
+        restored.or_else(corner)
+    } else {
+        restored
+    }
+}
+
 /// First visit: the bottom-right corner of the work area, like the Mac.
 pub fn default_spot(d: &Display, size: f64, margin: f64) -> (f64, f64) {
     let s = size * d.scale;

@@ -24,7 +24,10 @@ use ::windows::Win32::System::Ole::RevokeDragDrop;
 use ::windows::Win32::System::Pipes::GetNamedPipeClientProcessId;
 use ::windows::Win32::System::SystemInformation::GetLocalTime;
 use ::windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
-use ::windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
+use ::windows::Win32::UI::Input::KeyboardAndMouse::{
+    GetAsyncKeyState, GetKeyboardLayoutList, MapVirtualKeyExW, ToUnicodeEx, HKL, MAPVK_VK_TO_VSC,
+    VK_CONTROL, VK_LBUTTON, VK_MENU, VK_SHIFT,
+};
 use ::windows::Win32::Foundation::RECT;
 use ::windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
 use ::windows::Win32::System::Threading::GetCurrentProcessId;
@@ -326,6 +329,58 @@ pub fn set_activating(win: &WebviewWindow, activating: bool) {
 
 /// Click-through here is the poll's WS_EX_TRANSPARENT toggle, not a region.
 pub fn set_input_region(_win: &WebviewWindow, _rect: Option<(f64, f64, f64, f64)>) {}
+
+// ── Global shortcuts ──────────────────────────────────────────────────────────
+
+/// How many installed keyboard layouts are checked (far more than anyone has).
+const MAX_LAYOUTS: usize = 32;
+/// One byte per virtual key, as GetKeyboardState fills it.
+const KEY_STATE_LEN: usize = 256;
+/// The high bit of a key-state byte: the key is held.
+const KEY_DOWN: u8 = 0x80;
+/// ToUnicodeEx flag: leave the keyboard state alone, so a dead key met here
+/// doesn't change what the user types next (Windows 10 1607 and later).
+const TO_UNICODE_KEEP_STATE: u32 = 0x4;
+/// UTF-16 units ToUnicodeEx may write for one key (a ligature is a few).
+const TYPED_UNITS: usize = 8;
+
+/// RegisterHotKey works in every Windows session.
+pub fn global_shortcuts_blocked() -> Option<&'static str> {
+    None
+}
+
+/// The character Ctrl+Alt(+Shift)+`vk` types on one of the installed keyboard
+/// layouts, if any. Windows reads Ctrl+Alt as AltGr, so registering such a
+/// combination as a global shortcut would stop the user typing that character
+/// (AltGr+E is € on most European layouts, AltGr+A is ą in Polish).
+pub fn ctrl_alt_types(vk: u16, shift: bool) -> Option<String> {
+    let mut layouts = [HKL::default(); MAX_LAYOUTS];
+    let count = unsafe { GetKeyboardLayoutList(Some(&mut layouts[..])) };
+    let count = usize::try_from(count).unwrap_or(0).min(layouts.len());
+
+    let mut state = [0u8; KEY_STATE_LEN];
+    state[usize::from(VK_CONTROL.0)] = KEY_DOWN;
+    state[usize::from(VK_MENU.0)] = KEY_DOWN;
+    if shift {
+        state[usize::from(VK_SHIFT.0)] = KEY_DOWN;
+    }
+    layouts[..count].iter().find_map(|&layout| typed_on(layout, vk, &state))
+}
+
+/// What `vk` types on `layout` with the keys in `state` held, when it is a
+/// printable character.
+fn typed_on(layout: HKL, vk: u16, state: &[u8; KEY_STATE_LEN]) -> Option<String> {
+    let scan = unsafe { MapVirtualKeyExW(u32::from(vk), MAPVK_VK_TO_VSC, Some(layout)) };
+    let mut buf = [0u16; TYPED_UNITS];
+    let n = unsafe { ToUnicodeEx(u32::from(vk), scan, state, &mut buf, TO_UNICODE_KEEP_STATE, Some(layout)) };
+    let typed = match usize::try_from(n) {
+        // A dead key (´ ^ ¨…) is still something the user types with it.
+        Err(_) => String::from_utf16_lossy(&buf[..1]),
+        Ok(0) => return None,
+        Ok(n) => String::from_utf16_lossy(&buf[..n.min(buf.len())]),
+    };
+    typed.chars().any(|c| !c.is_control()).then_some(typed)
+}
 
 // ── Desktop Mochi window ──────────────────────────────────────────────────────
 

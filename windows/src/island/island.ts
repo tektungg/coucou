@@ -21,7 +21,7 @@ import { buildHeader, buildViews, type ViewHost } from "../views/views";
 import { diffCardOpen } from "../views/overview";
 import { h } from "../views/dom";
 import {
-  hasPersonalData, lyricStripActive, lyricStripEl, lyricStripWidth, musicSinging, onLyricStripResize,
+  hasPersonalData, lyricStripEl, lyricStripWidth, musicSinging, onLyricStripResize,
 } from "../views/personal";
 import { BotDrag } from "./botDrag";
 import { BotHover } from "./botHover";
@@ -33,6 +33,7 @@ import { Dizzy } from "./dizzy";
 import { FileDrop } from "./fileDrop";
 import { IslandStateMachine, type FsmState } from "./fsm";
 import { wireKeys } from "./keys";
+import { wireLyricReveal } from "./lyricReveal";
 import { buildViewActions } from "./viewActions";
 import { WindowCollapse } from "./windowCollapse";
 import { blockMenuOverMochi, dropPreviewOutsideWardrobe, rightClickedMochi, wardrobeFromDesktop } from "./wardrobe";
@@ -67,7 +68,8 @@ export class Island {
   private wakeStrip!: HTMLElement;
 
   private header!: ViewHost;
-  private views!: Map<IslandViewName, ViewHost>;
+  /** The views by name; the shortcuts hand Ctrl+O / Ctrl+E to the one on screen. */
+  views!: Map<IslandViewName, ViewHost>;
   private uploadCanvas!: UploadCanvas;
 
   private width = new Tracked(NOTCH_W);
@@ -120,16 +122,7 @@ export class Island {
     this.build();
     this.wireFsm();
     this.wireInput();
-    // While a song plays on the Music pill the compact island stays up with
-    // its lyrics, except over a fullscreen game, video or presentation.
-    this.fsm.keepPetit = () =>
-      lyricStripActive() ? Bridge.fullscreenActive().then((f) => f !== true) : false;
-    // A song starting on the Music pill brings the compact island back.
-    State.subscribe(() => {
-      const active = lyricStripActive();
-      if (active && !this.stripWasActive && State.mode === "hidden") void this.revealForLyrics();
-      this.stripWasActive = active;
-    });
+    wireLyricReveal(this.fsm);
     // A lyric line wider than the collapsed island grows it; a short one shrinks it back.
     onLyricStripResize(() => {
       if (lyricMode()) this.animateGeometry(lyricStripWidth() < this.width.value);
@@ -595,6 +588,11 @@ export class Island {
     this.botHover.track(x, y, overBot);
   }
 
+  /** The pointer is over the island (with the hit margin). */
+  get pointerInIsland(): boolean {
+    return this.wasInIsland;
+  }
+
   /** A press on Mochi ends the hearts' hover. */
   cancelBotHover() {
     this.botHover.cancel();
@@ -762,13 +760,6 @@ export class Island {
     }
   }
 
-  private stripWasActive = false;
-
-  /** Shows the compact island for a song's lyrics, never over a fullscreen app. */
-  private async revealForLyrics() {
-    if ((await Bridge.fullscreenActive()) === true) return;
-    if (State.mode === "hidden" && lyricStripActive()) this.fsm.reveal();
-  }
 
   /** Set while a new message holds the island on the Messages pill. */
   private glance: GlanceReturn | null = null;

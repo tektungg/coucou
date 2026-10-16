@@ -58,6 +58,9 @@ pub struct Settings {
     /// the Rust side (desktop/prefs.rs): what a page sends back is ignored
     /// (keep_rust_owned).
     pub desktop_mochi: DesktopMochiPref,
+    /// Global shortcuts the user changed, by action id; the others keep their
+    /// default (see shortcuts/actions.rs).
+    pub shortcuts: crate::shortcuts::Bindings,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -187,6 +190,7 @@ impl Default for Settings {
             lyrics_romanized: false,
             pill_layout: PILL_LAYOUT,
             desktop_mochi: DesktopMochiPref::default(),
+            shortcuts: Default::default(),
         }
     }
 }
@@ -376,6 +380,30 @@ mod tests {
         let saved = keep_rust_owned(incoming, &current);
         assert_eq!(saved.desktop_mochi, current.desktop_mochi);
         assert!(!saved.sound_enabled, "the page's own change is kept");
+    }
+
+    #[test]
+    fn shortcuts_are_written_in_camel_case_and_read_back() {
+        let file = r#"{"model":"some-model","shortcuts":{"openChat":{"keys":"Ctrl+Shift+K","enabled":false}}}"#;
+        let s: Settings = crate::prefs_file::parse(file.as_bytes()).unwrap();
+        let chat = &s.shortcuts["openChat"];
+        assert_eq!((chat.keys.as_str(), chat.enabled), ("Ctrl+Shift+K", false));
+        let json = serde_json::to_value(&s).unwrap();
+        assert_eq!(json["shortcuts"], serde_json::json!({ "openChat": { "keys": "Ctrl+Shift+K", "enabled": false } }));
+        // A file from before the shortcuts: every action keeps its default.
+        let old: Settings = crate::prefs_file::parse(br#"{"model":"some-model"}"#).unwrap();
+        assert!(old.shortcuts.is_empty());
+    }
+
+    /// Ported from upstream (deab632): a bad shortcuts value is dropped on
+    /// its own, every other preference survives it.
+    #[test]
+    fn a_bad_shortcuts_field_costs_only_the_shortcuts() {
+        let file = r#"{"model":"some-model","lyricsEnabled":false,"shortcuts":"Ctrl+Alt+A"}"#;
+        let s: Settings = crate::prefs_file::parse(file.as_bytes()).expect("salvaged, not thrown away");
+        assert!(s.shortcuts.is_empty());
+        assert_eq!(s.model, "some-model");
+        assert!(!s.lyrics_enabled);
     }
 
     /// A settings.json written before the CLI chat existed must still load,

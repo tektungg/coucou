@@ -556,6 +556,37 @@ pub fn alert(title: &str, text: &str) {
     eprintln!("{title}: {text}");
 }
 
+// ── Global shortcuts ──────────────────────────────────────────────────────────
+
+/// Why no global shortcut is registered, as the settings page reads it.
+const BLOCKED_WAYLAND: &str = "wayland";
+const BLOCKED_NO_DISPLAY: &str = "no-display";
+
+/// Global shortcuts are X11 key grabs. A Wayland session has no such thing: a
+/// grab made through XWayland only sees keys typed into other X11 windows, so
+/// it would look registered and never fire. The XDG GlobalShortcuts portal is
+/// the Wayland way and isn't wired up yet, so on Wayland nothing is registered
+/// and Settings explains how to bind `coucou --shortcut <id>` in the desktop's
+/// own keyboard settings instead.
+pub fn global_shortcuts_blocked() -> Option<&'static str> {
+    let set = |var: &str| std::env::var_os(var).is_some_and(|v| !v.is_empty());
+    let wayland = set("WAYLAND_DISPLAY")
+        || std::env::var("XDG_SESSION_TYPE").is_ok_and(|v| v.eq_ignore_ascii_case(BLOCKED_WAYLAND));
+    if wayland {
+        Some(BLOCKED_WAYLAND)
+    } else if !set("DISPLAY") {
+        Some(BLOCKED_NO_DISPLAY)
+    } else {
+        None
+    }
+}
+
+/// On X11, AltGr is a modifier of its own (ISO_Level3_Shift): Ctrl+Alt+key
+/// never stands for it, so no combination takes a character away.
+pub fn ctrl_alt_types(_vk: u16, _shift: bool) -> Option<String> {
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

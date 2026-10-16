@@ -49,6 +49,7 @@ installs for the current user only — no admin prompt.
 | Drag Mochi out of the island | He lives on the desktop in a little window of his own, until you double-click him or drop him back on the island |
 | Drag a file onto the island | Mochi turns into a box, swallows it, then offers to answer questions about it |
 | `Esc` | Closes the island |
+| `Ctrl+Alt+Space` from any app | Opens the chat; the other global shortcuts are below |
 | Tray icon | Open, Weekly recap, Wardrobe…, Settings…, Pause, Quit |
 
 Everything else happens on its own: a Claude Code permission request opens the
@@ -257,6 +258,39 @@ of this build, so the counts live on the board instead.
   dropped and the terminal asks, so a bad line can never approve or deny.
 - Plans are forwarded up to 64 KB; every other string in a hook payload is still
   capped at 2,000 characters.
+
+### Keyboard shortcuts
+
+Global shortcuts work from any app; change, switch off or reset them in
+Settings → Shortcuts, where a click on the keys records new ones (Esc cancels,
+Backspace removes them).
+
+| Default | Does |
+|---|---|
+| `Ctrl+Alt+Space` | Opens the chat |
+| `Ctrl+Alt+A` | Goes to the waiting permission, plan or question (nothing is answered from the keyboard) |
+| `Ctrl+Alt+T` | Open terminal for the focused session |
+| `Ctrl+Alt+→` / `Ctrl+Alt+←` | Next / previous pill |
+| `Ctrl+Alt+S` | Mutes or unmutes Mochi |
+| `Ctrl+Alt+D` | Sends Mochi to the desktop, or home |
+| `Ctrl+Alt+G` | Opens the wardrobe |
+| `Ctrl+Alt+N` (off by default) | Opens or closes the island |
+
+Windows reads Ctrl+Alt as AltGr, so the defaults avoid every key that types a
+character with AltGr on the French, German, Spanish, Italian, Portuguese and
+Brazilian layouts. Settings flags a shortcut another app already holds, one
+used twice, or one that types a character on your keyboard; while it records,
+the global shortcuts let go so the keys reach it. Rust registers them
+(`src-tauri/src/shortcuts/`, `tauri-plugin-global-shortcut` 2.4.0); the island
+reacts to the `shortcut` event (`island/shortcuts.ts`).
+
+While the open island has the keyboard: `Ctrl+→` / `Ctrl+←` and `Ctrl+1`…`9`
+pick a pill, `Ctrl+↓` / `Ctrl+↑` walk the open GitHub list and `Ctrl+O` opens
+the highlighted row, `Ctrl+E` opens or closes the focused session's latest
+diff, `Ctrl+K` starts a new chat, `Ctrl+,` opens Settings, `Ctrl+P` keeps the
+island open. From upstream `deab632`, `2363550`, `21a8a86`, `322e2ab`; the
+Settings screen uses this build's panels, and "Attach the front window" stays
+out (it needs a screenshot of another app's window).
 
 ## Chat and keys
 
@@ -575,6 +609,7 @@ never cherry-picked.
 | `23c09b9`, `396cf29`, `c97dec1` | Outfits and the wardrobe | `outfits/` split by part; default "none"; hats make way for head props |
 | `d02f820` | Greeting v2 and its sound | split into one function per part, same poses and pixels |
 | `dde859e`, `64bb85e`, `b52bbe3`, `7a8d5e6` | Mochi on the desktop | `desktop/` (Rust, split), `island/desktop.ts`, `island/botDrag.ts`; acts and pill colour sent too |
+| `deab632`, `2363550`, `21a8a86`, `322e2ab` | Global and in-island shortcuts | `shortcuts/` (Rust, split), Settings → Shortcuts tile, the GitHub list keys |
 
 Not ported: `66be53e` (Antigravity's `PreToolUse` answer): this build's relay
 has no Antigravity path. Upstream's bigger features (more agents,

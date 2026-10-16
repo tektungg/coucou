@@ -9,11 +9,12 @@ import { buildBoardView } from "./boardView";
 import { SwipeAccumulator, dragDirection, slideDirection, stepFocus } from "./carousel";
 import { buildDiffCard } from "./diff";
 import { clear, h, svg } from "./dom";
+import { highlightRow, listRows, openRow } from "./github";
 import { ICONS } from "./icons";
 import { renderIntegrationCard, type IntegrationCardHooks } from "./integrations";
 import { card } from "./parts";
 import { personalDataKey } from "./personal";
-import type { ViewActions, ViewHost } from "./views";
+import type { ViewActions, ViewCommand, ViewHost } from "./views";
 
 // ── Overview ──────────────────────────────────────────────────────────────────
 
@@ -38,6 +39,8 @@ interface Overview {
   cardKey: string;
   /** Pending re-sync that moves the board's "3 min" labels along. */
   clockTimer: number | null;
+  /** The list row highlighted at the last sync, to scroll only when it moves. */
+  shownSelection: number | null;
 }
 
 /** The board's times read in minutes: re-sync once a minute while it is on screen. */
@@ -175,6 +178,38 @@ function syncCard(o: Overview, task: AgentTask, hooks: IntegrationCardHooks) {
   o.leftBody.append(renderIntegrationCard(task, hooks));
 }
 
+/**
+ * Ctrl+↓ Ctrl+↑ walk the open GitHub list (State.cardItemCount and
+ * cardSelection, upstream 322e2ab); the highlight follows here.
+ */
+function syncListSelection(o: Overview) {
+  const rows = o.mode === "card" ? listRows(o.leftBody) : [];
+  State.cardItemCount = rows.length;
+  if (State.cardSelection != null && State.cardSelection >= rows.length) State.cardSelection = null;
+  highlightRow(rows, State.cardSelection, State.cardSelection !== o.shownSelection);
+  o.shownSelection = State.cardSelection;
+}
+
+/** Ctrl+O and Ctrl+E (island/shortcuts.ts). */
+function runCommand(o: Overview, command: ViewCommand) {
+  if (command === "openSelection") {
+    // Ctrl+O: what a click on the highlighted row does.
+    if (o.mode === "card" && State.cardSelection != null) openRow(listRows(o.leftBody)[State.cardSelection]);
+    return;
+  }
+  // Ctrl+E (the Mac's islandToggleDiff): closes the diff that is open, else
+  // opens the focused pill's latest edit.
+  if (o.diff) {
+    setDiff(o, null);
+    o.mode = null;
+    State.notify();
+    return;
+  }
+  const task = State.focusTask;
+  const latest = task ? sessionDiffs.latest(task.id) : null;
+  if (task && latest) openDiff(o, task.id, latest.id);
+}
+
 export function buildOverview(actions: ViewActions): ViewHost {
   const leftBody = h("div", { class: "left-body" });
   const jump = h("button", { class: "icon-btn jump", title: "Open", onclick: () => actions.openTarget() },
@@ -187,6 +222,7 @@ export function buildOverview(actions: ViewActions): ViewHost {
     slot, leftBody,
     board: buildBoardView((id) => actions.setFocus(id), (id, diffId) => openDiff(o, id, diffId)),
     detailOpen: false, lastFocus: null, mode: null, diff: null, cardKey: "", clockTimer: null,
+    shownSelection: null,
   };
   const hooks = cardHooks(o, actions);
   return {
@@ -202,6 +238,8 @@ export function buildOverview(actions: ViewActions): ViewHost {
         else syncCard(o, task, hooks);
       }
       jump.style.display = o.detailOpen || diffShown ? "none" : "";
+      syncListSelection(o);
     },
+    command: (command) => runCommand(o, command),
   };
 }

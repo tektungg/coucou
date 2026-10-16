@@ -1,6 +1,7 @@
 // App state — mirror of AppState.swift (the parts the island needs).
 
 import type { BotEmoteName, BotStateName, IslandMode, IslandViewName } from "./layout";
+import type { Bindings } from "./shortcuts";
 import type { EyeShape } from "../mochi/engine";
 import { isClaudeSessionTask, sessionEndAct, toolKind, type Act, type ToolKind } from "../mochi/acts";
 import type { AskAnswer, AskItem } from "../island/askQuestion";
@@ -177,6 +178,8 @@ export interface Settings {
   lyricsRomanized: boolean;
   /** One-time pill migration already applied (settings.rs migrate_pills); kept so a save does not undo it. */
   pillLayout: number;
+  /** Global shortcuts the user changed, by action id; the others keep their default (core/shortcuts.ts). */
+  shortcuts: Bindings;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -185,6 +188,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoCloseInterval: 15,
   openOnHover: true,
   mochiOutfit: "none",
+  shortcuts: {},
   absenceInterval: 180,
   activeIntegrations: [...PERSONAL_DEFAULTS],
   screen: "primary",
@@ -233,6 +237,10 @@ class AppState {
   pendingQuestion: QuestionInfo | null = null;
   /** The outfit hovered in the wardrobe, worn until the pointer leaves it. */
   wardrobePreview: Outfit | null = null;
+  /** Ctrl+↑ / Ctrl+↓: the highlighted row of the card's list (AppState.cardSelection). */
+  cardSelection: number | null = null;
+  /** Rows in the list on screen, 0 when there is none (AppState.cardItemCount). */
+  cardItemCount = 0;
   /** Mochi lives on the desktop right now: the island's own Mochi is hidden. */
   mochiOnDesktop = false;
 

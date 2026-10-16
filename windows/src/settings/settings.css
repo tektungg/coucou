@@ -394,3 +394,68 @@ select option {
   background: rgba(245, 165, 36, 0.13);
   color: #fbc06a;
 }
+
+/* ── Shortcuts (settings/shortcuts.ts) ────────────────────────────────────── */
+
+.shortcut-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.row.shortcut {
+  flex-wrap: nowrap;
+  gap: 10px;
+}
+
+.shortcut-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12.5px;
+}
+
+.row.shortcut.off .shortcut-name {
+  color: var(--dim-3);
+}
+
+.keycap {
+  font: 600 11.5px var(--mono);
+  min-width: 118px;
+  padding: 5px 10px;
+  border-radius: var(--r-pill);
+  background: var(--soft-2);
+  border: 1px solid var(--hairline);
+  color: var(--ink);
+  text-align: center;
+  flex: 0 0 auto;
+}
+
+.keycap.recording {
+  border-color: var(--acc);
+  color: var(--dim);
+}
+
+.keycap.static {
+  background: transparent;
+  color: var(--dim);
+}
+
+.tag {
+  font: 650 10.5px var(--font);
+  padding: 2px 8px;
+  border-radius: var(--r-pill);
+  background: var(--soft-3);
+  color: var(--dim);
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.tag.warn {
+  background: rgba(245, 165, 36, 0.13);
+  color: #fbc06a;
+}
+
+.tag.err {
+  background: rgba(244, 80, 94, 0.14);
+  color: var(--red-text);
+}

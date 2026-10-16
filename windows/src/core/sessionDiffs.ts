@@ -34,6 +34,11 @@ export class SessionDiffs {
     return this.byPill.get(pillId)?.find((d) => d.id === id) ?? null;
   }
 
+  /** The pill's latest edit, for Ctrl+E. */
+  latest(pillId: string): FileDiff | null {
+    return this.byPill.get(pillId)?.at(-1) ?? null;
+  }
+
   count(pillId: string): number {
     return this.byPill.get(pillId)?.length ?? 0;
   }

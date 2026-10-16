@@ -162,15 +162,16 @@ fn end_layer_drag(app: &AppHandle, d: &Desktop, at: (f64, f64)) {
 
 /// Launch or the end of an alert: from the island to his spot. False when the
 /// spot is on a display that is gone: he then stays home, and is forgotten
-/// there so the next launch doesn't try again.
+/// there so the next launch doesn't try again. `anywhere` (the desktop
+/// shortcut) lands him in the first-visit corner instead.
 #[tauri::command]
-pub async fn desktop_mochi_fly_out(app: AppHandle) -> bool {
+pub async fn desktop_mochi_fly_out(app: AppHandle, anywhere: Option<bool>) -> bool {
     let d = state(&app);
     if d.mode == DesktopMode::Off || window(&app).is_none() {
         return false;
     }
     refresh_layer_display(&app, &d);
-    let Some(target) = target_spot(&app, &d) else {
+    let Some(target) = target_spot(&app, &d, anywhere.unwrap_or(false)) else {
         crate::log::line("desktop Mochi: his spot is on a display that is gone, he stays home");
         prefs::forget_desktop(&app);
         return false;

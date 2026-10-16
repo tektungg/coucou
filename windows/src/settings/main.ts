@@ -12,7 +12,10 @@ import { chatDetail } from "./chat";
 import { claudeCodeDetail } from "./claudeCode";
 import { generalDetail } from "./general";
 import { pillDetail } from "./pills";
-import { CHAT_TILE, CLAUDE_CODE_TILE, GENERAL_TILE, pillCapNote, settingsTiles, type Tile } from "./tiles";
+import { leaveShortcuts, shortcutsDetail } from "./shortcuts";
+import {
+  CHAT_TILE, CLAUDE_CODE_TILE, GENERAL_TILE, SHORTCUTS_TILE, pillCapNote, settingsTiles, type Tile,
+} from "./tiles";
 import { chipEl, hint, type SettingsCtx } from "./ui";
 
 const root = document.getElementById("settings-root")!;
@@ -73,7 +76,7 @@ function gridScreen(ctx: SettingsCtx, open: (id: string) => void): HTMLElement[]
         hint("Pick a tile to set it up."))),
     group("Claude", null, pick([CLAUDE_CODE_TILE, CHAT_TILE])),
     group("Pills", `${pillCapNote(ctx.settings.activeIntegrations.length, MAX_ACTIVE_PILLS)}. Each Claude Code session also gets its own pill.`, pick(pillIds)),
-    group("App", null, pick([GENERAL_TILE])),
+    group("App", null, pick([GENERAL_TILE, SHORTCUTS_TILE])),
     hint("No telemetry. Network requests only go to the services you configure yourself."),
   ];
 }
@@ -82,6 +85,7 @@ function detailBody(id: string, ctx: SettingsCtx, refresh: () => void): HTMLElem
   if (id === CLAUDE_CODE_TILE) return claudeCodeDetail(ctx, refresh);
   if (id === CHAT_TILE) return chatDetail(ctx);
   if (id === GENERAL_TILE) return generalDetail(ctx);
+  if (id === SHORTCUTS_TILE) return shortcutsDetail(ctx);
   const def = visibleIntegrations(HIDDEN_INTEGRATIONS).find((d) => d.id === id);
   return def ? pillDetail(def, ctx, refresh) : hint("Nothing to set up here.");
 }
@@ -99,6 +103,7 @@ function detailScreen(id: string, ctx: SettingsCtx, back: () => void, refresh: (
 function render(ctx: SettingsCtx) {
   const open = (id: string) => { screen = id; render(ctx); window.scrollTo(0, 0); };
   const back = () => { screen = null; render(ctx); };
+  leaveShortcuts();
   clear(root);
   root.append(...(screen ? detailScreen(screen, ctx, back, () => render(ctx)) : gridScreen(ctx, open)));
 }

@@ -84,6 +84,14 @@ test("Write and MultiEdit are diffed too; other tools and PreToolUse are not", (
   assert.equal(sessionDiffs.count(CLAUDE), 2);
 });
 
+test("Ctrl+E opens the latest edit: the last one kept for the pill", () => {
+  assert.equal(sessionDiffs.latest(CLAUDE), null, "none yet");
+  hook({ hook_event_name: "PostToolUse", tool_name: "Write", tool_input: { file_path: "/p/one.md", content: "a" } });
+  hook({ hook_event_name: "PostToolUse", tool_name: "Write", tool_input: { file_path: "/p/two.md", content: "b" } });
+  assert.equal(sessionDiffs.latest(CLAUDE)?.path, "/p/two.md");
+  assert.equal(sessionDiffs.latest("integration_other"), null);
+});
+
 test("an edit with no change, or one the relay had to cut, adds no diff", () => {
   hook({ hook_event_name: "PostToolUse", tool_name: "Edit", tool_input: { file_path: "/p/a.ts", old_string: "same", new_string: "same" } });
   edit({ coucou_diff_truncated: true });

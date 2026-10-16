@@ -190,6 +190,12 @@ export const Bridge = {
   /** Tray → Pause. Stops the integration pollers, not just the island. */
   setPaused: (paused: boolean) => call<void>("set_paused", { paused }),
 
+  // ── Global shortcuts (src-tauri/src/shortcuts/) ────────────────────────────
+  /** How each global shortcut went when Rust last registered them. */
+  shortcutsStatus: () => call<ShortcutsReport>("shortcuts_status"),
+  /** Lets go of every global shortcut while Settings records a new one. */
+  shortcutsSuspend: (suspended: boolean) => call<void>("shortcuts_suspend", { suspended }),
+
   // ── Mochi on the desktop (src-tauri/src/desktop/) ──────────────────────────
   desktopInfo: () => call<DesktopInfo>("desktop_mochi_info"),
   /** Starts a drag out of the island at the pointer (island-window coordinates). */
@@ -202,13 +208,28 @@ export const Bridge = {
   /** X11: the page moves the window itself, physical pixels. */
   desktopDragMove: (x: number, y: number) => call<void>("desktop_mochi_drag_move", { x, y }),
   desktopDragEnd: (x: number, y: number) => call<void>("desktop_mochi_drag_end", { x, y }),
-  /** Shows him at the island and flies him to his spot. False: no spot to go to. */
-  desktopFlyOut: () => call<boolean>("desktop_mochi_fly_out"),
+  /**
+   * Shows him at the island and flies him to his spot. False: no spot to go to.
+   * `anywhere` (the desktop shortcut): the first-visit corner then, rather than staying home.
+   */
+  desktopFlyOut: (anywhere = false) => call<boolean>("desktop_mochi_fly_out", { anywhere }),
   /** Flies him into the island and hides him. `forget`: he lives there again. */
   desktopFlyHome: (forget: boolean) => call<boolean>("desktop_mochi_fly_home", { forget }),
   /** Asleep, Rust stops the cursor poll and the window listens for the pointer. */
   desktopSetAsleep: (asleep: boolean) => call<void>("desktop_mochi_set_asleep", { asleep }),
 };
+
+export type ShortcutStatus =
+  | "active" | "off" | "inUse" | "duplicate" | "invalid"
+  | "typesCharacter" | "unsupported" | "notPorted";
+
+export interface ShortcutsReport {
+  actions: { id: string; status: ShortcutStatus; typed?: string }[];
+  /** "wayland" or "no-display" when no global shortcut can be registered. */
+  blocked: string | null;
+  /** `<executable> --shortcut`: append an action id for a desktop shortcut. */
+  command: string;
+}
 
 /** How the desktop Mochi's window works here (desktop platform mode). */
 export type DesktopMode = "poll" | "window" | "layer" | "off";

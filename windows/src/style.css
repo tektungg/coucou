@@ -3232,7 +3232,8 @@ body.shelf-drop .card:has(.shelf-card) {
   min-width: 0;
 }
 
-.gh-row:hover {
+.gh-row:hover,
+.gh-row.selected {
   background: var(--soft-2);
 }
 

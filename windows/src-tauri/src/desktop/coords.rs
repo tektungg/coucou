@@ -103,18 +103,25 @@ pub(super) fn from_island_client(app: &AppHandle, d: &Desktop, x: f64, y: f64) -
 }
 
 /// Where he lands when he flies out, or `None` when his spot is on a display
-/// that is no longer connected.
-pub(super) fn target_spot(app: &AppHandle, d: &Desktop) -> Option<(f64, f64)> {
+/// that is no longer connected, unless `anywhere`, the user sending him out
+/// with the desktop shortcut: then the first-visit corner.
+pub(super) fn target_spot(app: &AppHandle, d: &Desktop, anywhere: bool) -> Option<(f64, f64)> {
     let all = displays(app, d);
+    let corner = || first_visit_corner(app, d, &all);
     match prefs::saved_spot(app) {
-        Some(spot) if spot.space == d.mode.space() => logic::restore_spot((spot.x, spot.y), &all, SIZE, MARGIN),
-        // Never placed, or placed under another kind of session: a fresh start
-        // in the corner of the island's display.
-        _ => {
-            let (cx, top, _) = island_anchor(app, d)?;
-            // One pixel below the island's top edge: inside its display.
-            let home = logic::display_near((cx, top + ISLAND_PROBE_PX), &all)?;
-            Some(logic::default_spot(&home, SIZE, MARGIN))
+        Some(spot) if spot.space == d.mode.space() => {
+            let restored = logic::restore_spot((spot.x, spot.y), &all, SIZE, MARGIN);
+            logic::spot_or_corner(restored, anywhere, corner)
         }
+        // Never placed, or placed under another kind of session.
+        _ => corner(),
     }
+}
+
+/// A fresh start in the corner of the island's display.
+fn first_visit_corner(app: &AppHandle, d: &Desktop, all: &[Display]) -> Option<(f64, f64)> {
+    let (cx, top, _) = island_anchor(app, d)?;
+    // One pixel below the island's top edge: inside its display.
+    let home = logic::display_near((cx, top + ISLAND_PROBE_PX), all)?;
+    Some(logic::default_spot(&home, SIZE, MARGIN))
 }

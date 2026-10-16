@@ -27,6 +27,16 @@ const FAKE: Record<string, unknown> = {
     hookPath: "C:\\Users\\you\\AppData\\Local\\Coucou\\bin\\coucou-hook.exe",
   },
   claude_cli_status: { found: true, path: "C:\\Users\\you\\.local\\bin\\claude.exe" },
+  // One shortcut taken by another app, one that types a character here.
+  shortcuts_status: {
+    actions: [
+      { id: "openChat", status: "active" },
+      { id: "goToAlert", status: "inUse" },
+      { id: "muteToggle", status: "typesCharacter", typed: "ß" },
+    ],
+    blocked: null,
+    command: "coucou.exe --shortcut",
+  },
   hooks_preview: {
     diff: '  "hooks": {\n+   "PreToolUse": [{ "command": "coucou-hook.exe pre" }],\n-   "Stop": []\n  }',
     backup: "settings.json.2026-10-09.bak", fingerprint: "abc",

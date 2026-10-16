@@ -2,6 +2,7 @@
 // you can set up, each with a mini Mochi, a one-line status and a chip. Pure, so
 // tests/settingsTiles.test.ts covers every state.
 
+import { activeKeys } from "../core/shortcuts";
 import type { Settings } from "../core/state";
 
 export type TileChip = "ON" | "SETUP" | "OFF";
@@ -16,7 +17,10 @@ export interface Tile {
 }
 
 export interface TileInput {
-  settings: Pick<Settings, "activeIntegrations" | "chatProvider" | "soundEnabled" | "soundVolume" | "autoCloseInterval">;
+  settings: Pick<
+    Settings,
+    "activeIntegrations" | "chatProvider" | "soundEnabled" | "soundVolume" | "autoCloseInterval" | "shortcuts"
+  >;
   hooks: { installed: boolean; hookReady: boolean };
   hasKey: boolean;
   cliFound: boolean;
@@ -26,12 +30,14 @@ export interface TileInput {
 export const CLAUDE_CODE_TILE = "claude-code";
 export const CHAT_TILE = "chat";
 export const GENERAL_TILE = "general";
+export const SHORTCUTS_TILE = "shortcuts";
 /** The sound slider's top (the island plays its WAVs at most this loud). */
 export const SOUND_VOLUME_MAX = 0.2;
 
 const CLAUDE_ORANGE = "#E07B53";
 const CHAT_BLUE = "#8FD3FF";
 const GENERAL_WHITE = "#FFFFFF";
+const SHORTCUTS_LILAC = "#C9B6FF";
 
 function claudeCodeTile(hooks: TileInput["hooks"]): Tile {
   const base = { id: CLAUDE_CODE_TILE, name: "Claude Code", color: CLAUDE_ORANGE };
@@ -60,13 +66,19 @@ function generalTile(settings: TileInput["settings"]): Tile {
   };
 }
 
-/** Claude first (what Coucou is for), then one tile per pill, then General. */
+function shortcutsTile(settings: TileInput["settings"]): Tile {
+  const n = activeKeys(settings.shortcuts).length;
+  const status = n === 0 ? "All off" : `${n} on, from any app`;
+  return { id: SHORTCUTS_TILE, name: "Shortcuts", color: SHORTCUTS_LILAC, status, chip: null };
+}
+
+/** Claude first (what Coucou is for), then one tile per pill, then General and Shortcuts. */
 export function settingsTiles(input: TileInput): Tile[] {
   const active = new Set(input.settings.activeIntegrations);
   const pills = input.pills.map((p): Tile => ({
     id: p.id, name: p.name, color: p.color, status: p.short, chip: active.has(p.id) ? "ON" : "OFF",
   }));
-  return [claudeCodeTile(input.hooks), chatTile(input), ...pills, generalTile(input.settings)];
+  return [claudeCodeTile(input.hooks), chatTile(input), ...pills, generalTile(input.settings), shortcutsTile(input.settings)];
 }
 
 /** "4/6 pills in use", under the pill tiles. */

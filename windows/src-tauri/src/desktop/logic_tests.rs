@@ -60,6 +60,23 @@ fn a_spot_on_a_display_that_is_gone_brings_him_home() {
 }
 
 #[test]
+fn the_desktop_shortcut_lands_him_in_the_corner_when_his_display_is_gone() {
+    let d = two_displays();
+    let corner = default_spot(&d[0], 120.0, 24.0);
+    let gone = restore_spot((-1500.0, 300.0), &d, 120.0, 24.0);
+    // The launch and the end of an alert keep him home.
+    assert_eq!(spot_or_corner(gone, false, || panic!("no corner without the shortcut")), None);
+    // The shortcut sends him to the first-visit corner instead.
+    assert_eq!(spot_or_corner(gone, true, || Some(corner)), Some(corner));
+    // A spot still on a display wins either way.
+    let kept = restore_spot((800.0, 600.0), &d, 120.0, 24.0);
+    assert_eq!(spot_or_corner(kept, true, || Some(corner)), Some((800.0, 600.0)));
+    assert_eq!(spot_or_corner(kept, false, || Some(corner)), Some((800.0, 600.0)));
+    // No island display to put the corner on: still nowhere to go.
+    assert_eq!(spot_or_corner(gone, true, || None), None);
+}
+
+#[test]
 fn a_spot_that_a_taller_taskbar_now_covers_moves_up() {
     let d = two_displays();
     let (x, y) = restore_spot((800.0, 1000.0), &d, 120.0, 24.0).unwrap();

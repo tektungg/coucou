@@ -8,6 +8,7 @@ import { State, type Settings } from "./core/state";
 import { Island } from "./island/island";
 import { registerHookHandlers } from "./island/hooks";
 import { registerIntegrationHandlers, refreshConfigured } from "./island/integrations";
+import { islandShortcutHost, registerShortcutHandlers } from "./island/shortcuts";
 import { Recap } from "./recap/recap";
 
 /** Pause has to reach Rust too, or the pollers keep calling out. */
@@ -96,6 +97,7 @@ async function main() {
 
   registerHookHandlers(island);
   registerIntegrationHandlers(island);
+  registerShortcutHandlers(islandShortcutHost(island), () => setPaused(false));
   // Before the greeting: its end flies him back out if he lives on the desktop.
   await island.desktop.init();
 

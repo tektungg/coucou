@@ -33,6 +33,7 @@ mod startup;
 mod secrets;
 mod session_window;
 mod settings;
+mod shortcuts;
 mod space;
 mod tray;
 
@@ -85,14 +86,15 @@ fn boot(app: AppHandle, shared: State<Shared>) -> BootInfo {
 
 #[tauri::command]
 fn save_settings(app: AppHandle, shared: State<Shared>, settings: Settings) {
-    let (settings, screen_changed, autostart_changed) = {
+    let (settings, screen_changed, autostart_changed, shortcuts_changed) = {
         let mut current = shared.settings.lock().unwrap();
         let screen_changed = current.screen != settings.screen;
         let autostart_changed = current.autostart != settings.autostart;
+        let shortcuts_changed = current.shortcuts != settings.shortcuts;
         // Where Mochi sits on the desktop is desktop/'s to say, not a page's.
         let settings = settings::keep_rust_owned(settings, &current);
         *current = settings.clone();
-        (settings, screen_changed, autostart_changed)
+        (settings, screen_changed, autostart_changed, shortcuts_changed)
     };
     if let Err(err) = settings::save(&settings) {
         log::line(format!("settings: could not save: {err}"));
@@ -103,6 +105,9 @@ fn save_settings(app: AppHandle, shared: State<Shared>, settings: Settings) {
     if screen_changed {
         let collapsed = shared.gate.collapsed.load(Ordering::Relaxed);
         island::apply_geometry(&app, &settings.screen, collapsed);
+    }
+    if shortcuts_changed {
+        shortcuts::apply(&app, &settings.shortcuts);
     }
     crate::github::poll::settings_saved(&app, &settings.active_integrations);
     // Keep the other window in step (island ⇄ settings window).
@@ -661,6 +666,8 @@ fn commands() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
         desktop::commands::desktop_mochi_fly_out,
         desktop::commands::desktop_mochi_fly_home,
         desktop::commands::desktop_mochi_set_asleep,
+        shortcuts::commands::shortcuts_status,
+        shortcuts::commands::shortcuts_suspend,
     ]
 }
 
@@ -709,12 +716,45 @@ fn setup(
     #[cfg(debug_assertions)]
     rc_guard::maybe_stress(&handle);
 
+    start_background(&handle, loaded);
+    Ok(())
+}
+
+/// The work that runs for as long as the app does: the relay, the pollers
+/// and the global shortcuts.
+fn start_background(handle: &AppHandle, loaded: &settings::Settings) {
     log::line(format!("--- Coucou {} started ---", env!("CARGO_PKG_VERSION")));
-    autostart::sync(&handle, loaded.autostart);
-    hooks::ensure_hook_exe(&handle);
+    autostart::sync(handle, loaded.autostart);
+    hooks::ensure_hook_exe(handle);
     pipe::start(handle.clone());
     integrations::start(handle.clone());
-    Ok(())
+    shortcuts::apply(handle, &loaded.shortcuts);
+}
+
+/// A second `coucou` was started: it hands its arguments over and quits.
+/// `coucou --shortcut <action>` is what a desktop's own keyboard settings run
+/// where we can't listen for keys ourselves (Wayland); anything else opens
+/// the island.
+fn on_second_launch(app: &AppHandle, argv: Vec<String>, _cwd: String) {
+    log::line(format!("launch handed off from {}", argv.first().map(String::as_str).unwrap_or("?")));
+    match shortcuts::from_args(&argv) {
+        Some(action) => shortcuts::dispatch(app, action),
+        None => {
+            let _ = app.emit_to(island::WINDOW_LABEL, "tray", "open".to_string());
+        }
+    }
+}
+
+/// The plugins. Where no global shortcut can work, that plugin isn't even
+/// started.
+fn plugins(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
+    let builder = builder
+        .plugin(tauri_plugin_single_instance::init(on_second_launch))
+        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None));
+    if platform::global_shortcuts_blocked().is_some() {
+        return builder;
+    }
+    builder.plugin(shortcuts::plugin())
 }
 
 pub fn run() {
@@ -725,12 +765,7 @@ pub fn run() {
     let loaded = settings::load();
     let gate = Arc::new(PollGate::new());
 
-    tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
-            log::line(format!("launch handed off from {}", argv.first().map(String::as_str).unwrap_or("?")));
-            let _ = app.emit_to(island::WINDOW_LABEL, "tray", "open".to_string());
-        }))
-        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
+    plugins(tauri::Builder::default())
         .manage(Shared {
             settings: Mutex::new(loaded.clone()),
             gate: gate.clone(),
@@ -738,6 +773,7 @@ pub fn run() {
         .manage(Pending::default())
         .manage(Chat::default())
         .manage(recap::load())
+        .manage(shortcuts::Registry::default())
         .invoke_handler(commands())
         .setup(move |app| setup(app, &loaded, &gate))
         .run(context)

@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  CHAT_TILE, CLAUDE_CODE_TILE, GENERAL_TILE, canTurnOn, pillCapNote, settingsTiles, type TileInput,
+  CHAT_TILE, CLAUDE_CODE_TILE, GENERAL_TILE, SHORTCUTS_TILE, canTurnOn, pillCapNote, settingsTiles, type TileInput,
 } from "../src/settings/tiles.ts";
 import { INTEGRATIONS, visibleIntegrations } from "../src/settings/catalog.ts";
 
@@ -13,7 +13,7 @@ const MAX_ACTIVE_PILLS = 6;
 const input = (over: Partial<TileInput> = {}, settings: Partial<TileInput["settings"]> = {}): TileInput => ({
   settings: {
     activeIntegrations: ["integration_messages"], chatProvider: "api",
-    soundEnabled: true, soundVolume: 0.1, autoCloseInterval: 15, ...settings,
+    soundEnabled: true, soundVolume: 0.1, autoCloseInterval: 15, shortcuts: {}, ...settings,
   },
   hooks: { installed: true, hookReady: true },
   hasKey: true,
@@ -26,9 +26,23 @@ const input = (over: Partial<TileInput> = {}, settings: Partial<TileInput["setti
 });
 const tile = (i: TileInput, id: string) => settingsTiles(i).find((t) => t.id === id)!;
 
-test("Claude Code, Chat, each pill, then General, in that order", () => {
+test("Claude Code, Chat, each pill, then General and Shortcuts, in that order", () => {
   assert.deepEqual(settingsTiles(input()).map((t) => t.id),
-    [CLAUDE_CODE_TILE, CHAT_TILE, "integration_messages", "integration_media", GENERAL_TILE]);
+    [CLAUDE_CODE_TILE, CHAT_TILE, "integration_messages", "integration_media", GENERAL_TILE, SHORTCUTS_TILE]);
+});
+
+test("Shortcuts tile counts the global shortcuts that are on", () => {
+  // The defaults: every ported action but Open or close the island.
+  assert.equal(tile(input(), SHORTCUTS_TILE).status, "8 on, from any app");
+  const off = { keys: "", enabled: false };
+  const one = { openChat: { keys: "Ctrl+Alt+Space", enabled: true } };
+  const allOff = Object.fromEntries(
+    ["openChat", "goToAlert", "jumpToTerminal", "nextPill", "prevPill", "muteToggle", "desktopToggle", "wardrobeToggle"]
+      .map((id) => [id, off]),
+  );
+  assert.equal(tile(input({}, { shortcuts: { ...allOff, ...one } }), SHORTCUTS_TILE).status, "1 on, from any app");
+  assert.equal(tile(input({}, { shortcuts: allOff }), SHORTCUTS_TILE).status, "All off");
+  assert.equal(tile(input(), SHORTCUTS_TILE).chip, null);
 });
 
 test("Claude Code tile follows the hooks", () => {
