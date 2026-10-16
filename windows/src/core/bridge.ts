@@ -24,6 +24,12 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T |
   }
 }
 
+/** A connected display, as Settings lists it (island.rs MonitorChoice). */
+export interface DisplayChoice {
+  key: string;
+  label: string;
+}
+
 export interface BootInfo {
   settings: Settings;
   /** Logical screen rect of the monitor the island lives on. */
@@ -53,6 +59,8 @@ export const Bridge = {
   focusWindow: (focused: boolean) => call<void>("focus_window", { focused }),
 
   reposition: () => call<void>("reposition"),
+  /** Displays the island can be pinned to: `key` is what `settings.screen` stores. */
+  listMonitors: () => call<DisplayChoice[]>("list_monitors"),
   /** Corrects the webview zoom when its pixel ratio is not the window's scale; true when it changed. */
   fitZoom: (dpr: number) => call<boolean>("fit_zoom", { dpr }),
 

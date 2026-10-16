@@ -1,6 +1,7 @@
 // General screen: sound, auto-close, which display the island lives on, and
 // launching at startup.
 
+import { Bridge, type DisplayChoice } from "../core/bridge";
 import { h } from "../views/dom";
 import { SOUND_VOLUME_MAX } from "./tiles";
 import { hint, panel, row, select, toggle, type SettingsCtx } from "./ui";
@@ -36,15 +37,35 @@ function autoCloseRow(ctx: SettingsCtx): HTMLElement {
   return row("Auto-close", field, hint("seconds after you leave the island"));
 }
 
-export function generalDetail(ctx: SettingsCtx): HTMLElement {
-  const screen = select(SCREENS, ctx.settings.screen, (v) => {
-    ctx.settings.screen = v === "cursor" ? "cursor" : "primary";
+/**
+ * The "Island lives on" choices: main display, display under the cursor, then
+ * each connected display. A saved display that is gone shows as the main one,
+ * which is where Rust puts the island too (island.rs target_monitor).
+ */
+export function screenOptions(displays: DisplayChoice[], current: string): { options: [string, string][]; value: string } {
+  const options: [string, string][] = [...SCREENS, ...displays.map((d): [string, string] => [d.key, d.label])];
+  const value = options.some(([key]) => key === current) ? current : "primary";
+  return { options, value };
+}
+
+function screenSelect(ctx: SettingsCtx): HTMLSelectElement {
+  const el = select(SCREENS, ctx.settings.screen, (v) => {
+    ctx.settings.screen = v;
     void ctx.save();
   });
+  void Bridge.listMonitors().then((displays) => {
+    const { options, value } = screenOptions(displays ?? [], ctx.settings.screen);
+    el.replaceChildren(...options.map(([key, label]) => h("option", { value: key, text: label })));
+    el.value = value;
+  });
+  return el;
+}
+
+export function generalDetail(ctx: SettingsCtx): HTMLElement {
   return panel(null,
     soundRow(ctx),
     autoCloseRow(ctx),
-    row("Island lives on", screen),
+    row("Island lives on", screenSelect(ctx)),
     row("Launch at startup", toggle(ctx.settings.autostart, (v) => { ctx.settings.autostart = v; void ctx.save(); })),
   );
 }

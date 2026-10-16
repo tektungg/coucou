@@ -63,6 +63,12 @@ hook, so nothing runs while nothing changes), and while the island is showing it
 also checks twice a second for overlays that pop up without taking the front. A
 fullscreen game, video or presentation is left alone.
 
+**Island lives on** (Settings → General): the main display, the display under
+the cursor, or one display by name (`DELL U2720Q · 2560×1440 at -2560,0`). A
+display is saved by its logical origin (`at:<x>,<y>`), not its name, since two
+monitors of the same model share one. When it is unplugged or moved, the island
+goes to the main display and Settings shows that. From upstream `4207be9`.
+
 **Launch at startup** (Settings → General) is checked at every launch, not only
 when you flip it. The login entry (`HKCU\Software\Microsoft\Windows\CurrentVersion\Run\Coucou`)
 holds a path, and an install that moved, from `C:\Program Files` to the per-user
@@ -420,6 +426,8 @@ never cherry-picked.
 | `5b06e1c` | Fresh permission card ignores clicks for 600 ms | `views/clickGuard.ts`, also plan and question cards |
 | `b9b9217` | Webview zoom follows the window scale | `fit_zoom`, `core/zoom.ts` |
 | `32484d4` | Vite ignores `target/` (EBUSY) | `vite.config.ts` |
+| `78815b5` | Test harness: stand-in Tauri, extensionless imports | `tests/setup.mjs`, `tests/tauri.mjs` |
+| `4207be9` | Pick the display the island lives on | `island.rs monitor_choices`, `settings/general.ts` |
 
 Not ported: `66be53e` (Antigravity's `PreToolUse` answer): this build's relay
 has no Antigravity path. Upstream's bigger features (live diff, more agents,

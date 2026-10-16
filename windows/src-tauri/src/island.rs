@@ -114,9 +114,57 @@ fn monitor_contains(m: &Monitor, x: f64, y: f64) -> bool {
         && y < (p.y + s.height as i32) as f64
 }
 
-/// The display the island lives on: the primary one, or the one under the cursor.
+/// A display's logical origin, the key `at:<x>,<y>` preferences are matched on.
+/// Names are no good for that: two monitors of the same model share one.
+fn logical_origin(m: &Monitor) -> (i32, i32) {
+    let scale = m.scale_factor();
+    let p = m.position();
+    ((p.x as f64 / scale).round() as i32, (p.y as f64 / scale).round() as i32)
+}
+
+/// The origin an `at:<x>,<y>` screen preference names, if it is one.
+fn parse_at_key(pref: &str) -> Option<(i32, i32)> {
+    let (x, y) = pref.strip_prefix("at:")?.split_once(',')?;
+    Some((x.trim().parse().ok()?, y.trim().parse().ok()?))
+}
+
+/// One entry of the "Island lives on" list in Settings.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct MonitorChoice {
+    pub key: String,
+    pub label: String,
+}
+
+/// The choice for a display named `name`, `w`×`h` logical px at `origin`.
+fn monitor_choice(name: Option<&str>, (w, h): (f64, f64), (x, y): (i32, i32)) -> MonitorChoice {
+    let name = name.filter(|n| !n.trim().is_empty()).unwrap_or("Display");
+    MonitorChoice { key: format!("at:{x},{y}"), label: format!("{name} · {w}×{h} at {x},{y}") }
+}
+
+/// Every connected display, for Settings → General → Island lives on.
+pub fn monitor_choices(app: &AppHandle) -> Vec<MonitorChoice> {
+    let Ok(monitors) = app.available_monitors() else { return Vec::new() };
+    monitors
+        .iter()
+        .map(|m| {
+            let scale = m.scale_factor();
+            let s = m.size();
+            let size = ((s.width as f64 / scale).round(), (s.height as f64 / scale).round());
+            monitor_choice(m.name().map(String::as_str), size, logical_origin(m))
+        })
+        .collect()
+}
+
+/// The display the island lives on: a chosen one (`at:<x>,<y>`), the primary
+/// one, or the one under the cursor.
 fn target_monitor(app: &AppHandle, pref: &str) -> Option<Monitor> {
     let monitors = app.available_monitors().ok()?;
+    if let Some(origin) = parse_at_key(pref) {
+        // Unplugged or rearranged since: fall back to the primary display.
+        if let Some(m) = monitors.iter().find(|m| logical_origin(m) == origin) {
+            return Some(m.clone());
+        }
+    }
     if pref == "cursor" {
         if let Some((cx, cy)) = cursor_physical() {
             if let Some(m) = monitors.iter().find(|m| monitor_contains(m, cx, cy)) {
@@ -418,5 +466,37 @@ mod zoom_tests {
         assert_eq!(calculate_zoom_correction(1.0, f64::NAN, 1.0), None);
         assert_eq!(calculate_zoom_correction(1.0, 1.0, f64::INFINITY), None);
         assert_eq!(calculate_zoom_correction(0.0, 1.0, 1.25), None);
+    }
+}
+
+#[cfg(test)]
+mod display_choice_tests {
+    use super::*;
+
+    #[test]
+    fn an_at_key_names_a_logical_origin() {
+        assert_eq!(parse_at_key("at:0,0"), Some((0, 0)));
+        assert_eq!(parse_at_key("at:-1920, 120"), Some((-1920, 120)));
+    }
+
+    #[test]
+    fn anything_else_is_not_an_at_key() {
+        for pref in ["primary", "cursor", "at:", "at:1", "at:a,b", "at:1,2,3", "1,2", ""] {
+            assert_eq!(parse_at_key(pref), None, "{pref:?}");
+        }
+    }
+
+    #[test]
+    fn a_choice_is_keyed_by_origin_and_labelled_for_people() {
+        let c = monitor_choice(Some("DELL U2720Q"), (2560.0, 1440.0), (-2560, 0));
+        assert_eq!(c.key, "at:-2560,0");
+        assert_eq!(c.label, "DELL U2720Q · 2560×1440 at -2560,0");
+        assert_eq!(parse_at_key(&c.key), Some((-2560, 0)), "the key reads back");
+    }
+
+    #[test]
+    fn a_display_without_a_name_is_called_display() {
+        assert!(monitor_choice(None, (1920.0, 1080.0), (0, 0)).label.starts_with("Display ·"));
+        assert!(monitor_choice(Some("  "), (1920.0, 1080.0), (0, 0)).label.starts_with("Display ·"));
     }
 }
