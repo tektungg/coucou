@@ -10,19 +10,21 @@ export function h<K extends keyof HTMLElementTagNameMap>(
 ): HTMLElementTagNameMap[K] {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
-    if (v == null || v === false) continue;
-    if (k === "class") el.className = String(v);
-    else if (k === "text") el.textContent = String(v);
-    else if (k.startsWith("on") && typeof v === "function") {
-      el.addEventListener(k.slice(2).toLowerCase(), v as EventListener);
-    } else if (k === "style") el.setAttribute("style", String(v));
-    else el.setAttribute(k, v === true ? "" : String(v));
+    if (v != null && v !== false) setAttr(el, k, v);
   }
   for (const c of children) {
     if (c == null || c === false) continue;
     el.append(typeof c === "string" ? document.createTextNode(c) : c);
   }
   return el;
+}
+
+/** One attribute: a class, text (never markup), a listener, or a plain attribute. */
+function setAttr(el: HTMLElement, k: string, v: string | number | true | EventListener) {
+  if (k === "class") el.className = String(v);
+  else if (k === "text") el.textContent = String(v);
+  else if (k.startsWith("on") && typeof v === "function") el.addEventListener(k.slice(2).toLowerCase(), v);
+  else el.setAttribute(k, v === true ? "" : String(v));
 }
 
 export function svg(
