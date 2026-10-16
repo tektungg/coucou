@@ -327,6 +327,38 @@ pub fn set_activating(win: &WebviewWindow, activating: bool) {
 /// Click-through here is the poll's WS_EX_TRANSPARENT toggle, not a region.
 pub fn set_input_region(_win: &WebviewWindow, _rect: Option<(f64, f64, f64, f64)>) {}
 
+// ── Desktop Mochi window ──────────────────────────────────────────────────────
+
+/// Windows places a window wherever it is asked, and the cursor poll is there.
+pub fn desktop_mode() -> super::DesktopMode {
+    super::DesktopMode::Poll
+}
+
+/// Same window styles as the island: never takes focus, never in Alt-Tab (it
+/// is created without a taskbar button). Also signs him up for the
+/// keep-on-top hook below, so he is raised with the island.
+pub fn prepare_desktop_window(win: &WebviewWindow, _mode: super::DesktopMode) -> bool {
+    make_non_activating(win);
+    if let Some(hwnd) = hwnd_of(win) {
+        DESKTOP_HWND.store(hwnd.0 as isize, Ordering::Relaxed);
+    }
+    true
+}
+
+/// The cursor poll toggles WS_EX_TRANSPARENT from the body hit test instead.
+pub fn set_desktop_shape(_win: &WebviewWindow, _shape: super::MouseShape) {}
+
+/// Layer-shell only (Linux).
+pub fn set_layer_margins(_win: &WebviewWindow, _x: f64, _y: f64) {}
+
+/// Layer-shell only (Linux).
+pub fn set_layer_overlay(_win: &WebviewWindow, _on: bool) {}
+
+/// Layer-shell only (Linux): the logical size of the display the island is on.
+pub fn layer_display(_island: &WebviewWindow, _mochi: &WebviewWindow) -> Option<(f64, f64)> {
+    None
+}
+
 // ── Staying on top ────────────────────────────────────────────────────────────
 //
 // Always-on-top is a band, not a guarantee: every other topmost window that
@@ -337,6 +369,9 @@ pub fn set_input_region(_win: &WebviewWindow, _rect: Option<(f64, f64, f64, f64)
 
 /// The island's HWND for the hook callback, which gets no context of its own.
 static ISLAND_HWND: AtomicIsize = AtomicIsize::new(0);
+/// The desktop Mochi's HWND (0 until desktop/ created it). Topmost too, so the
+/// same overlays bury him; raised right after the island, see raise_island.
+static DESKTOP_HWND: AtomicIsize = AtomicIsize::new(0);
 
 /// Remembers the island and hooks foreground changes. Must run on the main
 /// thread: an out-of-context WinEvent hook is delivered through the message
@@ -365,12 +400,27 @@ unsafe extern "system" fn on_foreground(_: HWINEVENTHOOK, _: u32, _: HWND, _: i3
 }
 
 /// Puts the island back at the top of the topmost band, without moving,
-/// resizing or activating it. Asynchronous, so the cursor poll thread never
-/// waits on the UI thread. A fullscreen game, film or presentation keeps the
-/// screen, as it does for hovering.
+/// resizing or activating it, then the desktop Mochi above it. Asynchronous,
+/// so the cursor poll thread never waits on the UI thread. A fullscreen game,
+/// film or presentation keeps the screen, as it does for hovering.
+///
+/// The two never fight: they only overlap while Mochi flies to or from the
+/// island or is dropped on it to go home, and he must be seen over it then.
+/// Both windows belong to the same UI thread, so the two asynchronous moves
+/// are applied in this order. Parked off-screen, raising him changes nothing
+/// anyone can see.
 pub fn raise_island() {
-    let raw = ISLAND_HWND.load(Ordering::Relaxed);
-    if raw == 0 || fullscreen_app_active() {
+    let island = ISLAND_HWND.load(Ordering::Relaxed);
+    let desktop = DESKTOP_HWND.load(Ordering::Relaxed);
+    if (island == 0 && desktop == 0) || fullscreen_app_active() {
+        return;
+    }
+    raise_topmost(island);
+    raise_topmost(desktop);
+}
+
+fn raise_topmost(raw: isize) {
+    if raw == 0 {
         return;
     }
     let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_ASYNCWINDOWPOS;

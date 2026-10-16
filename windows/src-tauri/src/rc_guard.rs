@@ -14,18 +14,27 @@ fn patched_window_target_is_arc(
     let _: &std::sync::Arc<_> = &ctx.window_target;
 }
 
+/// The windows the cursor polls fetch off the main thread every tick
+/// (island.rs spawn_cursor_poll, desktop/poll.rs): `get_webview_window` clones
+/// a `Webview`, the path of the original crash backtrace.
+#[cfg(debug_assertions)]
+const POLLED_WINDOWS: [&str; 2] = [crate::island::WINDOW_LABEL, crate::desktop::LABEL];
+
 /// Debug builds only: `COUCOU_STRESS_CLONES=<n>` clones and drops the `AppHandle`
-/// `n` times on each of 4 threads while the app runs, the way the pollers and
-/// the cursor thread do, only much faster. Unpatched, this aborts within seconds
-/// with "unsafe precondition(s) violated" in `Rc::inc_strong`; patched, it
-/// finishes and logs how long it took.
+/// `n` times on each of 4 threads while the app runs, and with each clone
+/// fetches and drops the windows the cursor polls fetch, the way the pollers
+/// and the cursor threads do, only much faster. Unpatched, this aborts within
+/// seconds with "unsafe precondition(s) violated" in `Rc::inc_strong`; patched,
+/// it finishes and logs how long it took.
 #[cfg(debug_assertions)]
 pub fn maybe_stress(app: &tauri::AppHandle) {
+    use tauri::Manager;
     let Some(n) = std::env::var("COUCOU_STRESS_CLONES").ok().and_then(|v| v.parse::<u64>().ok()) else {
         return;
     };
-    crate::log::line(format!("rc stress: 4 threads x {n} AppHandle clones"));
-    eprintln!("[coucou] rc stress: 4 threads x {n} AppHandle clones");
+    let what = format!("rc stress: 4 threads x {n} AppHandle clones, each with {POLLED_WINDOWS:?}");
+    crate::log::line(&what);
+    eprintln!("[coucou] {what}");
     let start = std::time::Instant::now();
     let workers: Vec<_> = (0..4)
         .map(|_| {
@@ -33,6 +42,9 @@ pub fn maybe_stress(app: &tauri::AppHandle) {
             std::thread::spawn(move || {
                 for _ in 0..n {
                     let clone = app.clone();
+                    for label in POLLED_WINDOWS {
+                        drop(clone.get_webview_window(label));
+                    }
                     drop(clone);
                 }
             })

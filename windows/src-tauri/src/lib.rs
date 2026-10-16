@@ -3,6 +3,7 @@
 mod audio;
 mod autostart;
 mod claude;
+mod desktop;
 #[cfg(windows)]
 mod webdrop;
 mod claude_cli;
@@ -84,12 +85,14 @@ fn boot(app: AppHandle, shared: State<Shared>) -> BootInfo {
 
 #[tauri::command]
 fn save_settings(app: AppHandle, shared: State<Shared>, settings: Settings) {
-    let (screen_changed, autostart_changed) = {
+    let (settings, screen_changed, autostart_changed) = {
         let mut current = shared.settings.lock().unwrap();
         let screen_changed = current.screen != settings.screen;
         let autostart_changed = current.autostart != settings.autostart;
+        // Where Mochi sits on the desktop is desktop/'s to say, not a page's.
+        let settings = settings::keep_rust_owned(settings, &current);
         *current = settings.clone();
-        (screen_changed, autostart_changed)
+        (settings, screen_changed, autostart_changed)
     };
     if let Err(err) = settings::save(&settings) {
         log::line(format!("settings: could not save: {err}"));
@@ -523,7 +526,7 @@ fn log_line(message: String) {
 /// for the *same* arguments as the island (see `additionalBrowserArgs` in
 /// tauri.conf.json) — a mismatch makes the second window come up blank, with no
 /// error anywhere.
-const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required";
+pub(crate) const BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required";
 
 /// In a dev build the pages are served by Vite, so the second window needs the
 /// absolute dev URL; a bundled build resolves it inside the app bundle.
@@ -582,6 +585,138 @@ fn open_settings_window(app: AppHandle) {
     show_settings_window(&app);
 }
 
+/// Every command the pages may invoke.
+fn commands() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![
+        boot,
+        save_settings,
+        set_collapsed,
+        set_island_rect,
+        focus_window,
+        reposition,
+        fit_zoom,
+        list_monitors,
+        sounds::custom_sounds,
+        sounds::custom_sound,
+        sounds::reveal_sounds_folder,
+        sounds::reload_sounds,
+        recap::recap_history,
+        recap::recap_prefs,
+        recap::recap_set_enabled,
+        recap::recap_set_hide_projects,
+        recap::recap_mark_shown,
+        recap::recap_clear,
+        recap::recap_save_png,
+        recap::recap_reveal_saved,
+        open_url,
+        open_in_vscode,
+        open_session,
+        editor::open_file_in_vscode,
+        quit_app,
+        hooks_status,
+        hooks_preview,
+        hooks_apply,
+        approval_decision,
+        approval_ack,
+        approval_decline,
+        log_line,
+        chat_send,
+        chat_reset,
+        claude_cli_status,
+        ingest_file,
+        secret_present,
+        secret_set,
+        secret_clear,
+        github_refresh,
+        refresh_integration,
+        media_control,
+        media_art,
+        media_lyrics,
+        lyrics_search,
+        lyrics_choose,
+        shelf_pin,
+        shelf_unpin,
+        shelf_clear,
+        shelf_thumb,
+        shelf_open,
+        shelf_reveal,
+        shelf_copy,
+        shelf_drag,
+        audio_set_default,
+        audio_set_volume,
+        audio_set_mute,
+        open_app,
+        dismiss_messages,
+        fullscreen_active,
+        open_n8n,
+        open_settings_window,
+        set_paused,
+        desktop::commands::desktop_mochi_info,
+        desktop::commands::desktop_mochi_pick_up,
+        desktop::commands::desktop_mochi_carry,
+        desktop::commands::desktop_mochi_carry_end,
+        desktop::commands::desktop_mochi_drag_begin,
+        desktop::commands::desktop_mochi_drag_move,
+        desktop::commands::desktop_mochi_drag_end,
+        desktop::commands::desktop_mochi_fly_out,
+        desktop::commands::desktop_mochi_fly_home,
+        desktop::commands::desktop_mochi_set_asleep,
+    ]
+}
+
+/// The windows, the tray and the background work, once the app is up.
+fn setup(
+    app: &mut tauri::App,
+    loaded: &settings::Settings,
+    gate: &Arc<PollGate>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let handle = app.handle().clone();
+    startup::maybe_panic_probe();
+    // Built here, not from tauri.conf.json: a failure is retried, not a panic.
+    if !startup::create_island(&handle) {
+        startup::give_up();
+    }
+    tray::build(&handle)?;
+    // Before the island: see create_settings_window.
+    create_settings_window(&handle);
+    // Same rule for Mochi's desktop window (desktop/window.rs setup).
+    desktop::setup(&handle);
+
+    if let Some(win) = island::window(&handle) {
+        // Where Tauri takes the drop itself (drags started inside
+        // Coucou, Linux), its paths are ones the island may copy or pin.
+        win.on_window_event(|event| {
+            if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
+                dropped::allow(paths.iter().map(|p| p.to_string_lossy().to_string()));
+            }
+        });
+        #[cfg(windows)]
+        webdrop::install(&handle, &win);
+        platform::make_non_activating(&win);
+        island::apply_geometry(&handle, &loaded.screen, false);
+        let _ = win.show();
+        // On the main thread: the foreground hook needs its message loop.
+        platform::keep_on_top(&win);
+    }
+    gate.collapsed.store(false, Ordering::Relaxed);
+    // Nothing drawn yet, so nothing takes the mouse until the page
+    // reports the island's shape.
+    if !platform::CURSOR_POLL {
+        island::refresh_click_through(&handle, gate);
+    }
+    gate.set_active(true);
+    island::spawn_cursor_poll(handle.clone(), gate.clone());
+    #[cfg(debug_assertions)]
+    rc_guard::maybe_stress(&handle);
+
+    log::line(format!("--- Coucou {} started ---", env!("CARGO_PKG_VERSION")));
+    autostart::sync(&handle, loaded.autostart);
+    hooks::ensure_hook_exe(&handle);
+    pipe::start(handle.clone());
+    integrations::start(handle.clone());
+    Ok(())
+}
+
 pub fn run() {
     startup::install_panic_log();
     platform::prepare_environment();
@@ -603,116 +738,8 @@ pub fn run() {
         .manage(Pending::default())
         .manage(Chat::default())
         .manage(recap::load())
-        .invoke_handler(tauri::generate_handler![
-            boot,
-            save_settings,
-            set_collapsed,
-            set_island_rect,
-            focus_window,
-            reposition,
-            fit_zoom,
-            list_monitors,
-            sounds::custom_sounds,
-            sounds::custom_sound,
-            sounds::reveal_sounds_folder,
-            sounds::reload_sounds,
-            recap::recap_history,
-            recap::recap_prefs,
-            recap::recap_set_enabled,
-            recap::recap_set_hide_projects,
-            recap::recap_mark_shown,
-            recap::recap_clear,
-            recap::recap_save_png,
-            recap::recap_reveal_saved,
-            open_url,
-            open_in_vscode,
-            open_session,
-            editor::open_file_in_vscode,
-            quit_app,
-            hooks_status,
-            hooks_preview,
-            hooks_apply,
-            approval_decision,
-            approval_ack,
-            approval_decline,
-            log_line,
-            chat_send,
-            chat_reset,
-            claude_cli_status,
-            ingest_file,
-            secret_present,
-            secret_set,
-            secret_clear,
-            github_refresh,
-            refresh_integration,
-            media_control,
-            media_art,
-            media_lyrics,
-            lyrics_search,
-            lyrics_choose,
-            shelf_pin,
-            shelf_unpin,
-            shelf_clear,
-            shelf_thumb,
-            shelf_open,
-            shelf_reveal,
-            shelf_copy,
-            shelf_drag,
-            audio_set_default,
-            audio_set_volume,
-            audio_set_mute,
-            open_app,
-            dismiss_messages,
-            fullscreen_active,
-            open_n8n,
-            open_settings_window,
-            set_paused,
-        ])
-        .setup(move |app| {
-            let handle = app.handle().clone();
-            startup::maybe_panic_probe();
-            // Built here, not from tauri.conf.json: a failure is retried, not a panic.
-            if !startup::create_island(&handle) {
-                startup::give_up();
-            }
-            tray::build(&handle)?;
-            // Before the island: see create_settings_window.
-            create_settings_window(&handle);
-
-            if let Some(win) = island::window(&handle) {
-                // Where Tauri takes the drop itself (drags started inside
-                // Coucou, Linux), its paths are ones the island may copy or pin.
-                win.on_window_event(|event| {
-                    if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
-                        dropped::allow(paths.iter().map(|p| p.to_string_lossy().to_string()));
-                    }
-                });
-                #[cfg(windows)]
-                webdrop::install(&handle, &win);
-                platform::make_non_activating(&win);
-                island::apply_geometry(&handle, &loaded.screen, false);
-                let _ = win.show();
-                // On the main thread: the foreground hook needs its message loop.
-                platform::keep_on_top(&win);
-            }
-            gate.collapsed.store(false, Ordering::Relaxed);
-            // Nothing drawn yet, so nothing takes the mouse until the page
-            // reports the island's shape.
-            if !platform::CURSOR_POLL {
-                island::refresh_click_through(&handle, &gate);
-            }
-            gate.set_active(true);
-            island::spawn_cursor_poll(handle.clone(), gate.clone());
-            #[cfg(debug_assertions)]
-            rc_guard::maybe_stress(&handle);
-
-            log::line(format!("--- Coucou {} started ---", env!("CARGO_PKG_VERSION")));
-            autostart::sync(&handle, loaded.autostart);
-            hooks::ensure_hook_exe(&handle);
-            pipe::start(handle.clone());
-            integrations::start(handle.clone());
-            Ok(())
-        })
+        .invoke_handler(commands())
+        .setup(move |app| setup(app, &loaded, &gate))
         .run(context)
         .expect("error while running Coucou");
 }

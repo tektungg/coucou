@@ -46,6 +46,7 @@ installs for the current user only — no admin prompt.
 | Click Mochi | It gets annoyed. Three times in a row and it goes dizzy |
 | Right-click Mochi (or tray → Wardrobe…) | The wardrobe opens: rest the pointer on an outfit to try it on, click to keep it |
 | Rest the pointer on Mochi for two seconds | Hearts |
+| Drag Mochi out of the island | He lives on the desktop in a little window of his own, until you double-click him or drop him back on the island |
 | Drag a file onto the island | Mochi turns into a box, swallows it, then offers to answer questions about it |
 | `Esc` | Closes the island |
 | Tray icon | Open, Weekly recap, Wardrobe…, Settings…, Pause, Quit |
@@ -150,6 +151,31 @@ Mochi's drawing has deterministic snapshot pages for refactors:
 `dev/engine-snapshot.html` (every state, act, emote and badge; `?outfits` for
 the outfits), `dev/outfits-snapshot.html` and `dev/greeting-snapshot.html`
 freeze the clock and seed `Math.random`, so two runs draw the same pixels.
+
+### Mochi on the desktop
+
+Drag Mochi out of the island and drop him anywhere: he stays there, in a
+120 px window of his own, and comes back to that spot at the next launch. He
+shows the same mood and outfit as the island, and here also the focused pill's
+act and colour (a one-shot travels as its age, since each window has its own
+clock: `desktopLogic.ts packActs / liveAct`). His eyes follow the cursor; after
+two quiet minutes with the pointer away he dozes off, and asleep the cursor
+poll stops entirely.
+
+| What you do | What happens |
+|---|---|
+| Click him | A poke; three in a row, dizzy, and the island shows the confused view |
+| Double-click him, or drop him on the island | Home for good |
+| Right-click him | The wardrobe opens on the island |
+| Drag him | A new spot |
+
+A permission, a plan or a question waiting for an answer flies him back to the
+island (surprised first); once it is answered he flies out to his spot again.
+An integration's alert (a message, a usage limit, a deploy) needs no answer,
+so he only looks up from where he is. A click on the island's Mochi now slaps
+him when the button comes up, so dragging him out never slaps him first
+(`island/botDrag.ts`). From upstream `dde859e`, `64bb85e`, `b52bbe3`,
+`7a8d5e6`; the acts, the pill colour and the question card are this build's.
 
 ### Weekly recap
 
@@ -548,6 +574,7 @@ never cherry-picked.
 | `c4e330f`, `0f4edf1`, `c2cfbca` | GitHub pulse, alerts, contribution grid | `github/` (parsers, poll loops, tests); the pill is back, off by default |
 | `23c09b9`, `396cf29`, `c97dec1` | Outfits and the wardrobe | `outfits/` split by part; default "none"; hats make way for head props |
 | `d02f820` | Greeting v2 and its sound | split into one function per part, same poses and pixels |
+| `dde859e`, `64bb85e`, `b52bbe3`, `7a8d5e6` | Mochi on the desktop | `desktop/` (Rust, split), `island/desktop.ts`, `island/botDrag.ts`; acts and pill colour sent too |
 
 Not ported: `66be53e` (Antigravity's `PreToolUse` answer): this build's relay
 has no Antigravity path. Upstream's bigger features (more agents,

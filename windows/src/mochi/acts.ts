@@ -177,7 +177,7 @@ export function noteDue(prevT: number, t: number): boolean {
 // ── Triggers ──────────────────────────────────────────────────────────────────
 
 type Data = Record<string, unknown> | null | undefined;
-type Trigger = { name: ActName; variant: string | null };
+export type Trigger = { name: ActName; variant: string | null };
 
 interface ShelfItem { path?: unknown; modified?: unknown }
 interface SpaceItem { done?: unknown }

@@ -1,7 +1,7 @@
 // The island: DOM shell, sizing animation, Mochi placement, mouse handling.
 // Mirrors IslandRootView.swift + IslandWindowController.swift.
 
-import { Tracked, Spring, clamp } from "../core/anim";
+import { Tracked, Spring } from "../core/anim";
 import { Bridge, IS_TAURI, onDragDrop } from "../core/bridge";
 import {
   COMPACT_W, EXPANDED_CORNER, EXPANDED_W, NOTCH_W, PANEL_H, PANEL_W,
@@ -23,16 +23,19 @@ import { h } from "../views/dom";
 import {
   hasPersonalData, lyricStripActive, lyricStripEl, lyricStripWidth, musicSinging, onLyricStripResize,
 } from "../views/personal";
+import { BotDrag } from "./botDrag";
 import { BotHover } from "./botHover";
 import { BotPainter } from "./botPainter";
 import { CompactBar, lyricMode } from "./compactBar";
+import { Countdown } from "./countdown";
+import { DesktopLink } from "./desktop";
 import { Dizzy } from "./dizzy";
 import { FileDrop } from "./fileDrop";
-import { IslandStateMachine } from "./fsm";
+import { IslandStateMachine, type FsmState } from "./fsm";
+import { wireKeys } from "./keys";
 import { buildViewActions } from "./viewActions";
 import { WindowCollapse } from "./windowCollapse";
-import { blockMenuOverMochi, dropPreviewOutsideWardrobe, rightClickedMochi } from "./wardrobe";
-import { stepFocus } from "../views/carousel";
+import { blockMenuOverMochi, dropPreviewOutsideWardrobe, rightClickedMochi, wardrobeFromDesktop } from "./wardrobe";
 import {
   MESSAGE_GLANCE_S, focusAfterGlance, messageAlertAction, rememberGlance, type GlanceReturn,
 } from "./messageAlert";
@@ -60,7 +63,7 @@ export class Island {
   private contentEl!: HTMLElement;
   private viewsEl!: HTMLElement;
   private greetingCanvas!: HTMLCanvasElement;
-  private countdown!: HTMLElement;
+  private countdown = new Countdown();
   private wakeStrip!: HTMLElement;
 
   private header!: ViewHost;
@@ -100,6 +103,13 @@ export class Island {
   private tallOverview = false;
 
   private dizzy = new Dizzy(this);
+  /** Mochi on the desktop: his life cycle and the drag out of the island. */
+  readonly desktop = new DesktopLink({
+    reveal: () => this.reveal(),
+    wardrobeFromDesktop: () => wardrobeFromDesktop(this),
+    dizzyFromDesktop: () => this.dizzy.start(),
+  });
+  private botDrag = new BotDrag(this);
   /** Moments the Monday recap may open (recap/recap.ts): greeting over, waking up. */
   onGreetingDone: (() => void) | null = null;
   onWake: (() => void) | null = null;
@@ -150,7 +160,6 @@ export class Island {
 
     this.wakeStrip = h("div", { id: "wake-strip" });
     this.greetingCanvas = h("canvas", { id: "greeting-canvas" });
-    this.countdown = h("div", { id: "countdown" });
 
     this.header = buildHeader(actions);
     this.views = buildViews(actions, () => this.animateGeometry(false));
@@ -176,7 +185,7 @@ export class Island {
       this.compactBar.miniGrid,
       this.compactBar.micBadge,
       lyricStripEl(),
-      this.countdown,
+      this.countdown.el,
     );
 
     this.sizeGreetingCanvas();
@@ -221,11 +230,7 @@ export class Island {
           this.setMode("hidden");
           break;
         case "petit":
-          if (from === "coucou") this.greeting.interrupt();
-          else if (from === "hidden") Sound.play("peek");
-          this.setMode("compact");
-          if (from === "coucou") State.view = State.defaultView();
-          if (!this.wasInIsland) this.fsm.mouseLeft();
+          this.toPetit(from);
           break;
         case "home":
           this.expand(State.defaultView());
@@ -238,7 +243,18 @@ export class Island {
       }
       State.notify();
       if (from === "hidden") this.onWake?.();
+      // The greeting is over, however it ended: back to his desktop spot.
+      if (from === "coucou" && to !== "coucou") this.desktop.launch();
     };
+  }
+
+  /** Down to the compact island: ends the greeting, or peeks out of hiding. */
+  private toPetit(from: FsmState) {
+    if (from === "coucou") this.greeting.interrupt();
+    else if (from === "hidden") Sound.play("peek");
+    this.setMode("compact");
+    if (from === "coucou") State.view = State.defaultView();
+    if (!this.wasInIsland) this.fsm.mouseLeft();
   }
 
   launch() {
@@ -487,28 +503,18 @@ export class Island {
       Sound.resume();
       State.lastActivity = performance.now();
       if (rightClickedMochi(this, e)) return;
+      // A press on Mochi slaps him once let go, or drags him out to the desktop.
+      const onBot = this.botDrag.pressed(e);
       if (State.mode !== "expanded") {
         this.fsm.click();
         return;
       }
-      if (this.isBotHit(e.clientX, e.clientY)) {
-        this.botHover.cancel();
-        this.engine.slap();
-      }
+      if (onBot) this.botHover.cancel();
     });
 
     blockMenuOverMochi(this.islandEl, this);
 
-    window.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && State.mode === "expanded" && !State.isPinned) this.collapse();
-      // ← → page through the pills, like a swipe (views/carousel.ts).
-      if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && State.mode === "expanded" && State.view === "overview") {
-        const ids = State.visibleTasks.map((t) => t.id);
-        const next = stepFocus(ids, State.focusTask?.id ?? null, e.key === "ArrowRight" ? 1 : -1);
-        if (next) State.setFocus(next);
-      }
-      State.lastActivity = performance.now();
-    });
+    wireKeys(this);
 
     void onDragDrop((e) => this.fileDrop.onDragDrop(e));
 
@@ -595,6 +601,8 @@ export class Island {
   }
 
   isBotHit(x: number, y: number): boolean {
+    // Out on the desktop, the island's Mochi is invisible: nothing to hit.
+    if (State.mochiOnDesktop) return false;
     const rect = this.islandRect();
     const cx = rect.x + this.botCx.value;
     const cy = rect.y + this.botCy.value;
@@ -638,7 +646,7 @@ export class Island {
     tickMiniBots(dt, this.music);
     this.views.get(State.view)?.tick?.(nowMs);
     if (UploadSeq.isActive) this.fileDrop.stepSequence();
-    this.updateCountdown(nowMs);
+    this.countdown.update(this.fsm, nowMs);
 
     if (this.frameBusy()) {
       requestAnimationFrame(this.frame);
@@ -698,8 +706,9 @@ export class Island {
     this.botCy.target = p.cy;
     this.botSize.target = p.diameter / 0.6;
 
-    // The drop canvas draws its own Mochi; two of them would overlap.
-    const own = !this.greetingActive && !this.uploadActive;
+    // The drop canvas draws its own Mochi; two of them would overlap. Out on the
+    // desktop, he isn't here at all.
+    const own = !this.greetingActive && !this.uploadActive && !State.mochiOnDesktop;
     this.painter.setVisible(p.opacity > 0 && own);
     const glows = State.mode === "expanded" && State.view !== "uploading" && own;
     this.painter.placeGlow(glows ? { cx: this.botCx.value, cy: this.botCy.value, diameter: p.diameter } : null);
@@ -708,20 +717,6 @@ export class Island {
   private drawBot(dt: number) {
     const at = { cx: this.botCx.value, cy: this.botCy.value, size: this.botSize.value };
     this.painter.draw(dt, at, this.islandRect().x + at.cx, this.music);
-  }
-
-  private updateCountdown(nowMs: number) {
-    // The state machine's own deadline, so the bar follows an auto-close delay
-    // edited while the countdown runs, and a message glance's 3 s.
-    const dueAt = this.fsm.homeCollapseDueAt;
-    if (State.mode !== "expanded" || State.isPinned || dueAt == null) {
-      this.countdown.style.width = "0px";
-      return;
-    }
-    const windowS = this.fsm.homeCollapseWindowS ?? Math.min(10, this.fsm.homeToPetitDelay * 0.6);
-    const remaining = (dueAt - nowMs) / 1000;
-    this.countdown.style.width =
-      remaining < windowS ? `${Math.max(0, clamp(remaining / windowS, 0, 1) * 160)}px` : "0px";
   }
 
   // ── DOM sync ────────────────────────────────────────────────────────────────

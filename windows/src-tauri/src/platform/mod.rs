@@ -47,6 +47,75 @@ pub fn home_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
+/// How the desktop Mochi's window can be placed and clicked on this system.
+/// Each OS builds only its own modes (and Off).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[allow(dead_code)]
+pub enum DesktopMode {
+    /// Windows: placed anywhere, and a cursor poll drives click-through, the
+    /// eyes and the drag, exactly like the island.
+    Poll,
+    /// Linux on X11: an ordinary window the window manager lets us place; the
+    /// input region is the click-through and the page drives the drag.
+    Window,
+    /// Linux on a layer-shell compositor (KDE, COSMIC, wlroots): a layer
+    /// surface anchored to the top-left corner of the island's display, placed
+    /// with margins.
+    Layer,
+    /// Wayland without layer-shell (GNOME): no way to put a window where the
+    /// user dropped it, so Mochi stays in the island.
+    Off,
+}
+
+impl DesktopMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DesktopMode::Poll => "poll",
+            DesktopMode::Window => "window",
+            DesktopMode::Layer => "layer",
+            DesktopMode::Off => "off",
+        }
+    }
+
+    /// The space a saved spot is measured in. A spot from another space (the
+    /// same machine once on X11, once on Wayland) is not trusted.
+    pub fn space(self) -> &'static str {
+        match self {
+            // Physical pixels of the whole desktop, as the OS reports monitors.
+            DesktopMode::Poll | DesktopMode::Window => "screen",
+            // Logical pixels from the top-left corner of the island's display.
+            DesktopMode::Layer | DesktopMode::Off => "layer",
+        }
+    }
+}
+
+/// Which part of the desktop Mochi's window takes the mouse. Windows reads
+/// none of it: its poll toggles click-through from a hit test instead.
+#[derive(Clone, Copy, PartialEq, Debug)]
+#[cfg_attr(windows, allow(dead_code))]
+pub enum MouseShape {
+    /// Nothing: every click goes to what is underneath (during a flight).
+    Empty,
+    /// The whole window (while he is being dragged across the screen).
+    Whole,
+    /// A disc, in window-logical pixels: Mochi's body.
+    Disc { cx: f64, cy: f64, r: f64 },
+}
+
+#[cfg(test)]
+mod desktop_mode_tests {
+    use super::DesktopMode;
+
+    #[test]
+    fn the_page_and_the_saved_spot_read_these_names() {
+        let names: Vec<_> = [DesktopMode::Poll, DesktopMode::Window, DesktopMode::Layer, DesktopMode::Off]
+            .iter()
+            .map(|m| (m.as_str(), m.space()))
+            .collect();
+        assert_eq!(names, [("poll", "screen"), ("window", "screen"), ("layer", "layer"), ("off", "layer")]);
+    }
+}
+
 #[cfg(test)]
 mod fullscreen_tests {
     use super::is_fullscreen_window;

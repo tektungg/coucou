@@ -32,7 +32,8 @@ the main thread. Every other use reads it through `Deref`, unchanged.
 
 `windows/scripts/rc-stress.ps1` runs the debug build with
 `COUCOU_STRESS_CLONES=<n>` (`src-tauri/src/rc_guard.rs`): 4 threads clone and drop
-the `AppHandle` while the app runs.
+the `AppHandle` while the app runs, and with each clone fetch and drop the
+`island` and `mochi` windows, the two the cursor polls fetch every tick.
 
 | Build | 1 000 clones per thread | 200 000 clones per thread |
 |---|---|---|

@@ -233,6 +233,8 @@ class AppState {
   pendingQuestion: QuestionInfo | null = null;
   /** The outfit hovered in the wardrobe, worn until the pointer leaves it. */
   wardrobePreview: Outfit | null = null;
+  /** Mochi lives on the desktop right now: the island's own Mochi is hidden. */
+  mochiOnDesktop = false;
 
   integrations: Record<string, IntegrationInfo> = {};
 

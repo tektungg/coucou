@@ -54,6 +54,36 @@ pub struct Settings {
     /// Which one-time pill layout migration this file has had (migrate_pills).
     #[serde(default)]
     pub pill_layout: u32,
+    /// Mochi on the desktop: whether he lives there, and his spot. Owned by
+    /// the Rust side (desktop/prefs.rs): what a page sends back is ignored
+    /// (keep_rust_owned).
+    pub desktop_mochi: DesktopMochiPref,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct DesktopMochiPref {
+    /// He was on the desktop when the app quit: he flies back out at launch.
+    pub on_desktop: bool,
+    /// Top-left corner of his window where the user last left him.
+    pub spot: Option<DesktopSpot>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DesktopSpot {
+    pub x: f64,
+    pub y: f64,
+    /// What x and y are measured in (`DesktopMode::space`).
+    pub space: String,
+}
+
+/// The settings a page saves, with the values only Rust may change taken from
+/// `current`: where Mochi sits on the desktop is desktop/'s to say, and a page
+/// holding an older copy must not move him back. Ported from upstream
+/// (Louis-CFM/coucou 64bb85e).
+pub fn keep_rust_owned(mut incoming: Settings, current: &Settings) -> Settings {
+    incoming.desktop_mochi = current.desktop_mochi.clone();
+    incoming
 }
 
 /// The pill layout this build ships: Shelf took the Claude usage pill's
@@ -156,6 +186,7 @@ impl Default for Settings {
             lyrics_enabled: true,
             lyrics_romanized: false,
             pill_layout: PILL_LAYOUT,
+            desktop_mochi: DesktopMochiPref::default(),
         }
     }
 }
@@ -295,6 +326,56 @@ mod tests {
         assert!(!s.lyrics_enabled);
         assert_eq!(s.space_timebox_dir, r"D:\mcp\timebox");
         assert_eq!(s.chat_provider, "cli");
+    }
+
+    #[test]
+    fn a_file_from_before_the_desktop_mochi_keeps_him_in_the_island() {
+        let old = r#"{"soundEnabled":true,"model":"some-model","mochiOutfit":"witchHat"}"#;
+        let s: Settings = crate::prefs_file::parse(old.as_bytes()).unwrap();
+        assert_eq!(s.desktop_mochi, DesktopMochiPref::default());
+        assert!(!s.desktop_mochi.on_desktop);
+        assert_eq!(s.mochi_outfit, "witchHat");
+    }
+
+    #[test]
+    fn a_half_written_desktop_spot_costs_only_the_spot() {
+        let file = r#"{"model":"some-model","desktopMochi":{"onDesktop":true,"spot":{"x":"left"}}}"#;
+        let s: Settings = crate::prefs_file::parse(file.as_bytes()).expect("salvaged, not thrown away");
+        // The whole field falls back, and nothing else does.
+        assert_eq!(s.desktop_mochi, DesktopMochiPref::default());
+        assert_eq!(s.model, "some-model");
+
+        let s: Settings = crate::prefs_file::parse(br#"{"desktopMochi":{"onDesktop":true}}"#).unwrap();
+        assert!(s.desktop_mochi.on_desktop);
+        assert_eq!(s.desktop_mochi.spot, None);
+    }
+
+    #[test]
+    fn the_desktop_spot_is_written_in_camel_case_and_reads_back() {
+        let spot = DesktopSpot { x: 1500.5, y: -300.0, space: "screen".into() };
+        let pref = DesktopMochiPref { on_desktop: true, spot: Some(spot) };
+        let json = serde_json::to_value(Settings { desktop_mochi: pref.clone(), ..Settings::default() }).unwrap();
+        assert_eq!(
+            json["desktopMochi"],
+            serde_json::json!({ "onDesktop": true, "spot": { "x": 1500.5, "y": -300.0, "space": "screen" } })
+        );
+        let back: Settings = serde_json::from_value(json).unwrap();
+        assert_eq!(back.desktop_mochi, pref);
+    }
+
+    #[test]
+    fn a_page_saving_its_settings_never_moves_mochi() {
+        let spot = DesktopSpot { x: 10.0, y: 20.0, space: "screen".into() };
+        let current = Settings {
+            desktop_mochi: DesktopMochiPref { on_desktop: true, spot: Some(spot) },
+            ..Settings::default()
+        };
+        // The page's copy is stale (he was in the island when it loaded) and
+        // it changed a real preference.
+        let incoming = Settings { sound_enabled: false, ..Settings::default() };
+        let saved = keep_rust_owned(incoming, &current);
+        assert_eq!(saved.desktop_mochi, current.desktop_mochi);
+        assert!(!saved.sound_enabled, "the page's own change is kept");
     }
 
     /// A settings.json written before the CLI chat existed must still load,

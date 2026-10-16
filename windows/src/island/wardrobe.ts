@@ -44,3 +44,20 @@ export function blockMenuOverMochi(el: HTMLElement, host: WardrobeHost) {
 export function dropPreviewOutsideWardrobe() {
   if (State.wardrobePreview && !(State.mode === "expanded" && State.view === "wardrobe")) State.wardrobePreview = null;
 }
+
+export interface DesktopWardrobeHost {
+  alert(view: IslandViewName): void;
+  setView(view: IslandViewName): void;
+}
+
+/**
+ * Right-click on the desktop Mochi (macOS openWardrobeFromDesktop, upstream
+ * 7a8d5e6): opens the wardrobe from any state, or goes back if it is open.
+ */
+export function wardrobeFromDesktop(host: DesktopWardrobeHost) {
+  if (State.mode === "expanded" && State.view === "wardrobe") {
+    host.setView(State.defaultView());
+    return;
+  }
+  if (!State.paused) host.alert("wardrobe");
+}

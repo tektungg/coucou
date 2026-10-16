@@ -3,7 +3,7 @@
 // `npm run dev` alone.
 
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { emitTo, listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { Settings } from "./state";
 import type { RecapHistory, RecapPrefs } from "../recap/summary";
@@ -189,7 +189,45 @@ export const Bridge = {
 
   /** Tray → Pause. Stops the integration pollers, not just the island. */
   setPaused: (paused: boolean) => call<void>("set_paused", { paused }),
+
+  // ── Mochi on the desktop (src-tauri/src/desktop/) ──────────────────────────
+  desktopInfo: () => call<DesktopInfo>("desktop_mochi_info"),
+  /** Starts a drag out of the island at the pointer (island-window coordinates). */
+  desktopPickUp: (x: number, y: number) => call<boolean>("desktop_mochi_pick_up", { x, y }),
+  /** Linux: the island page reports the pointer while it carries him. */
+  desktopCarry: (x: number, y: number) => call<void>("desktop_mochi_carry", { x, y }),
+  desktopCarryEnd: (x: number, y: number) => call<void>("desktop_mochi_carry_end", { x, y }),
+  /** A drag started on the desktop Mochi; resolves to his top-left corner. */
+  desktopDragBegin: () => call<[number, number] | null>("desktop_mochi_drag_begin"),
+  /** X11: the page moves the window itself, physical pixels. */
+  desktopDragMove: (x: number, y: number) => call<void>("desktop_mochi_drag_move", { x, y }),
+  desktopDragEnd: (x: number, y: number) => call<void>("desktop_mochi_drag_end", { x, y }),
+  /** Shows him at the island and flies him to his spot. False: no spot to go to. */
+  desktopFlyOut: () => call<boolean>("desktop_mochi_fly_out"),
+  /** Flies him into the island and hides him. `forget`: he lives there again. */
+  desktopFlyHome: (forget: boolean) => call<boolean>("desktop_mochi_fly_home", { forget }),
+  /** Asleep, Rust stops the cursor poll and the window listens for the pointer. */
+  desktopSetAsleep: (asleep: boolean) => call<void>("desktop_mochi_set_asleep", { asleep }),
 };
+
+/** How the desktop Mochi's window works here (desktop platform mode). */
+export type DesktopMode = "poll" | "window" | "layer" | "off";
+
+export interface DesktopInfo {
+  mode: DesktopMode;
+  /** He was on the desktop when the app last quit. */
+  onDesktop: boolean;
+}
+
+/** An event for one window only (island to desktop Mochi and back). Never throws. */
+export async function emitToWindow(label: string, event: string, payload?: unknown) {
+  if (!IS_TAURI) return;
+  try {
+    await emitTo(label, event, payload);
+  } catch (err) {
+    console.error(`[coucou] emit ${event} failed`, err);
+  }
+}
 
 export interface IntegrationUpdate {
   id: string;

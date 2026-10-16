@@ -96,6 +96,8 @@ async function main() {
 
   registerHookHandlers(island);
   registerIntegrationHandlers(island);
+  // Before the greeting: its end flies him back out if he lives on the desktop.
+  await island.desktop.init();
 
   // Monday recap: app start (greeting over), an agent starting work, waking up.
   const checkRecap = () => void Recap.check(island);

@@ -24,6 +24,8 @@ const KEY_FOR: Record<string, string> = {
   integration_calcom: "calcom-api-key",
 };
 
+/** How long a pill's event card (a deploy, a message) stays before its data shows again. */
+const EVENT_CARD_MS = 60_000;
 const clearTimers = new Map<string, number>();
 
 export function registerIntegrationHandlers(island: Island) {
@@ -87,54 +89,64 @@ function handle(island: Island, update: IntegrationUpdate) {
 
   if (!update.error) {
     applyPersonal(update);
-    // Mochi's act for this pill's news (a new message, file, Space item done).
-    const act = detectAct(update.id, previous?.loaded ? previous.data : null, update.data, update.event);
-    const actTask = act ? State.tasks.find((t) => t.id === update.id) : null;
-    if (act && actTask) actTask.act = { ...act, at: performance.now() };
+    startAct(update, previous?.loaded ? previous.data : null);
   }
   if (update.id === "integration_audio") patchAudioCard();
-
-  const event = update.event;
-  // Claude usage alerts still reach a session pill when its own pill is off.
-  const targetId = event ? alertTarget(update.id, State.tasks) : null;
-  if (event && targetId) {
-    const task = State.tasks.find((t) => t.id === targetId);
-    if (task) {
-      task.state = event.success ? "finished" : "error";
-      task.steps = event.detail ? [event.label, event.detail] : [event.label];
-      task.stepIndex = task.steps.length - 1;
-      if (State.focusId !== targetId) {
-        task.pillBadge = event.success ? "finished" : "error";
-      }
-      Sound.play(event.success ? "finish" : "error");
-      // Same as the Swift pollers: show the compact island so the badge is seen,
-      // but never steal the screen for a successful deploy. A chat message is
-      // the exception: it is meant to be read, so the island opens on it.
-      if (update.id === "integration_messages" && event.success) void island.showMessage(update.id);
-      else island.reveal();
-
-      const existing = clearTimers.get(targetId);
-      if (existing != null) window.clearTimeout(existing);
-      clearTimers.set(
-        targetId,
-        window.setTimeout(() => {
-          clearTimers.delete(targetId);
-          const t = State.tasks.find((x) => x.id === targetId);
-          if (!t || (t.state !== "finished" && t.state !== "error")) return;
-          t.state = "idle";
-          t.steps = [];
-          t.stepIndex = 0;
-          t.pillBadge = null;
-          t.act = null;
-          // Back to whatever the pill's data says (music playing, quota high).
-          applyPersonal({ id: targetId, data: State.integrations[targetId]?.data ?? {}, error: null, event: null });
-          State.notify();
-        }, 60_000),
-      );
-    }
-  }
+  if (update.event) showEvent(island, update.id, update.event);
 
   State.notify();
+}
+
+/** Mochi's act for this pill's news (a new message, file, Space item done). */
+function startAct(update: IntegrationUpdate, previousData: Record<string, unknown> | null) {
+  const act = detectAct(update.id, previousData, update.data, update.event);
+  const actTask = act ? State.tasks.find((t) => t.id === update.id) : null;
+  if (act && actTask) actTask.act = { ...act, at: performance.now() };
+}
+
+type IntegrationEvent = NonNullable<IntegrationUpdate["event"]>;
+
+/** A pill's event (a deploy, a message, a usage alert): its card, its badge, its sound. */
+function showEvent(island: Island, id: string, event: IntegrationEvent) {
+  // Claude usage alerts still reach a session pill when its own pill is off.
+  const targetId = alertTarget(id, State.tasks);
+  const task = targetId ? State.tasks.find((t) => t.id === targetId) : null;
+  if (!targetId || !task) return;
+  task.state = event.success ? "finished" : "error";
+  task.steps = event.detail ? [event.label, event.detail] : [event.label];
+  task.stepIndex = task.steps.length - 1;
+  if (State.focusId !== targetId) task.pillBadge = event.success ? "finished" : "error";
+  Sound.play(event.success ? "finish" : "error");
+  // Out on the desktop he looks up at it from his spot.
+  island.desktop.notice();
+  // Same as the Swift pollers: show the compact island so the badge is seen,
+  // but never steal the screen for a successful deploy. A chat message is
+  // the exception: it is meant to be read, so the island opens on it.
+  if (id === "integration_messages" && event.success) void island.showMessage(id);
+  else island.reveal();
+  scheduleEventClear(targetId);
+}
+
+/** A minute later the event card gives the pill back to its data. */
+function scheduleEventClear(targetId: string) {
+  const existing = clearTimers.get(targetId);
+  if (existing != null) window.clearTimeout(existing);
+  clearTimers.set(
+    targetId,
+    window.setTimeout(() => {
+      clearTimers.delete(targetId);
+      const t = State.tasks.find((x) => x.id === targetId);
+      if (!t || (t.state !== "finished" && t.state !== "error")) return;
+      t.state = "idle";
+      t.steps = [];
+      t.stepIndex = 0;
+      t.pillBadge = null;
+      t.act = null;
+      // Back to whatever the pill's data says (music playing, quota high).
+      applyPersonal({ id: targetId, data: State.integrations[targetId]?.data ?? {}, error: null, event: null });
+      State.notify();
+    }, EVENT_CARD_MS),
+  );
 }
 
 /**
