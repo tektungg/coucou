@@ -6,6 +6,7 @@ mod claude;
 #[cfg(windows)]
 mod webdrop;
 mod claude_cli;
+mod dropped;
 mod files;
 mod hooks;
 mod integrations;
@@ -591,6 +592,13 @@ pub fn run() {
             create_settings_window(&handle);
 
             if let Some(win) = island::window(&handle) {
+                // Where Tauri takes the drop itself (drags started inside
+                // Coucou, Linux), its paths are ones the island may copy or pin.
+                win.on_window_event(|event| {
+                    if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
+                        dropped::allow(paths.iter().map(|p| p.to_string_lossy().to_string()));
+                    }
+                });
                 #[cfg(windows)]
                 webdrop::install(&handle, &win);
                 platform::make_non_activating(&win);

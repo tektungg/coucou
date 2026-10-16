@@ -23,7 +23,19 @@ pub fn inbox_dir() -> PathBuf {
     settings::local_dir().join("inbox")
 }
 
+/// True for a file `ingest` copied into the inbox itself: directly inside it,
+/// never through a `..` that climbs back out.
+pub fn is_inbox_copy(path: &str) -> bool {
+    let p = Path::new(path);
+    p.file_name().is_some() && p.parent() == Some(inbox_dir().as_path())
+}
+
+/// Copies a dropped file into the inbox. Only paths a real drop delivered
+/// (dropped.rs) are copied.
 pub fn ingest(source: &str) -> Result<DroppedFile, String> {
+    if !crate::dropped::is_allowed(source) {
+        return Err("Only files dropped on the island can be added.".into());
+    }
     let src = Path::new(source);
     let meta = std::fs::metadata(src).map_err(|e| format!("cannot read {source}: {e}"))?;
     if meta.is_dir() {
@@ -94,6 +106,9 @@ mod tests {
         let source = tmp.join("note.txt");
         std::fs::write(&source, b"hello").unwrap();
 
+        let dropped = |p: &Path| crate::dropped::allow([p.to_string_lossy().to_string()]);
+        dropped(&source);
+        dropped(&tmp);
         let first = ingest(source.to_str().unwrap()).unwrap();
         assert_eq!(first.name, "note.txt");
         assert_eq!(std::fs::read(&first.path).unwrap(), b"hello");
@@ -118,6 +133,7 @@ mod tests {
             .unwrap()
             .set_modified(long_ago)
             .unwrap();
+        dropped(&old_source);
         let aged = ingest(old_source.to_str().unwrap()).unwrap();
         assert!(
             Path::new(&aged.path).exists(),
@@ -128,5 +144,26 @@ mod tests {
         let _ = std::fs::remove_file(&first.path);
         let _ = std::fs::remove_file(&second.path);
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn a_file_that_was_not_dropped_is_never_copied() {
+        let tmp = std::env::temp_dir().join(format!("coucou-test-undropped-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let secret = tmp.join("id_rsa");
+        std::fs::write(&secret, b"key").unwrap();
+        let err = ingest(secret.to_str().unwrap()).err().expect("an undropped file was copied");
+        assert!(err.contains("dropped"), "{err}");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn only_a_file_right_inside_the_inbox_is_an_inbox_copy() {
+        let inbox = inbox_dir();
+        assert!(is_inbox_copy(&inbox.join("note.txt").to_string_lossy()));
+        assert!(!is_inbox_copy(&inbox.to_string_lossy()));
+        assert!(!is_inbox_copy(&inbox.join("..").join("settings.json").to_string_lossy()));
+        assert!(!is_inbox_copy(&inbox.join("sub").join("note.txt").to_string_lossy()));
+        assert!(!is_inbox_copy(&std::env::temp_dir().join("note.txt").to_string_lossy()));
     }
 }

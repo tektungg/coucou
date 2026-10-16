@@ -256,10 +256,21 @@ fn check(path: &str) -> Result<(), String> {
     }
 }
 
+/// Whether the page may pin `path`: a real drop delivered it (dropped.rs), or
+/// it is the inbox copy Coucou made of one. Anything else could be a script
+/// in the page reaching for a file the user never offered.
+pub(crate) fn may_pin(path: &str) -> bool {
+    crate::dropped::is_allowed(path) || crate::files::is_inbox_copy(path)
+}
+
 /// Keeps dropped files and folders on the shelf (by reference).
 pub fn pin_paths(paths: &[String]) -> Result<(), String> {
-    let existing: Vec<String> = paths
-        .iter()
+    let offered: Vec<&String> = paths.iter().filter(|p| may_pin(p)).collect();
+    if offered.is_empty() {
+        return Err("Only files dropped on the island can be kept".into());
+    }
+    let existing: Vec<String> = offered
+        .into_iter()
         .filter(|p| Path::new(p).is_absolute() && Path::new(p).exists())
         .cloned()
         .collect();
@@ -601,6 +612,19 @@ pub(crate) fn dib_bytes(w: u32, h: u32, top_down: &[u8]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_dropped_files_and_inbox_copies_can_be_pinned() {
+        let dropped = std::env::temp_dir().join("coucou-shelf-pin-test.txt");
+        let dropped = dropped.to_string_lossy().to_string();
+        assert!(!may_pin(&dropped), "never dropped");
+        // Refused before anything touches the pinned list or the disk.
+        assert!(pin_paths(&[dropped.clone()]).unwrap_err().contains("dropped"));
+        crate::dropped::allow([dropped.clone()]);
+        assert!(may_pin(&dropped));
+        let copy = crate::files::inbox_dir().join("note.txt");
+        assert!(may_pin(&copy.to_string_lossy()));
+    }
 
     fn e(path: &str, modified: i64) -> Entry {
         Entry { path: PathBuf::from(path), size: 10, modified, is_dir: false, hidden: false }

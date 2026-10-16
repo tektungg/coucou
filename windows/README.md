@@ -341,6 +341,13 @@ network call is the Music pill's lyrics (lrclib.net), which Settings can turn of
   Coucou's own process on Windows 11 (wry's, or one of ours), even with the
   target found under the cursor, which is why dropping on Mochi used to show
   the "no entry" cursor.
+- **Only what you dropped.** `ingest_file` and `shelf_pin` are callable from
+  the page, so on their own a script in it could copy or pin any file you can
+  read (and the shelf would then put it on the clipboard). Rust remembers the
+  paths a real drop delivered (`dropped.rs`: WebView2's drop objects and
+  Tauri's drag-drop event), for 10 minutes and at most 64 at a time; anything
+  else is refused. The shelf also takes the inbox copy Coucou made of a drop.
+  Ported from upstream `452df97`, extended to the shelf.
 - **Audio.** Speaker and microphone rows: the icon mutes, the name opens the
   device list (sets the default for every role through `IPolicyConfig`, the
   Sound control panel's own interface), the slider sets the volume (patched in

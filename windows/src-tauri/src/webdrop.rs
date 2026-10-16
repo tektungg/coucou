@@ -84,6 +84,8 @@ pub fn install(app: &AppHandle, win: &WebviewWindow) {
             }
             let paths = dropped_paths(&args);
             log::line(format!("drop: {} file(s)", paths.len()));
+            // These paths came from the OS, so the island may copy or pin them.
+            crate::dropped::allow(paths.iter().cloned());
             let _ = app.emit_to(WINDOW_LABEL, "island-drop", DropEvent { kind: "drop", paths });
             Ok(())
         }));
