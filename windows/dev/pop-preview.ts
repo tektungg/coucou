@@ -10,12 +10,24 @@
 //   view=recap[&share] the weekly recap of the sample week (its share panel)
 //   &focus=integration_github[&detail]  the GitHub pulse card (its lists)
 //   &outfit=<selection>  what Mochi wears (mochi/wardrobe.ts); view=wardrobe for the wardrobe
+//   view=prompt&md     the answer in Markdown (views/markdown.ts)
 // Mochi still animates; screenshots are taken after it has settled.
 
 import type { AskItem } from "../src/island/askQuestion";
 import { VIEW_LAYOUTS, type IslandViewName } from "../src/core/layout";
 
 const params = new URLSearchParams(location.search);
+
+/** Every block the chat renders: heading, bold, code, list, a code block. */
+const MARKDOWN_ANSWER = [
+  "## PR #42",
+  "Moves the **Messages** envelope below `eyeY` and adds tests:",
+  "- geometry, 5 cases",
+  "- the [design notes](https://example.com)",
+  "```ts",
+  "const eyeY = R * 0.12;",
+  "```",
+].join("\n");
 const asked = params.get("view") ?? "overview";
 const view: IslandViewName = asked in VIEW_LAYOUTS ? (asked as IslandViewName) : "overview";
 
@@ -149,7 +161,7 @@ switch (view) {
   case "prompt":
     State.chatHistory = [
       { id: 1, role: "user", content: "bonjour Mochi, sum up the last PR" },
-      { id: 2, role: "assistant", content: "PR #42 moves the Messages envelope below your eyes, sorry, mine, and adds 5 geometry tests." },
+      { id: 2, role: "assistant", content: params.has("md") ? MARKDOWN_ANSWER : "PR #42 moves the Messages envelope below your eyes, sorry, mine, and adds 5 geometry tests." },
     ];
     break;
 }

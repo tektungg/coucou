@@ -46,4 +46,8 @@ export const ICONS = {
   octagonX: "M21.61 15.98 15.98 21.61 8.02 21.61 2.39 15.98 2.39 8.02 8.02 2.39 15.98 2.39 21.61 8.02zM8.53 7.66 12 11.13 15.47 7.66 16.34 8.53 12.87 12 16.34 15.47 15.47 16.34 12 12.87 8.53 16.34 7.66 15.47 11.13 12 7.66 8.53z",
   // doc.text
   doc: "M6.5 2.6h7l4 4v14.8h-11V2.6zm6.6 1.6v3.3h3.3l-3.3-3.3zM8.6 11h6.8v1.5H8.6V11zm0 3.4h6.8v1.5H8.6v-1.5z",
+  // doc.on.doc (copy): a code block's copy button (views/markdown.ts)
+  copy: "M9 3.5h8.5L21 7v10.5H9v-14zm1.8 1.8v10.4h8.4V7.8l-2.5-2.5h-5.9zM3 7.5h4.2v1.8H4.8v10.4h8.4v-2.2H15v4H3v-14z",
+  // chevron.up.chevron.down: the chat's model button
+  chevronUpDown: "M8 9.5 12 5.5l4 4M8 14.5l4 4 4-4",
 } as const;
