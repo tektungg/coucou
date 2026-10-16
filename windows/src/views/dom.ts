@@ -13,7 +13,6 @@ export function h<K extends keyof HTMLElementTagNameMap>(
     if (v == null || v === false) continue;
     if (k === "class") el.className = String(v);
     else if (k === "text") el.textContent = String(v);
-    else if (k === "html") el.innerHTML = String(v);
     else if (k.startsWith("on") && typeof v === "function") {
       el.addEventListener(k.slice(2).toLowerCase(), v as EventListener);
     } else if (k === "style") el.setAttribute("style", String(v));
