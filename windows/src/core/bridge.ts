@@ -81,6 +81,9 @@ export const Bridge = {
   /** Opens the folder of the image saved last. */
   recapRevealSaved: () => call<void>("recap_reveal_saved"),
 
+  /** The GitHub card is on screen: refetch that part if it is stale. */
+  githubRefresh: (section: "pulse" | "activity") => call<void>("github_refresh", { section }),
+
   /** Displays the island can be pinned to: `key` is what `settings.screen` stores. */
   listMonitors: () => call<DisplayChoice[]>("list_monitors"),
   /** Corrects the webview zoom when its pixel ratio is not the window's scale; true when it changed. */

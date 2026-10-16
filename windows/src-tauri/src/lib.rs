@@ -9,6 +9,7 @@ mod claude_cli;
 mod dropped;
 mod editor;
 mod files;
+mod github;
 mod hooks;
 mod integrations;
 mod island;
@@ -100,6 +101,7 @@ fn save_settings(app: AppHandle, shared: State<Shared>, settings: Settings) {
         let collapsed = shared.gate.collapsed.load(Ordering::Relaxed);
         island::apply_geometry(&app, &settings.screen, collapsed);
     }
+    crate::github::poll::settings_saved(&app, &settings.active_integrations);
     // Keep the other window in step (island ⇄ settings window).
     let _ = app.emit("settings-changed", settings);
 }
@@ -338,13 +340,32 @@ fn secret_present(key: String) -> bool {
 }
 
 #[tauri::command]
-fn secret_set(key: String, value: String) -> Result<(), String> {
-    secrets::set(&key, &value)
+fn secret_set(app: AppHandle, key: String, value: String) -> Result<(), String> {
+    let before = (key == "github-token").then(|| secrets::get(&key));
+    secrets::set(&key, &value)?;
+    if let Some(before) = before {
+        if secrets::get(&key) != before {
+            crate::github::poll::github_token_changed(&app);
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
-fn secret_clear(key: String) -> Result<(), String> {
-    secrets::clear(&key)
+fn secret_clear(app: AppHandle, key: String) -> Result<(), String> {
+    let had = key == "github-token" && secrets::present(&key);
+    secrets::clear(&key)?;
+    if had {
+        crate::github::poll::github_token_changed(&app);
+    }
+    Ok(())
+}
+
+/// The GitHub card was opened: refetch its `section` ("pulse" or "activity")
+/// if it is stale. The pollers still decline while the pill is off or paused.
+#[tauri::command]
+fn github_refresh(section: String) {
+    crate::github::poll::github_refresh_if_stale(&section);
 }
 
 /// Opens the configured n8n instance — the URL lives in the Credential Manager.
@@ -622,6 +643,7 @@ pub fn run() {
             secret_present,
             secret_set,
             secret_clear,
+            github_refresh,
             refresh_integration,
             media_control,
             media_art,

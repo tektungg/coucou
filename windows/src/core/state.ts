@@ -111,10 +111,11 @@ export const INTEGRATION_AGENTS: AgentTask[] = [
 
 /**
  * The stock integrations this build hides: Claude Code already covers them.
- * Their code stays, so updates from upstream still merge cleanly.
+ * Their code stays, so updates from upstream still merge cleanly. GitHub is
+ * back since its pulse card (pull requests, CI, reviews) was ported.
  */
 export const HIDDEN_INTEGRATIONS: ReadonlySet<string> = new Set([
-  "integration_resend", "integration_n8n", "integration_vercel", "integration_github",
+  "integration_resend", "integration_n8n", "integration_vercel",
   "integration_notion", "integration_calcom", "integration_stripe",
 ]);
 

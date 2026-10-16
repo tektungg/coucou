@@ -8,6 +8,7 @@
 //   &diff              the working session has just edited a file (+N −M chip)
 //   &diff=open         …and its diff card is open
 //   view=recap[&share] the weekly recap of the sample week (its share panel)
+//   &focus=integration_github[&detail]  the GitHub pulse card (its lists)
 // Mochi still animates; screenshots are taken after it has settled.
 
 import type { AskItem } from "../src/island/askQuestion";
@@ -82,6 +83,35 @@ State.integrations.integration_space = ok({
     { name: "Settings tile grid", point: 3, done: false, kind: "timebox", status: "open" },
   ],
 });
+// The GitHub pulse: two PRs of mine, one review waiting, two default branches.
+if (params.get("focus") === "integration_github") {
+  State.settings.activeIntegrations = ["integration_github", ...State.settings.activeIntegrations.slice(0, 5)];
+  State.loadIntegrationTasks();
+  const pr = (repo: string, number: number, title: string, ci: string, review: string) => ({
+    id: `${repo}#${number}`, title, url: `https://github.com/${repo}/pull/${number}`, repo, number,
+    isDraft: false, ci, review, headSha: null,
+  });
+  const day = (i: number) => ({
+    date: `2026-10-${String((i % 28) + 1).padStart(2, "0")}`, count: i % 5, level: (i * 7) % 5, weekday: i % 7,
+  });
+  State.integrations.integration_github = ok({
+    totalRepos: 24, totalStars: 312,
+    pulse: {
+      login: "tektungg", fetchedAt: now,
+      myPRs: [pr("tektungg/coucou", 42, "Port the live diff to the board", "pending", "pending"),
+        pr("tektungg/coucou", 41, "Weekly recap card", "success", "approved")],
+      toReview: [pr("venturo/api", 318, "Retry the token refresh once", "failure", "pending")],
+      mainCI: [
+        { repo: "tektungg/coucou", url: "https://github.com/tektungg/coucou", branch: "main", ci: "success", headSha: null },
+        { repo: "venturo/api", url: "https://github.com/venturo/api", branch: "main", ci: "failure", headSha: null },
+      ],
+    },
+    activity: {
+      total: 912, fetchedAt: now,
+      weeks: Array.from({ length: 20 }, (_, w) => Array.from({ length: 7 }, (_, d) => day(w * 7 + d))),
+    },
+  });
+}
 State.integrations.integration_media = ok({
   app: "Spotify", title: "Placeholder Song", artist: "Some Artist", album: "Preview",
   playing: false, durationMs: 215_000, positionMs: 64_000, positionAtMs: now,
@@ -141,6 +171,9 @@ if (view === "recap") {
 island.alert(view);
 if (view === "recap" && params.has("share")) {
   window.setTimeout(() => (document.querySelector(".recap-stack .btn.primary") as HTMLElement | null)?.click(), 400);
+}
+if (params.has("detail")) {
+  window.setTimeout(() => (document.querySelector(".gh-stat") as HTMLElement | null)?.click(), 400);
 }
 if (params.get("diff") === "open") {
   window.setTimeout(() => (document.querySelector(".btile-diff") as HTMLElement | null)?.click(), 400);

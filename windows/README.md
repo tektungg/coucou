@@ -234,10 +234,11 @@ live eval runs two real turns and checks the second remembers the first:
 
 ## Personal pills (this build)
 
-This build hides the stock integrations (Stripe, GitHub, Vercel, n8n, Resend,
-Notion, Cal.com: their code stays, so upstream still merges) and shows pills
-that read only what is already on this PC. No keys, no new accounts. The one
-network call is the Music pill's lyrics (lrclib.net), which Settings can turn off.
+This build hides most stock integrations (Stripe, Vercel, n8n, Resend, Notion,
+Cal.com: their code stays, so upstream still merges) and shows pills that read
+only what is already on this PC. No keys, no new accounts. The network calls are
+the Music pill's lyrics (lrclib.net), which Settings can turn off, and GitHub
+once you switch it on and give it a token.
 
 | Pill | Source | Refresh |
 |---|---|---|
@@ -248,6 +249,22 @@ network call is the Music pill's lyrics (lrclib.net), which Settings can turn of
 | **Messages** | Windows notifications from Discord, Slack, Telegram, WhatsApp | 3 s |
 | **Shelf** | Files dropped on Mochi (by reference), the Screenshots and Downloads folders | 3 s |
 | **Audio** | Core Audio (devices, volume, mute) and the microphone privacy registry | 2 s |
+| **GitHub** (off by default) | GitHub's GraphQL API with your token: pull requests and their CI, reviews waiting for you, default-branch CI, contribution grid | 1 to 5 min, grid 30 min |
+
+- **GitHub pulse.** Switch the pill on in Settings and give it a token (classic
+  with the `repo` scope, or fine-grained with read access to Pull requests,
+  Commit statuses and Actions; it lives in the Credential Manager). The card
+  shows **My PRs** (with how many are running or failing), **To review** and
+  **Default branch CI**, the star count and the last weeks of contributions;
+  each row opens its list, and each list row opens the pull request or run on
+  github.com. While some CI runs it is fetched every minute, otherwise every 5
+  (the grid every 30), never while the pill is off or Coucou is paused, and
+  again when the card is opened on stale data. A PR whose CI turns red or
+  green, a review requested of you, or a red default branch badges the pill
+  (only when another pill is on screen) and plays its sound. A new token drops
+  what the old one fetched. From upstream `c4e330f`, `0f4edf1`, `c2cfbca`;
+  this build had hidden the GitHub pill, and an older settings.json that still
+  lists upstream's stock pills keeps landing on this build's own pills.
 
 - **One pill at a time.** The overview shows a single pill, full width. The
   header shows one chip per pill, a mini Mochi in that pill's colour, a ring on
@@ -494,10 +511,11 @@ never cherry-picked.
 | `c90d30b` | Open terminal brings the session's window forward | `session_window.rs`; the Claude Desktop part needs agents.rs, left out |
 | `4b0a411`, `fbc4605`, `122e130` | Live diff and Claude's final line | on the board tiles and Home's card here, not a ticker |
 | `8d47969`, `43c13ed`, `9806b66` | Weekly recap | `recap/` split by job, history through `prefs_file.rs`, Mochi Pop card |
+| `c4e330f`, `0f4edf1`, `c2cfbca` | GitHub pulse, alerts, contribution grid | `github/` (parsers, poll loops, tests); the pill is back, off by default |
 
 Not ported: `66be53e` (Antigravity's `PreToolUse` answer): this build's relay
 has no Antigravity path. Upstream's bigger features (more agents,
-shortcuts, wardrobe, desktop Mochi, GitHub pulse, Flow dictation,
+shortcuts, wardrobe, desktop Mochi, Flow dictation,
 Notetaker, « OK Coucou ») are not in this build yet.
 
 ## Build it yourself

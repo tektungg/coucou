@@ -9,6 +9,8 @@ import { ICONS } from "./icons";
 import { State, type AgentTask } from "../core/state";
 import { Bridge } from "../core/bridge";
 import { PERSONAL_IDS, personalIdleLabel, renderPersonalCard } from "./personal";
+import { readActivity, readPulse, readStats } from "../core/github";
+import { githubDetail, githubPulseCard } from "./github";
 
 /** Same shape as the Swift `timeAgo` computed properties. */
 export function timeAgo(value: unknown): string {
@@ -413,7 +415,7 @@ export function hasIntegrationData(id: string): boolean {
     case "integration_resend":
       return arr(id, "emails").length > 0;
     case "integration_github":
-      return get(id).totalRepos != null;
+      return get(id).totalRepos != null || readPulse(get(id)) != null;
     case "integration_stripe":
       return info.loaded;
     case "integration_notion":
@@ -425,38 +427,50 @@ export function hasIntegrationData(id: string): boolean {
   }
 }
 
-export function renderIntegrationCard(task: AgentTask, hooks: IntegrationCardHooks): HTMLElement {
-  if (PERSONAL_IDS.has(task.id)) {
-    return (
-      renderPersonalCard(task, hooks.detailOpen, hooks.openDetail, hooks.closeDetail) ??
-      idleCard(task, hooks.openSettings)
-    );
-  }
-  if (task.id === "integration_n8n") {
-    const hasActivity = task.steps.length > 0 && (task.state === "finished" || task.state === "error");
-    return hooks.detailOpen && hasActivity
-      ? n8nDetail(task, hooks.closeDetail)
-      : n8nCard(task, hooks.openDetail, hooks.openSettings);
-  }
+/** GitHub's pulse card, or its lists while the detail is open; null before the pulse is in. */
+function gitHubPulseCard(d: Record<string, unknown>, hooks: IntegrationCardHooks): HTMLElement | null {
+  const pulse = readPulse(d);
+  if (!pulse) return null;
+  return hooks.detailOpen
+    ? githubDetail(pulse, readStats(d), readActivity(d), hooks.closeDetail)
+    : githubPulseCard(pulse, readStats(d), readActivity(d), hooks.openDetail);
+}
+
+/** The stock pills whose card is one plain view of their data. */
+const PLAIN_CARDS: Record<string, () => HTMLElement> = {
+  integration_resend: resendCard,
+  integration_stripe: stripeCard,
+  integration_notion: notionCard,
+  integration_calcom: calcomCard,
+  // The repository and star counts, before the pulse comes in.
+  integration_github: githubCard,
+};
+
+/** n8n's card, or its last run while the detail is open. */
+function n8nView(task: AgentTask, hooks: IntegrationCardHooks): HTMLElement {
+  const hasActivity = task.steps.length > 0 && (task.state === "finished" || task.state === "error");
+  return hooks.detailOpen && hasActivity ? n8nDetail(task, hooks.closeDetail) : n8nCard(task, hooks.openDetail, hooks.openSettings);
+}
+
+/** A card with its own detail view, or null to fall through to the plain cards. */
+function cardWithDetail(task: AgentTask, hooks: IntegrationCardHooks): HTMLElement | null {
+  if (task.id === "integration_n8n") return n8nView(task, hooks);
   if (task.id === "integration_vercel" && hasIntegrationData(task.id)) {
     return hooks.detailOpen ? vercelDetail(hooks.closeDetail) : vercelCard(hooks.openDetail);
   }
-  if (!hasIntegrationData(task.id)) return idleCard(task, hooks.openSettings);
+  // With the pulse in, GitHub gets the Mac's richer card and its lists.
+  if (task.id === "integration_github" && hasIntegrationData(task.id)) return gitHubPulseCard(get(task.id), hooks);
+  return null;
+}
 
-  switch (task.id) {
-    case "integration_resend":
-      return resendCard();
-    case "integration_github":
-      return githubCard();
-    case "integration_stripe":
-      return stripeCard();
-    case "integration_notion":
-      return notionCard();
-    case "integration_calcom":
-      return calcomCard();
-    default:
-      return idleCard(task, hooks.openSettings);
+export function renderIntegrationCard(task: AgentTask, hooks: IntegrationCardHooks): HTMLElement {
+  if (PERSONAL_IDS.has(task.id)) {
+    return renderPersonalCard(task, hooks.detailOpen, hooks.openDetail, hooks.closeDetail) ?? idleCard(task, hooks.openSettings);
   }
+  const withDetail = cardWithDetail(task, hooks);
+  if (withDetail) return withDetail;
+  if (task.id in PLAIN_CARDS && hasIntegrationData(task.id)) return PLAIN_CARDS[task.id]();
+  return idleCard(task, hooks.openSettings);
 }
 
 export { clear };

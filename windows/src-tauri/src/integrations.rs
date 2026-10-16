@@ -45,7 +45,7 @@ pub(crate) fn emit(app: &AppHandle, update: IntegrationUpdate) {
     let _ = app.emit_to(WINDOW_LABEL, "integration", update);
 }
 
-fn client() -> reqwest::Client {
+pub(crate) fn client() -> reqwest::Client {
     reqwest::Client::builder()
         .timeout(TIMEOUT)
         .build()
@@ -67,6 +67,7 @@ pub fn start(app: AppHandle) {
     spawn(app.clone(), "integration_stripe", 6, 30, poll_stripe);
     spawn(app.clone(), "integration_resend", 6, 60, poll_resend);
     spawn(app.clone(), "integration_github", 7, 300, poll_github);
+    crate::github::poll::spawn_github_loops(app.clone());
     spawn(app.clone(), "integration_calcom", 8, 300, poll_calcom);
     spawn(app.clone(), "integration_notion", 9, 300, poll_notion);
     // This build's own pills (personal.rs).
@@ -79,7 +80,7 @@ pub fn start(app: AppHandle) {
 const ALWAYS_POLLED: &[&str] = &["integration_quota"];
 
 /// True when the user has this integration switched on in settings.
-fn enabled(app: &AppHandle, id: &str) -> bool {
+pub(crate) fn enabled(app: &AppHandle, id: &str) -> bool {
     app.try_state::<crate::Shared>()
         .map(|shared| {
             let settings = shared.settings.lock().unwrap();
@@ -117,7 +118,11 @@ pub async fn poll_once(app: AppHandle, id: &str) {
     }
     match id {
         "integration_stripe" => poll_stripe(app).await,
-        "integration_github" => poll_github(app).await,
+        "integration_github" => {
+            crate::github::poll::wake_github_pulse();
+            crate::github::poll::github_refresh_if_stale("activity");
+            poll_github(app).await
+        }
         "integration_vercel" => poll_vercel(app).await,
         "integration_n8n" => poll_n8n(app).await,
         "integration_resend" => poll_resend(app).await,
@@ -274,7 +279,7 @@ async fn poll_stripe(app: AppHandle) {
 
 // ── GitHub ────────────────────────────────────────────────────────────────────
 
-async fn poll_github(app: AppHandle) {
+pub(crate) async fn poll_github(app: AppHandle) {
     let Some(token) = secrets::get("github-token") else { return };
     let http = client();
 
@@ -325,12 +330,8 @@ async fn poll_github(app: AppHandle) {
         _ => 0,
     };
 
-    emit(&app, IntegrationUpdate {
-        id: "integration_github",
-        data: json!({ "totalRepos": public + private, "totalStars": stars }),
-        error: None,
-        event: None,
-    });
+    // Sent with the pulse and activity (github/poll.rs), so one never wipes another.
+    crate::github::poll::set_stats(&app, public + private, stars);
 }
 
 // ── Vercel ────────────────────────────────────────────────────────────────────

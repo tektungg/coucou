@@ -3112,3 +3112,183 @@ body.shelf-drop .card:has(.shelf-card) {
   color: var(--acc-2);
   padding: 0;
 }
+
+/* ── GitHub pulse (views/github.ts), Mochi Pop ─────────────────────────────
+   GitHubPulseCardView / GitHubDetailView from upstream 0f4edf1, on the same
+   int-card rows as the other pills. */
+
+.gh-spark {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font: 500 11.5px var(--font);
+  color: var(--dim-2);
+  white-space: nowrap;
+  cursor: default;
+  min-width: 0;
+}
+
+.gh-mini {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.gh-mini i,
+.gh-cell {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+
+.int-stats.gh-rows {
+  gap: 4px;
+  padding-top: 6px;
+}
+
+.gh-stat {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+  cursor: default;
+}
+
+.gh-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.gh-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  padding: 4px 10px 4px 7px;
+  border-radius: var(--r-pill);
+  background: var(--soft-2);
+  font: 600 12px var(--font);
+  color: var(--ink);
+  white-space: nowrap;
+  cursor: default;
+  flex: 0 0 auto;
+}
+
+.gh-back:hover {
+  background: var(--soft-3);
+}
+
+.gh-head-right {
+  margin-left: auto;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font: 500 11px var(--font);
+  color: var(--dim-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  cursor: default;
+}
+
+.gh-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 66px; /* three rows; the rest scrolls */
+  overflow-y: auto;
+  margin-top: 6px;
+  scrollbar-width: none;
+}
+
+.gh-list::-webkit-scrollbar {
+  display: none;
+}
+
+.gh-list.fade {
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 80%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 80%, transparent 100%);
+}
+
+.gh-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  flex: 0 0 20px;
+  padding: 0 8px 0 6px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  text-align: left;
+  cursor: default;
+  min-width: 0;
+}
+
+.gh-row:hover {
+  background: var(--soft-2);
+}
+
+.gh-gap {
+  width: 5px;
+  flex: 0 0 5px;
+}
+
+.gh-ref {
+  font: 500 10.5px var(--mono);
+  color: var(--dim-2);
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.gh-title {
+  font: 500 11.5px var(--font);
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.gh-draft {
+  font: 500 10px var(--font);
+  color: var(--dim-3);
+  flex: 0 0 auto;
+}
+
+.gh-word {
+  margin-left: auto;
+  padding-left: 4px;
+  font: 600 10.5px var(--font);
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.gh-empty {
+  font: 500 11px var(--font);
+  color: var(--dim-3);
+  padding-top: 8px;
+}
+
+.gh-grid {
+  display: flex;
+  gap: 2px;
+  padding-top: 6px;
+}
+
+.gh-week {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.gh-cell.empty {
+  background: transparent;
+}

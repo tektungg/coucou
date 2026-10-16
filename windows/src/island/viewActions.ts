@@ -13,7 +13,7 @@ import type { IslandStateMachine } from "./fsm";
 const TARGET_URLS: Record<string, string> = {
   integration_resend: "https://resend.com/emails",
   integration_vercel: "https://vercel.com/dashboard",
-  integration_github: "https://github.com",
+  integration_github: "https://github.com/pulls",
   integration_stripe: "https://dashboard.stripe.com/payments",
   integration_notion: "https://notion.so",
   integration_calcom: "https://app.cal.com/bookings",

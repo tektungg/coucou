@@ -6,9 +6,12 @@ import { alertTarget } from "./quotaAlert";
 import { detectAct } from "../mochi/acts";
 import { patchAudioCard } from "../views/personal";
 import { onEvent, Bridge, type IntegrationUpdate } from "../core/bridge";
+import { gitHubAlert, type GitHubEvent } from "../core/github";
 import { Sound } from "../core/sound";
 import { State } from "../core/state";
 import type { Island } from "./island";
+
+const GITHUB = "integration_github";
 
 /** Which Credential Manager key backs each pill. */
 const KEY_FOR: Record<string, string> = {
@@ -25,7 +28,35 @@ const clearTimers = new Map<string, number>();
 
 export function registerIntegrationHandlers(island: Island) {
   void onEvent<IntegrationUpdate>("integration", (update) => handle(island, update));
+  void onEvent<GitHubEvent[]>("github-alerts", handleGitHubAlerts);
   void refreshConfigured();
+  State.subscribe(refreshGitHubWhenShown);
+}
+
+/**
+ * AppState.handleGitHubEvents: the loudest event sets the badge (only while the
+ * GitHub pill isn't the one on screen) and plays its sound. Unlike the other
+ * integrations it leaves Mochi's state alone, and the badge stays until the
+ * pill is focused, as on macOS. Ported from upstream 0f4edf1.
+ */
+export function handleGitHubAlerts(events: GitHubEvent[]) {
+  if (State.paused) return;
+  const alert = gitHubAlert(events);
+  if (!alert) return;
+  const task = State.tasks.find((t) => t.id === GITHUB);
+  if (!task) return;
+  if (State.focusId !== GITHUB) task.pillBadge = alert.badge;
+  Sound.play(alert.sound);
+  State.notify();
+}
+
+let gitHubShown = false;
+
+/** The GitHub card just came on screen (focused, island opened): refresh it if stale. */
+function refreshGitHubWhenShown() {
+  const shown = State.mode === "expanded" && State.focusTask?.id === GITHUB;
+  if (shown && !gitHubShown) void Bridge.githubRefresh("pulse");
+  gitHubShown = shown;
 }
 
 /** Asks Rust which keys exist so the idle cards can say so. */

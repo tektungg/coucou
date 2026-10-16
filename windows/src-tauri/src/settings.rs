@@ -89,9 +89,10 @@ fn default_true() -> bool {
     true
 }
 
-/// The stock integrations this build hides (Claude Code covers them).
+/// The stock integrations this build hides (Claude Code covers them). GitHub
+/// is back since its pulse card was ported; it stays off until switched on.
 pub const HIDDEN_INTEGRATIONS: &[&str] = &[
-    "integration_resend", "integration_n8n", "integration_vercel", "integration_github",
+    "integration_resend", "integration_n8n", "integration_vercel",
     "integration_notion", "integration_calcom", "integration_stripe",
 ];
 
@@ -112,20 +113,18 @@ fn personal_defaults() -> Vec<String> {
     PERSONAL_INTEGRATIONS.iter().map(|s| s.to_string()).collect()
 }
 
-/// Drops the hidden stock pills. A list that held nothing else (the stock
-/// defaults every older settings.json carries) becomes this build's own set,
-/// so an upgrade lands on working pills instead of none.
+/// Drops the hidden stock pills. A list of stock pills only (the defaults every
+/// older settings.json carries: hidden ones, maybe GitHub) becomes this build's
+/// own set, so an upgrade lands on working pills instead of none. GitHub alone,
+/// switched on here, is kept.
 fn migrate_integrations(active: &[String]) -> Vec<String> {
-    let kept: Vec<String> = active
-        .iter()
-        .filter(|id| !HIDDEN_INTEGRATIONS.contains(&id.as_str()))
-        .cloned()
-        .collect();
-    if kept.is_empty() && !active.is_empty() {
-        personal_defaults()
-    } else {
-        kept
+    let hidden = |id: &String| HIDDEN_INTEGRATIONS.contains(&id.as_str());
+    let ours = |id: &String| !hidden(id) && id != "integration_github";
+    let stock_file = active.iter().any(hidden) && !active.iter().any(ours);
+    if stock_file {
+        return personal_defaults();
     }
+    active.iter().filter(|id| !hidden(id)).cloned().collect()
 }
 
 fn default_chat_provider() -> String {
@@ -202,8 +201,16 @@ mod tests {
         let old = ids(&["integration_resend", "integration_n8n", "integration_vercel", "integration_github"]);
         assert_eq!(migrate_integrations(&old), personal_defaults());
         // A list already mixed keeps the personal ones and drops the rest.
-        let mixed = ids(&["integration_github", "integration_space", "integration_media"]);
+        let mixed = ids(&["integration_vercel", "integration_space", "integration_media"]);
         assert_eq!(migrate_integrations(&mixed), ids(&["integration_space", "integration_media"]));
+        // GitHub is no longer hidden: someone who switches it on keeps it,
+        // with this build's pills or alone.
+        let github = ids(&["integration_github", "integration_space"]);
+        assert_eq!(migrate_integrations(&github), github);
+        assert_eq!(migrate_integrations(&ids(&["integration_github"])), ids(&["integration_github"]));
+        // An opt-in pill of this build next to a stock one is kept too.
+        let quota = ids(&["integration_quota", "integration_vercel"]);
+        assert_eq!(migrate_integrations(&quota), ids(&["integration_quota"]));
         // Someone who switched everything off stays switched off.
         assert!(migrate_integrations(&[]).is_empty());
     }
