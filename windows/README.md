@@ -42,6 +42,7 @@ installs for the current user only — no admin prompt.
 | Move the mouse to the very top-centre of the screen | The island opens, no click needed |
 | Move the mouse there while a fullscreen game, video or presentation is in front | Nothing: hovering never opens Mochi over it (click the top-centre to open on purpose). New messages wait as a badge too |
 | Move the pointer off the island | It closes at once. The chat and anything that opened on its own (a finished session) wait for **Auto-close** instead; a permission request stays until answered |
+| Turn off **Open on hover** (Settings → General) | Hovering only shows the compact island; a click opens it, and leaving waits for **Auto-close** |
 | Click Mochi | It gets annoyed. Three times in a row and it goes dizzy |
 | Rest the pointer on Mochi for two seconds | Hearts |
 | Drag a file onto the island | Mochi turns into a box, swallows it, then offers to answer questions about it |
@@ -62,6 +63,19 @@ time another app comes to the front, Coucou puts itself back on top (an event
 hook, so nothing runs while nothing changes), and while the island is showing it
 also checks twice a second for overlays that pop up without taking the front. A
 fullscreen game, video or presentation is left alone.
+
+**Auto-close** follows Settings at once: a delay changed while the countdown
+bar runs starts that countdown again with the new delay (the state machine owns
+the deadline, `fsm.ts homeCollapseDueAt`; a new message's 3 s glance keeps its
+own). From upstream `62e43c6`.
+
+**Your own sounds** (Settings → General → Open sounds folder): put a file named
+like one of Mochi's sounds (`finish.wav`, `approval.mp3`, `greet.m4a`…) in
+`%APPDATA%\Coucou\sounds` and click **Reload sounds**; Mochi plays a pop with
+the new set. Formats tried in order: wav, mp3, ogg, oga, m4a, aac, flac, aiff,
+aif, caf; up to 8 MB; names are bare lowercase words, so nothing outside the
+folder can be read (`sounds.rs`). A file the webview can't decode falls back to
+the built-in sound. From upstream `2261334`.
 
 **Island lives on** (Settings → General): the main display, the display under
 the cursor, or one display by name (`DELL U2720Q · 2560×1440 at -2560,0`). A
@@ -428,6 +442,8 @@ never cherry-picked.
 | `32484d4` | Vite ignores `target/` (EBUSY) | `vite.config.ts` |
 | `78815b5` | Test harness: stand-in Tauri, extensionless imports | `tests/setup.mjs`, `tests/tauri.mjs` |
 | `4207be9` | Pick the display the island lives on | `island.rs monitor_choices`, `settings/general.ts` |
+| `62e43c6` | Auto-close follows Settings live | `fsm.ts homeCollapseDueAt` |
+| `2261334` | Open on hover as a setting, your own sounds | on by default here (this build always opened on hover); `sounds.rs` |
 
 Not ported: `66be53e` (Antigravity's `PreToolUse` answer): this build's relay
 has no Antigravity path. Upstream's bigger features (live diff, more agents,

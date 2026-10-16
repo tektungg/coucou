@@ -2,6 +2,10 @@
 // The 28 WAVs are the macOS app's own files (see SOUNDS_DIR in vite.config.ts);
 // they are served at /sounds/<name>.wav. Default volume 0.12, slider range 0–0.2,
 // exactly like the Mac player, and several sounds may overlap.
+// A file of the user's own in the sounds folder (src-tauri/src/sounds.rs)
+// replaces a sound; one that doesn't decode falls back to the built-in one.
+
+import { Bridge } from "./bridge";
 
 export const SOUND_NAMES = [
   "peek", "open", "close", "hover", "blip", "slap", "annoyed", "dizzy", "greet",
@@ -21,6 +25,8 @@ class SoundEngine {
   private buffers = new Map<string, AudioBuffer>();
   private loading: Promise<void> | null = null;
   private idleTimer: number | null = null;
+  /** The sounds a file of the user's own replaces, as last loaded. */
+  customized = new Set<string>();
 
   /** Creates the context and decodes every WAV. Safe to call more than once. */
   preload(): Promise<void> {
@@ -34,20 +40,52 @@ class SoundEngine {
       master.gain.value = this.volume;
       master.connect(ctx.destination);
       this.master = master;
-      await Promise.all(
-        SOUND_NAMES.map(async (name) => {
-          try {
-            const res = await fetch(`/sounds/${name}.wav`);
-            if (!res.ok) return;
-            const buf = await ctx.decodeAudioData(await res.arrayBuffer());
-            this.buffers.set(name, buf);
-          } catch {
-            /* a missing sound must never break the island */
-          }
-        }),
-      );
+      await this.loadAll(ctx);
     })();
     return this.loading;
+  }
+
+  /** Reads the sounds folder again (Settings → Reload sounds). */
+  async reload(): Promise<void> {
+    await this.preload();
+    if (this.ctx) await this.loadAll(this.ctx);
+  }
+
+  private async loadAll(ctx: AudioContext) {
+    const own = new Set((await Bridge.customSounds(SOUND_NAMES)) ?? []);
+    const customized = new Set<string>();
+    await Promise.all(
+      SOUND_NAMES.map(async (name) => {
+        if (own.has(name) && (await this.loadCustom(ctx, name))) {
+          customized.add(name);
+          return;
+        }
+        await this.loadBuiltIn(ctx, name);
+      }),
+    );
+    this.customized = customized;
+  }
+
+  /** The user's file for `name`; false when there is none this webview decodes. */
+  private async loadCustom(ctx: AudioContext, name: string): Promise<boolean> {
+    try {
+      const bytes = await Bridge.customSound(name);
+      if (!bytes || bytes.byteLength === 0) return false;
+      this.buffers.set(name, await ctx.decodeAudioData(bytes));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async loadBuiltIn(ctx: AudioContext, name: string) {
+    try {
+      const res = await fetch(`/sounds/${name}.wav`);
+      if (!res.ok) return;
+      this.buffers.set(name, await ctx.decodeAudioData(await res.arrayBuffer()));
+    } catch {
+      /* a missing sound must never break the island */
+    }
   }
 
   /** WebView2 can hand us a suspended context; call after any user input. */

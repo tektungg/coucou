@@ -2,6 +2,7 @@
 // launching at startup.
 
 import { Bridge, type DisplayChoice } from "../core/bridge";
+import { SOUND_NAMES } from "../core/sound";
 import { h } from "../views/dom";
 import { SOUND_VOLUME_MAX } from "./tiles";
 import { hint, panel, row, select, toggle, type SettingsCtx } from "./ui";
@@ -21,6 +22,36 @@ function soundRow(ctx: SettingsCtx): HTMLElement {
     void ctx.save();
   });
   return row("Sound", toggle(ctx.settings.soundEnabled, (v) => { ctx.settings.soundEnabled = v; void ctx.save(); }), volume);
+}
+
+/** How long Rust's "sounds-changed" round trip takes before the count is read again. */
+const RECOUNT_DELAY_MS = 300;
+
+/** Your own sounds: open the folder, reload it, and how many sounds it replaces. */
+function customSoundsRows(): HTMLElement[] {
+  const count = hint("");
+  const recount = () =>
+    void Bridge.customSounds(SOUND_NAMES).then((own) => {
+      const n = own?.length ?? 0;
+      count.textContent = n > 0 ? `${n} custom` : "";
+    });
+  recount();
+  const folder = h("button", { text: "Open sounds folder", onclick: () => void Bridge.revealSoundsFolder() });
+  const reload = h("button", {
+    text: "Reload sounds",
+    onclick: () => void Bridge.reloadSounds().then(() => window.setTimeout(recount, RECOUNT_DELAY_MS)),
+  });
+  return [
+    row("Your sounds", folder, reload, count),
+    hint("Put a file named like one of Mochi's sounds (finish.wav, approval.mp3, greet.m4a…) in the sounds folder to replace it, then Reload."),
+  ];
+}
+
+function openOnHoverRows(ctx: SettingsCtx): HTMLElement[] {
+  return [
+    row("Open on hover", toggle(ctx.settings.openOnHover, (v) => { ctx.settings.openOnHover = v; void ctx.save(); })),
+    hint("On: the island opens when the pointer reaches it and closes when it leaves. Off: hovering shows the compact island, a click opens it."),
+  ];
 }
 
 function autoCloseRow(ctx: SettingsCtx): HTMLElement {
@@ -64,6 +95,8 @@ function screenSelect(ctx: SettingsCtx): HTMLSelectElement {
 export function generalDetail(ctx: SettingsCtx): HTMLElement {
   return panel(null,
     soundRow(ctx),
+    ...customSoundsRows(),
+    ...openOnHoverRows(ctx),
     autoCloseRow(ctx),
     row("Island lives on", screenSelect(ctx)),
     row("Launch at startup", toggle(ctx.settings.autostart, (v) => { ctx.settings.autostart = v; void ctx.save(); })),

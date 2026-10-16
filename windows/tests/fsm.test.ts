@@ -163,3 +163,63 @@ test("a late answer does not undo what happened meanwhile", async () => {
   await Promise.resolve();
   assert.equal(fsm.state, "home");
 });
+
+// ── Auto-close follows Settings live (upstream 62e43c6) ──────────────────────
+
+/** An open island whose auto-close countdown is running (the chat's slow leave). */
+function counting(delayS: number): Fsm {
+  const { fsm } = fsmIn("home");
+  fsm.homeToPetitDelay = delayS;
+  fsm.mouseLeft();
+  return fsm;
+}
+
+test("a delay edited while the countdown runs starts it again with the new delay", () => {
+  const fsm = counting(15);
+  mock.timers.tick(10_000);
+  fsm.homeToPetitDelay = 30;
+  mock.timers.tick(25_000);
+  assert.equal(fsm.state, "home", "the old 15 s deadline is gone");
+  mock.timers.tick(5_001);
+  assert.equal(fsm.state, "petit");
+});
+
+test("the countdown's deadline is published for the bar, and cleared", () => {
+  const fsm = counting(15);
+  const due = fsm.homeCollapseDueAt;
+  assert.ok(due != null && due > performance.now() + 14_000, `due ${due}`);
+  assert.equal(fsm.homeCollapseWindowS, null);
+  fsm.mouseEntered();
+  assert.equal(fsm.homeCollapseDueAt, null, "coming back stops the countdown");
+});
+
+test("editing the delay with no countdown running schedules nothing", () => {
+  const { fsm } = fsmIn("home");
+  fsm.homeToPetitDelay = 5;
+  mock.timers.tick(60_000);
+  assert.equal(fsm.state, "home");
+  assert.equal(fsm.homeCollapseDueAt, null);
+});
+
+test("nonsense delays are ignored", () => {
+  const { fsm } = fsmIn("home");
+  for (const bad of [Number.NaN, -1, Number.POSITIVE_INFINITY]) fsm.homeToPetitDelay = bad;
+  assert.equal(fsm.homeToPetitDelay, 15);
+});
+
+test("a glance keeps its own 3 s, whatever the auto-close delay becomes", () => {
+  const { fsm } = fsmIn("home");
+  fsm.collapseAfter(3);
+  assert.equal(fsm.homeCollapseWindowS, 3);
+  fsm.homeToPetitDelay = 60;
+  mock.timers.tick(3_001);
+  assert.equal(fsm.state, "petit");
+  assert.equal(fsm.homeCollapseWindowS, null);
+});
+
+test("an alert pinned while the countdown ran keeps the island open", () => {
+  const fsm = counting(15);
+  fsm.pinned = true;
+  mock.timers.tick(15_001);
+  assert.equal(fsm.state, "home");
+});

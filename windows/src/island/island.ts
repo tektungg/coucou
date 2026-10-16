@@ -34,6 +34,8 @@ import {
 const BOT_OVERHANG = 40;
 /** Same margin as the Rust hit test (src-tauri/src/island.rs). */
 const HIT_MARGIN = 14;
+/** Moving this far across Mochi while resting on him starts the hearts again. */
+const BOT_HOVER_RESTART_PX = 40;
 
 /** The three views the drop sequence owns; leaving them stops the engine. */
 const UPLOAD_VIEWS: ReadonlySet<IslandViewName> = new Set(["upload", "uploading", "choose"]);
@@ -86,13 +88,10 @@ export class Island {
   private wasInIsland = false;
   /** Last shape handed to Rust for the click-through test. */
   private pushedRect = { x: -1, y: -1, w: -1, h: -1 };
-  private homeCollapseAt: number | null = null;
   /** Set while a new message opens the island: its own sound already played. */
   private quietOpen = false;
   /** The pointer is on the wake strip (hidden island). */
   private stripHovered = false;
-  /** Seconds the countdown bar spans for the current close; null = the usual. */
-  private countdownWindowS: number | null = null;
   /** What the Music acts need beyond the pill's data, read once a frame. */
   private music: MusicContext = {};
   /** The overview was last sized for the Messages card (MESSAGES_OVERVIEW_H). */
@@ -299,6 +298,7 @@ export class Island {
 
   private wireFsm() {
     this.fsm.homeToPetitDelay = State.settings.autoCloseInterval;
+    this.fsm.hoverOpens = State.settings.openOnHover;
     this.fsm.onTransition = (from, to) => {
       switch (to) {
         case "hidden":
@@ -372,8 +372,6 @@ export class Island {
     if (State.mode !== "expanded") this.setMode("expanded");
     else this.animateGeometry(false);
     State.lastActivity = performance.now();
-    this.homeCollapseAt = null;
-    this.countdownWindowS = null;
     State.notify();
   }
 
@@ -478,8 +476,6 @@ export class Island {
       }
       // A glance, not the full auto-close: the bar counts the whole 3 s down.
       this.fsm.collapseAfter(MESSAGE_GLANCE_S);
-      this.homeCollapseAt = performance.now() + MESSAGE_GLANCE_S * 1000;
-      this.countdownWindowS = MESSAGE_GLANCE_S;
     }
   }
 
@@ -807,7 +803,6 @@ export class Island {
     if ((await Bridge.fullscreenActive()) === true) return;
     if (!still()) return;
     this.fsm.mouseEntered();
-    this.homeCollapseAt = null;
   }
 
   /** Cursor in window-logical coordinates. */
@@ -825,7 +820,13 @@ export class Island {
     const inIsland =
       x >= rect.x - HIT_MARGIN && x <= rect.x + rect.w + HIT_MARGIN &&
       y >= rect.y - HIT_MARGIN && y <= rect.y + rect.h + HIT_MARGIN;
+    this.trackIslandHover(inIsland);
+    this.trackBotHover(x, y);
+    this.ensureRunning();
+  }
 
+  /** The pointer crossing the island's edge: the state machine opens or closes it. */
+  private trackIslandHover(inIsland: boolean) {
     // Updated before the FSM runs: its transition handlers read wasInIsland, and
     // a stale false made an island opened by hover schedule its own auto-close.
     const wasIn = this.wasInIsland;
@@ -837,31 +838,27 @@ export class Island {
       } else {
         this.fsm.mouseEntered();
       }
-      this.homeCollapseAt = null;
     }
     if (!inIsland && wasIn) {
-      // Leaving closes at once, except the chat: the pointer drifts while typing.
-      this.fsm.mouseLeft(State.view !== "prompt");
-      if (this.fsm.state === "home" && !State.isPinned) {
-        this.homeCollapseAt = performance.now() + State.settings.autoCloseInterval * 1000;
-        this.countdownWindowS = null;
-      }
+      // With Open on hover, leaving closes at once, except the chat: the pointer
+      // drifts while typing. Without it the island was opened by a click and
+      // waits for Auto-close, like anything else opened on purpose.
+      this.fsm.mouseLeft(State.view !== "prompt" && State.settings.openOnHover);
     }
+  }
 
-    // Bot hover → love
+  /** Resting on Mochi brings hearts; moving across him starts them again. */
+  private trackBotHover(x: number, y: number) {
     const overBot = State.mode === "expanded" && State.stateOverride == null && this.isBotHit(x, y);
     if (overBot && !this.botHovering) this.botHoverIn(x, y);
     if (!overBot && this.botHovering) this.cancelBotHover();
     this.botHovering = overBot;
-    if (this.botHovering) {
-      const d = Math.hypot(x - this.botHoverStart.x, y - this.botHoverStart.y);
-      if (d > 40) {
-        this.botHoverStart = { x, y };
-        this.scheduleLove();
-      }
+    if (!this.botHovering) return;
+    const d = Math.hypot(x - this.botHoverStart.x, y - this.botHoverStart.y);
+    if (d > BOT_HOVER_RESTART_PX) {
+      this.botHoverStart = { x, y };
+      this.scheduleLove();
     }
-
-    this.ensureRunning();
   }
 
   private isBotHit(x: number, y: number): boolean {
@@ -1075,13 +1072,15 @@ export class Island {
   }
 
   private updateCountdown(nowMs: number) {
-    if (State.mode !== "expanded" || State.isPinned || this.homeCollapseAt == null) {
+    // The state machine's own deadline, so the bar follows an auto-close delay
+    // edited while the countdown runs, and a message glance's 3 s.
+    const dueAt = this.fsm.homeCollapseDueAt;
+    if (State.mode !== "expanded" || State.isPinned || dueAt == null) {
       this.countdown.style.width = "0px";
       return;
     }
-    const autoClose = State.settings.autoCloseInterval;
-    const windowS = this.countdownWindowS ?? Math.min(10, autoClose * 0.6);
-    const remaining = (this.homeCollapseAt - nowMs) / 1000;
+    const windowS = this.fsm.homeCollapseWindowS ?? Math.min(10, this.fsm.homeToPetitDelay * 0.6);
+    const remaining = (dueAt - nowMs) / 1000;
     this.countdown.style.width =
       remaining < windowS ? `${Math.max(0, clamp(remaining / windowS, 0, 1) * 160)}px` : "0px";
   }
@@ -1180,6 +1179,7 @@ export class Island {
     Sound.setEnabled(State.settings.soundEnabled);
     Sound.setVolume(State.settings.soundVolume);
     this.fsm.homeToPetitDelay = State.settings.autoCloseInterval;
+    this.fsm.hoverOpens = State.settings.openOnHover;
     State.notify();
   }
 

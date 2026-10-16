@@ -144,6 +144,8 @@ export interface Settings {
   soundEnabled: boolean;
   soundVolume: number;
   autoCloseInterval: number;
+  /** Hovering opens the island and leaving closes it (off: hover peeks, a click opens). */
+  openOnHover: boolean;
   absenceInterval: number;
   activeIntegrations: string[];
   /** "primary", "cursor", or `at:<x>,<y>` for one display (its logical origin). */
@@ -174,6 +176,7 @@ export const DEFAULT_SETTINGS: Settings = {
   soundEnabled: true,
   soundVolume: 0.12,
   autoCloseInterval: 15,
+  openOnHover: true,
   absenceInterval: 180,
   activeIntegrations: [...PERSONAL_DEFAULTS],
   screen: "primary",

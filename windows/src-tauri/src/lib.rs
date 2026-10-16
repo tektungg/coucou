@@ -24,6 +24,7 @@ mod quota;
 mod rc_guard;
 mod romanize;
 mod shelf;
+mod sounds;
 mod startup;
 mod secrets;
 mod settings;
@@ -570,6 +571,10 @@ pub fn run() {
             reposition,
             fit_zoom,
             list_monitors,
+            sounds::custom_sounds,
+            sounds::custom_sound,
+            sounds::reveal_sounds_folder,
+            sounds::reload_sounds,
             open_url,
             open_in_vscode,
             quit_app,

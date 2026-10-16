@@ -8,8 +8,21 @@ export class IslandStateMachine {
 
   onTransition: ((from: FsmState, to: FsmState) => void) | null = null;
 
-  /** home → petit delay, seconds. */
-  homeToPetitDelay = 15;
+  /**
+   * home → petit delay, seconds: the auto-close preference. Changing it while a
+   * countdown runs starts that countdown again with the new delay, so an edit in
+   * Settings applies at once (upstream 62e43c6, as on macOS).
+   */
+  get homeToPetitDelay(): number {
+    return this.homeDelay;
+  }
+  set homeToPetitDelay(seconds: number) {
+    if (!Number.isFinite(seconds) || seconds < 0 || seconds === this.homeDelay) return;
+    this.homeDelay = seconds;
+    if (this.state === "home" && this.homeCollapse != null && this.homeCollapseWindowS == null) {
+      this.scheduleHomeCollapse();
+    }
+  }
   /** petit → hidden delay, seconds. */
   petitToHiddenDelay = 60;
   /** coucou → petit once the greeting animation ends (no hover). */
@@ -18,8 +31,19 @@ export class IslandStateMachine {
   greetHoverCollapseDelay = 10;
   /** An alert waiting for an answer stays open, even when the mouse leaves. */
   pinned = false;
-  /** Hovering the compact (or hidden) island opens it, no click needed. */
+  /**
+   * Hovering the compact (or hidden) island opens it, no click needed
+   * (Settings → General → Open on hover). Off: a hover only shows the compact
+   * island and a click opens it.
+   */
   hoverOpens = true;
+  /**
+   * When the open island will fold, on the performance.now() clock, while a
+   * countdown runs; null otherwise. The island draws its countdown bar from it.
+   */
+  homeCollapseDueAt: number | null = null;
+  /** Seconds the bar spans for a glance (collapseAfter); null for the usual auto-close. */
+  homeCollapseWindowS: number | null = null;
   /**
    * Asked when the compact island's hide delay runs out: true keeps it up
    * for another delay (a song's lyrics are on it). May answer later, after
@@ -27,6 +51,7 @@ export class IslandStateMachine {
    */
   keepPetit: () => boolean | Promise<boolean> = () => false;
 
+  private homeDelay = 15;
   private petitHide: number | null = null;
   private homeCollapse: number | null = null;
   private greetCollapse: number | null = null;
@@ -130,10 +155,8 @@ export class IslandStateMachine {
     if (this.state !== "home") return;
     this.clear("homeCollapse");
     if (this.pinned) return;
-    this.homeCollapse = window.setTimeout(() => {
-      this.homeCollapse = null;
-      if (this.state === "home") this.transition("petit");
-    }, seconds * 1000);
+    this.startHomeCollapse(seconds);
+    this.homeCollapseWindowS = seconds;
   }
 
   /// Explicit close (OK button, Escape, an alert being answered).
@@ -169,10 +192,20 @@ export class IslandStateMachine {
   private scheduleHomeCollapse() {
     this.clear("homeCollapse");
     if (this.pinned) return;
+    this.startHomeCollapse(this.homeDelay);
+  }
+
+  /** Folds the open island after `seconds`, and says when (homeCollapseDueAt). */
+  private startHomeCollapse(seconds: number) {
+    const ms = seconds * 1000;
+    this.homeCollapseDueAt = performance.now() + ms;
     this.homeCollapse = window.setTimeout(() => {
       this.homeCollapse = null;
-      if (this.state === "home") this.transition("petit");
-    }, this.homeToPetitDelay * 1000);
+      this.homeCollapseDueAt = null;
+      this.homeCollapseWindowS = null;
+      // An alert pinned while the countdown ran keeps the island open.
+      if (this.state === "home" && !this.pinned) this.transition("petit");
+    }, ms);
   }
 
   private scheduleGreetCollapse(delay: number) {
@@ -187,6 +220,10 @@ export class IslandStateMachine {
     const id = this[which];
     if (id != null) window.clearTimeout(id);
     this[which] = null;
+    if (which === "homeCollapse") {
+      this.homeCollapseDueAt = null;
+      this.homeCollapseWindowS = null;
+    }
   }
 
   cancelTimers() {
