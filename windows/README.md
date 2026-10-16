@@ -444,6 +444,14 @@ to work on the island's looks. It also serves `dev/upload-preview.html`, which
 replays the whole file-drop choreography on a loop — the one part of the UI that
 otherwise needs a real drag from Explorer to see. Neither page ships in the app.
 
+`npm test` runs the front-end tests (`tests/*.test.ts`, Node 22.15+ strips the
+types itself) and `cargo test --lib` in `src-tauri` the Rust ones. Every test
+file is loaded after `tests/setup.mjs`, which resolves the sources'
+extensionless imports and puts a stand-in Tauri on `window`
+(`tests/tauri.mjs`): tests can drive the real bridge, read the commands it
+sent (`sent("fit_zoom")`), make a command answer (`answer(...)`) and fire the
+events Rust would (`emit(...)`).
+
 `npm run pack` leaves two files in `windows/release/`, the same names the release
 workflow publishes:
 
