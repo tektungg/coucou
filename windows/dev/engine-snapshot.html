@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Coucou — Mochi engine snapshot</title>
+    <style>
+      body { margin: 0; background: #000; font: 10px system-ui; color: #9aa; }
+      #stage { display: grid; grid-template-columns: repeat(8, 120px); gap: 4px; padding: 8px; }
+      .cell { display: flex; flex-direction: column; align-items: center; }
+      .cell span { margin-top: -4px; }
+    </style>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <script type="module" src="./engine-snapshot.ts"></script>
+  </body>
+</html>
