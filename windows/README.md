@@ -44,10 +44,11 @@ installs for the current user only — no admin prompt.
 | Move the pointer off the island | It closes at once. The chat and anything that opened on its own (a finished session) wait for **Auto-close** instead; a permission request stays until answered |
 | Turn off **Open on hover** (Settings → General) | Hovering only shows the compact island; a click opens it, and leaving waits for **Auto-close** |
 | Click Mochi | It gets annoyed. Three times in a row and it goes dizzy |
+| Right-click Mochi (or tray → Wardrobe…) | The wardrobe opens: rest the pointer on an outfit to try it on, click to keep it |
 | Rest the pointer on Mochi for two seconds | Hearts |
 | Drag a file onto the island | Mochi turns into a box, swallows it, then offers to answer questions about it |
 | `Esc` | Closes the island |
-| Tray icon | Open, Weekly recap, Settings…, Pause, Quit |
+| Tray icon | Open, Weekly recap, Wardrobe…, Settings…, Pause, Quit |
 
 Everything else happens on its own: a Claude Code permission request opens the
 island with **Deny / Allow**, a finished session shows what it did, and
@@ -116,6 +117,39 @@ never blocked or slowed down by Coucou.** If nobody answers a permission request
 in time, Coucou stays quiet and Claude Code asks in the terminal as usual.
 
 It works from any terminal — Windows Terminal, PowerShell, VS Code, Git Bash.
+
+### Wardrobe
+
+Mochi can wear one of eleven outfits, all drawn in code like him: party hat,
+beanie, crown, sunglasses, round glasses, bow, scarf, witch hat, pumpkin, Santa
+hat, bunny ears, or **Auto**, which follows the seasons (party hat at New Year,
+Santa hat in December, witch hat in October, bunny ears around Easter,
+sunglasses in summer). This build starts on **None**, so Mochi looks as he
+always has until you pick one; the choice is `mochiOutfit` in settings.json.
+The old outfit leaves, the new one drops in with a little squash, and the soft
+parts (pompoms, hat tips, the scarf's end) lag behind his moves on a spring.
+
+The main Mochi wears it, also on the compact island; on the open island a
+focused integration pill shows its own colours instead (the wardrobe excepted).
+When an act puts something on his head (the Music headphones, the Audio
+headset, the Space hard hat, the Shelf box, a thought cloud, a terminal, smoke),
+a hat lifts away while it plays and drops back after; glasses, a scarf or a bow
+stay on (`acts.ts actCoversHead`). From upstream `23c09b9`, `396cf29`,
+`c97dec1`; the outfits are split into `src/mochi/outfits/` here.
+
+### The launch greeting
+
+At launch Mochi falls into the island through warp streaks, bounces, slides
+to the side and waves with a quick little hand, then comes back and settles in
+the compact island, with the Mac's `greeting.wav`; the sound fades out when the
+greeting is left early. The island's 340 ms close curve is used for the
+collapse, so his body is never cut off (`tests/greeting.test.ts` runs the
+geometry frame by frame). From upstream `d02f820`.
+
+Mochi's drawing has deterministic snapshot pages for refactors:
+`dev/engine-snapshot.html` (every state, act, emote and badge; `?outfits` for
+the outfits), `dev/outfits-snapshot.html` and `dev/greeting-snapshot.html`
+freeze the clock and seed `Math.random`, so two runs draw the same pixels.
 
 ### Weekly recap
 
@@ -512,10 +546,12 @@ never cherry-picked.
 | `4b0a411`, `fbc4605`, `122e130` | Live diff and Claude's final line | on the board tiles and Home's card here, not a ticker |
 | `8d47969`, `43c13ed`, `9806b66` | Weekly recap | `recap/` split by job, history through `prefs_file.rs`, Mochi Pop card |
 | `c4e330f`, `0f4edf1`, `c2cfbca` | GitHub pulse, alerts, contribution grid | `github/` (parsers, poll loops, tests); the pill is back, off by default |
+| `23c09b9`, `396cf29`, `c97dec1` | Outfits and the wardrobe | `outfits/` split by part; default "none"; hats make way for head props |
+| `d02f820` | Greeting v2 and its sound | split into one function per part, same poses and pixels |
 
 Not ported: `66be53e` (Antigravity's `PreToolUse` answer): this build's relay
 has no Antigravity path. Upstream's bigger features (more agents,
-shortcuts, wardrobe, desktop Mochi, Flow dictation,
+shortcuts, desktop Mochi, Flow dictation,
 Notetaker, « OK Coucou ») are not in this build yet.
 
 ## Build it yourself

@@ -6,9 +6,12 @@ import { botGlowColor, botGlowOpacity } from "../core/layout";
 import { actFor, type MusicContext } from "../mochi/acts";
 import { hexToRGB, type BotEngine } from "../mochi/engine";
 import { h } from "../views/dom";
+import { SeasonCache, parseOutfit } from "../mochi/wardrobe";
 
 /** Extra canvas height above and below Mochi for his particles and props. */
 export const BOT_OVERHANG = 40;
+/** Extra canvas on each side, for the witch hat's brim and the Santa hat's tip. */
+const BOT_SIDE = 24;
 /** The glow spans this many times Mochi's diameter. */
 const GLOW_SPAN = 2.2;
 /** How far Mochi looks, by the pointer's distance from him (BotCanvasView.lookX / lookY). */
@@ -30,6 +33,7 @@ export class BotPainter {
   readonly canvas = h("canvas", { id: "bot-canvas" }) as HTMLCanvasElement;
   readonly glow = h("div", { id: "bot-glow" });
   private readonly engine: BotEngine;
+  private readonly seasons = new SeasonCache();
   private canvasPx = 0;
 
   constructor(engine: BotEngine) {
@@ -61,27 +65,43 @@ export class BotPainter {
   draw(dt: number, at: BotPlacement, screenCx: number, music: MusicContext) {
     const w = Math.max(1, Math.round(at.size));
     const hCss = w + BOT_OVERHANG;
+    const wCss = w + BOT_SIDE * 2;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    this.size(w, hCss, dpr);
-    this.canvas.style.left = `${at.cx - w / 2}px`;
+    this.size(w, [wCss, hCss], dpr);
+    this.canvas.style.left = `${at.cx - wCss / 2}px`;
     this.canvas.style.top = `${at.cy - BOT_OVERHANG / 2 - hCss / 2}px`;
 
     const ctx = this.canvas.getContext("2d");
     if (!ctx) return;
     this.dress(music, screenCx, at.cy);
+    this.dressOutfit();
     this.engine.update(dt);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, w, hCss);
+    ctx.setTransform(dpr, 0, 0, dpr, BOT_SIDE * dpr, 0);
+    ctx.clearRect(-BOT_SIDE, 0, wCss, hCss);
     this.engine.draw(ctx, w, hCss);
   }
 
-  private size(w: number, hCss: number, dpr: number) {
+  /** Sizes the canvas for a Mochi `w` wide, with room around him (`wCss` × `hCss`). */
+  private size(w: number, [wCss, hCss]: [number, number], dpr: number) {
     if (this.canvasPx === w) return;
     this.canvasPx = w;
-    this.canvas.width = Math.round(w * dpr);
+    this.canvas.width = Math.round(wCss * dpr);
     this.canvas.height = Math.round(hCss * dpr);
-    this.canvas.style.width = `${w}px`;
+    this.canvas.style.width = `${wCss}px`;
     this.canvas.style.height = `${hCss}px`;
+  }
+
+  /**
+   * The outfit (BotCanvasView.showOutfit, macOS): the main Mochi wears it, and so
+   * does the compact island; a focused integration pill on the open island shows
+   * its own colours instead, unless the wardrobe is open. There the hovered
+   * outfit swaps in at once, without the drop-in.
+   */
+  private dressOutfit() {
+    const inWardrobe = State.mode === "expanded" && State.view === "wardrobe";
+    const shows = inWardrobe || State.mode !== "expanded" || !State.focusTask?.isIntegration;
+    const outfit = State.wardrobePreview ?? this.seasons.get(parseOutfit(State.settings.mochiOutfit));
+    this.engine.setOutfit(shows ? outfit : "none", !inWardrobe);
   }
 
   /** The focused pill's colour and act, where he looks, and the drop slot. */

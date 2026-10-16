@@ -16,6 +16,9 @@ pub struct Settings {
     /// (this build's behaviour, so on by default). Off: a hover only shows the
     /// compact island, a click opens it and Auto-close folds it.
     pub open_on_hover: bool,
+    /// What Mochi wears (src/mochi/wardrobe.ts): "none" until one is picked in
+    /// the wardrobe, "auto" for the seasons. Unknown values read as "none".
+    pub mochi_outfit: String,
     pub absence_interval: f64,
     pub active_integrations: Vec<String>,
     /// "primary" = the main display, "cursor" = whichever display the mouse is on.
@@ -138,6 +141,7 @@ impl Default for Settings {
             sound_volume: 0.12,
             auto_close_interval: 15.0,
             open_on_hover: true,
+            mochi_outfit: "none".into(),
             absence_interval: 180.0,
             active_integrations: personal_defaults(),
             screen: "primary".into(),
@@ -227,6 +231,7 @@ mod tests {
         assert!(s.lyrics_enabled);
         assert!(!s.lyrics_romanized);
         assert!(s.open_on_hover, "this build always opened on hover");
+        assert_eq!(s.mochi_outfit, "none", "Mochi keeps his look until an outfit is chosen");
     }
 
     fn with(active: &[&str], layout: u32) -> Settings {

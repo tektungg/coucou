@@ -45,7 +45,8 @@ export function drawEyes(e: BotEngine, x: CanvasRenderingContext2D, body: Path2D
 
   for (const sd of [-1, 1]) {
     const eyeYaw = sd * EYE_SP + e.yaw + e.dYaw;
-    let eyePitch = EYE_P + e.pitch + e.dPitch + e.roll;
+    // Rolling with an outfit on, the whole body turns: the eyes must not roll again.
+    let eyePitch = EYE_P + e.pitch + e.dPitch + (e.rig.rigidRoll(e) ? 0 : e.roll);
     eyePitch = (((eyePitch + Math.PI) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
     const cp = Math.cos(eyePitch);
     if (Math.cos(eyeYaw) * cp <= 0.04) continue;

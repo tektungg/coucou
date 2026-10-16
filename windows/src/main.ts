@@ -17,7 +17,7 @@ function setPaused(on: boolean) {
   void Bridge.setPaused(on);
 }
 
-/** The tray menu: Open, Weekly recap, Settings, Pause / Resume. */
+/** The tray menu: Open, Weekly recap, Wardrobe, Settings, Pause / Resume. */
 async function registerTrayHandler(island: Island) {
   await onEvent<string>("tray", (what) => {
     switch (what) {
@@ -28,6 +28,10 @@ async function registerTrayHandler(island: Island) {
       case "open":
         setPaused(false);
         island.alert(State.defaultView());
+        break;
+      case "wardrobe":
+        setPaused(false);
+        island.alert("wardrobe");
         break;
       case "recap":
         setPaused(false);

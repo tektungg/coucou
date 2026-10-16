@@ -4,6 +4,7 @@ import type { BotEmoteName, BotStateName, IslandMode, IslandViewName } from "./l
 import type { EyeShape } from "../mochi/engine";
 import { isClaudeSessionTask, sessionEndAct, toolKind, type Act, type ToolKind } from "../mochi/acts";
 import type { AskAnswer, AskItem } from "../island/askQuestion";
+import type { Outfit } from "../mochi/wardrobe";
 import { compareSessions, isSessionPill, sessionColor, staleSessions } from "../island/sessions";
 import { sessionDiffs } from "./sessionDiffs";
 
@@ -150,6 +151,8 @@ export interface Settings {
   autoCloseInterval: number;
   /** Hovering opens the island and leaving closes it (off: hover peeks, a click opens). */
   openOnHover: boolean;
+  /** What Mochi wears (mochi/wardrobe.ts OutfitSelection); "none" until chosen. */
+  mochiOutfit: string;
   absenceInterval: number;
   activeIntegrations: string[];
   /** "primary", "cursor", or `at:<x>,<y>` for one display (its logical origin). */
@@ -181,6 +184,7 @@ export const DEFAULT_SETTINGS: Settings = {
   soundVolume: 0.12,
   autoCloseInterval: 15,
   openOnHover: true,
+  mochiOutfit: "none",
   absenceInterval: 180,
   activeIntegrations: [...PERSONAL_DEFAULTS],
   screen: "primary",
@@ -227,6 +231,8 @@ class AppState {
   chatHistory: ChatMessage[] = [];
   pendingApproval: ApprovalInfo | null = null;
   pendingQuestion: QuestionInfo | null = null;
+  /** The outfit hovered in the wardrobe, worn until the pointer leaves it. */
+  wardrobePreview: Outfit | null = null;
 
   integrations: Record<string, IntegrationInfo> = {};
 

@@ -73,6 +73,24 @@ export function actShowsHands(a: Act | null): boolean {
   return ACT_HANDS.has(a.name) || (a.name === "music" && a.variant === "playing");
 }
 
+/** Acts whose props sit on or just above Mochi's head, whatever their variant. */
+const HEAD_PROP_ACTS: ReadonlySet<ActName> = new Set(["mic", "check", "catch", "musicCue"]);
+/** The same, for one variant: headphones, a thought cloud, a terminal, smoke. */
+const HEAD_PROP_VARIANTS: ReadonlySet<string> = new Set([
+  "music:playing", "claude:thinking", "claude:question", "claude:working:bash", "claude:error", "claudeEnd:error",
+]);
+
+/**
+ * Whether the act puts something on or just above Mochi's head (headphones,
+ * the headset, the hard hat, a box, a thought cloud…). A hat makes way for it
+ * while it plays and comes back after (engine.ts, outfits.ts); glasses, a scarf
+ * or a bow stay on.
+ */
+export function actCoversHead(a: Act | null): boolean {
+  if (!a) return false;
+  return HEAD_PROP_ACTS.has(a.name) || HEAD_PROP_VARIANTS.has(`${a.name}:${a.variant ?? ""}`);
+}
+
 /** Acts that float music notes on the beat: playing and singing, not paused. */
 export function actFloatsNotes(a: Act | null): boolean {
   return a?.name === "music" && (a.variant === "playing" || a.variant === "singing");

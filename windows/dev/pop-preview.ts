@@ -9,6 +9,7 @@
 //   &diff=open         …and its diff card is open
 //   view=recap[&share] the weekly recap of the sample week (its share panel)
 //   &focus=integration_github[&detail]  the GitHub pulse card (its lists)
+//   &outfit=<selection>  what Mochi wears (mochi/wardrobe.ts); view=wardrobe for the wardrobe
 // Mochi still animates; screenshots are taken after it has settled.
 
 import type { AskItem } from "../src/island/askQuestion";
@@ -37,6 +38,7 @@ State.settings = {
   hooksInstalled: true,
   activeIntegrations: ["integration_space", "integration_media", "integration_messages", "integration_shelf", "integration_audio"],
 };
+State.settings.mochiOutfit = params.get("outfit") ?? "none";
 State.loadIntegrationTasks();
 State.upsertSession("cc_preview", "preview-session", "coucou", "D:/Personal Project/coucou");
 State.updateTask("cc_preview", "working");

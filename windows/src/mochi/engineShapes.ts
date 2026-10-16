@@ -105,3 +105,32 @@ export function rrPoint(ca: number, sa: number, W: number, H: number, cr: number
   }
   return { x: kx * W, y: ky * H };
 }
+
+/** Mochi's body outline, morphing toward the mailbox box as `morph` goes to 1. */
+export function bodyPath(rx: number, ry: number, R: number, morph: number): Path2D {
+  const n = 72;
+  const expN = 2.0 / 2.7;
+  const tw = R * 1.0;
+  const th = R * 0.94;
+  const tr = R * 0.42;
+  const p = new Path2D();
+  const m = morph;
+  for (let i = 0; i <= n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const ca = Math.cos(a);
+    const sa = Math.sin(a);
+    const px0 = rx * (ca >= 0 ? Math.pow(ca, expN) : -Math.pow(-ca, expN));
+    const py0 = ry * (sa >= 0 ? Math.pow(sa, expN) : -Math.pow(-sa, expN));
+    let px = px0;
+    let py = py0;
+    if (m >= 0.005) {
+      const rr = rrPoint(ca, sa, tw, th, tr);
+      px = lerp(px0, rr.x, m);
+      py = lerp(py0, rr.y, m);
+    }
+    if (i === 0) p.moveTo(px, py);
+    else p.lineTo(px, py);
+  }
+  p.closePath();
+  return p;
+}

@@ -3,7 +3,8 @@
 // The clock is frozen and Math.random seeded before the engine loads, so two
 // runs of the same code draw the same bytes. Not part of the app bundle.
 // With a dev server, open /dev/engine-snapshot.html; `document.title` reads
-// "ready" once every cell is drawn.
+// "ready" once every cell is drawn. `?outfits` draws Mochi dressed instead:
+// every outfit, and hats making way for the acts that cover his head.
 
 let seed = 0x9e3779b9;
 /** mulberry32: a tiny seeded PRNG in place of Math.random. */
@@ -59,9 +60,26 @@ const CASES: [string, Setup][] = [
   ["particles love", (e) => e.emit("heart", 6)],
 ];
 
+const outfits = ["beanie", "santaHat", "partyHat", "crown", "witchHat", "sunglasses", "roundGlasses", "bow", "scarf", "pumpkin", "bunnyEars"] as const;
+const dressed = (o: (typeof outfits)[number], more: Setup = () => {}): Setup => (e) => { e.setOutfit(o, false); more(e); };
+const OUTFIT_CASES: [string, Setup][] = [
+  ...outfits.map((o): [string, Setup] => [o, dressed(o)]),
+  ["beanie + music", dressed("beanie", (e) => { e.act = { name: "music", variant: "playing", at: 0 }; })],
+  ["witch + mic", dressed("witchHat", (e) => { e.act = { name: "mic", variant: null, at: 0 }; })],
+  ["crown + check", dressed("crown", (e) => { e.act = { name: "check", variant: null, at: at(1.2) }; })],
+  ["santa + bash", dressed("santaHat", (e) => { e.setState("working", true); e.act = { name: "claude", variant: "working:bash", at: 0 }; })],
+  ["party + mail", dressed("partyHat", (e) => { e.act = { name: "mail", variant: null, at: at(1.2) }; })],
+  ["glasses + music", dressed("sunglasses", (e) => { e.act = { name: "music", variant: "playing", at: 0 }; })],
+  ["scarf + edit", dressed("scarf", (e) => { e.setState("working", true); e.act = { name: "claude", variant: "working:edit", at: 0 }; })],
+  ["pumpkin flat", dressed("pumpkin", (e) => { e.bodyColor = hexToRGB("#1DB954"); })],
+  ["beanie look", dressed("beanie", (e) => { e.lookX = -0.9; e.lookY = 0.3; })],
+  ["witch dizzy", dressed("witchHat", (e) => e.setState("dizzy", true))],
+  ["crown mini", dressed("crown", (e) => { e.isMini = true; })],
+];
+
 const stage = document.getElementById("stage")!;
 const dpr = 1;
-for (const [label, setup] of CASES) {
+for (const [label, setup] of new URLSearchParams(location.search).has("outfits") ? OUTFIT_CASES : CASES) {
   const cell = document.createElement("div");
   cell.className = "cell";
   const canvas = document.createElement("canvas");

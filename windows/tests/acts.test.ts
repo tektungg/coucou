@@ -2,10 +2,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  actBursts, actDurationMs, actEye, actFor, actKey, actPose, actProps, continuousAct, detectAct,
+  actBursts, actCoversHead, actDurationMs, actEye, actFor, actKey, actPose, actProps, continuousAct, detectAct,
   endFade, isOneShot, musicCueOf, musicStateOf, newShelfItem, sessionEndAct, toolKind,
   CATCH_LAND, CHECK_DONE, CLAUDE_ERROR_MS, CLAUDE_FINISHED_MS, MAIL_OPEN, NEUTRAL,
-  type ActName, type Pose,
+  type Act, type ActName, type Pose,
 } from "../src/mochi/acts.ts";
 
 const file = (path: string, modified = 1000) => ({ path, name: path, size: 1, modified, kind: "image" });
@@ -290,4 +290,19 @@ test("Claude Code: finished hops, error flinches, and both fade back to neutral"
   assert.ok(Math.abs(end.oy) < 1e-9 && Math.abs(end.ox) < 1e-9);
   assert.deepEqual(actPose("claude", "working:edit", 1, 1), NEUTRAL);
   assert.equal(actEye("claude", "idle", 1), null, "the state's own eyes");
+});
+
+// ── Hats make way for head props (outfits) ────────────────────────────────────
+
+test("a hat makes way for what an act puts on Mochi's head", () => {
+  const act = (name: ActName, variant: string | null = null): Act => ({ name, variant, at: 0 });
+  for (const a of [act("music", "playing"), act("musicCue", "change"), act("mic"), act("mic", "muted"),
+    act("check"), act("check", "all"), act("catch"), act("claude", "thinking"), act("claude", "working:bash"),
+    act("claudeEnd", "error")]) {
+    assert.equal(actCoversHead(a), true, `${a.name}:${a.variant}`);
+  }
+  for (const a of [null, act("music", "paused"), act("music", "singing"), act("mail"), act("claude", "working:edit"),
+    act("claude", "working:read"), act("claude", "approval"), act("claude", "idle"), act("claudeEnd", "finished")]) {
+    assert.equal(actCoversHead(a), false, a ? `${a.name}:${a.variant}` : "no act");
+  }
 });

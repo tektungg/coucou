@@ -3292,3 +3292,68 @@ body.shelf-drop .card:has(.shelf-card) {
 .gh-cell.empty {
   background: transparent;
 }
+
+/* ── Wardrobe (right-click on Mochi), Mochi Pop ────────────────────────────
+   WardrobeView from upstream c97dec1: the outfits as pastel buttons. */
+
+.wardrobe-stack {
+  padding: 12px 16px 12px 108px;
+  gap: 10px;
+}
+
+.wardrobe-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.wardrobe-title {
+  font: 700 12.5px var(--font);
+  color: var(--acc);
+  flex: 0 0 auto;
+}
+
+.wardrobe-note {
+  margin-left: auto;
+  font: 500 11px var(--font);
+  color: var(--dim-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wardrobe-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+/* Thirteen fit one row of the card. */
+.wardrobe-item {
+  width: 31px;
+  height: 31px;
+  padding: 0;
+  border-radius: 10px;
+  border: 0;
+  background: var(--soft-2);
+  display: grid;
+  place-items: center;
+  cursor: default;
+  transition: background 0.12s ease-out, transform 0.12s ease-out, box-shadow 0.12s ease-out;
+}
+
+.wardrobe-item:hover {
+  background: var(--soft-3);
+  transform: translateY(-1px);
+}
+
+.wardrobe-item.on {
+  box-shadow: 0 0 0 2px var(--acc);
+}
+
+.wardrobe-item canvas {
+  width: 28px;
+  height: 28px;
+  pointer-events: none;
+}

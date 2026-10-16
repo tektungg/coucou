@@ -7,7 +7,9 @@ import type { IslandViewName } from "../core/layout";
 import { Sound } from "../core/sound";
 import { State } from "../core/state";
 import type { ViewActions } from "../views/views";
+import type { BotEngine } from "../mochi/engine";
 import type { IslandStateMachine } from "./fsm";
+import { parseOutfit } from "../mochi/wardrobe";
 
 /** The ↗ button's targets, as openAgentTarget() on macOS. */
 const TARGET_URLS: Record<string, string> = {
@@ -21,6 +23,7 @@ const TARGET_URLS: Record<string, string> = {
 
 export interface ViewActionHost {
   readonly fsm: IslandStateMachine;
+  readonly engine: BotEngine;
   setView(view: IslandViewName): void;
   collapse(): void;
   /** A card that held Claude Code (approval, plan, question) has been answered. */
@@ -107,6 +110,23 @@ function settingsActions(host: ViewActionHost): Pick<ViewActions, "toggleSound" 
   };
 }
 
+/** The wardrobe: keep an outfit (Mochi is proud of it), or try one on. */
+function wardrobeActions(host: ViewActionHost): Pick<ViewActions, "chooseOutfit" | "previewOutfit"> {
+  return {
+    chooseOutfit: (selection) => {
+      if (parseOutfit(State.settings.mochiOutfit) === selection) return;
+      State.settings.mochiOutfit = selection;
+      Sound.play("pop");
+      host.engine.triggerEmote("proud");
+      saveSettings();
+    },
+    previewOutfit: (outfit) => {
+      State.wardrobePreview = outfit;
+      State.notify();
+    },
+  };
+}
+
 export function buildViewActions(host: ViewActionHost): ViewActions {
   return {
     setView: (v) => host.setView(v),
@@ -128,5 +148,6 @@ export function buildViewActions(host: ViewActionHost): ViewActions {
     ...settingsActions(host),
     openSettingsWindow: () => void Bridge.openSettingsWindow(),
     blip: () => Sound.play("blip"),
+    ...wardrobeActions(host),
   };
 }

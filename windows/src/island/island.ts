@@ -31,6 +31,7 @@ import { FileDrop } from "./fileDrop";
 import { IslandStateMachine } from "./fsm";
 import { buildViewActions } from "./viewActions";
 import { WindowCollapse } from "./windowCollapse";
+import { blockMenuOverMochi, dropPreviewOutsideWardrobe, rightClickedMochi } from "./wardrobe";
 import { stepFocus } from "../views/carousel";
 import {
   MESSAGE_GLANCE_S, focusAfterGlance, messageAlertAction, rememberGlance, type GlanceReturn,
@@ -75,6 +76,7 @@ export class Island {
 
   readonly engine = new BotEngine();
   private greeting = new Greeting();
+  private greetingShown = false;
   private painter = new BotPainter(this.engine);
   private botHover = new BotHover(this.engine);
   private compactBar = new CompactBar();
@@ -272,7 +274,7 @@ export class Island {
   }
 
   /** True while the drop sequence owns the island body. */
-  private get uploadActive(): boolean {
+  get uploadActive(): boolean {
     return State.mode === "expanded" && UploadSeq.isActive && UPLOAD_VIEWS.has(State.view);
   }
 
@@ -484,6 +486,7 @@ export class Island {
     this.islandEl.addEventListener("mousedown", (e) => {
       Sound.resume();
       State.lastActivity = performance.now();
+      if (rightClickedMochi(this, e)) return;
       if (State.mode !== "expanded") {
         this.fsm.click();
         return;
@@ -493,6 +496,8 @@ export class Island {
         this.engine.slap();
       }
     });
+
+    blockMenuOverMochi(this.islandEl, this);
 
     window.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && State.mode === "expanded" && !State.isPinned) this.collapse();
@@ -584,7 +589,12 @@ export class Island {
     this.botHover.track(x, y, overBot);
   }
 
-  private isBotHit(x: number, y: number): boolean {
+  /** A press on Mochi ends the hearts' hover. */
+  cancelBotHover() {
+    this.botHover.cancel();
+  }
+
+  isBotHit(x: number, y: number): boolean {
     const rect = this.islandRect();
     const cx = rect.x + this.botCx.value;
     const cy = rect.y + this.botCy.value;
@@ -717,6 +727,10 @@ export class Island {
   // ── DOM sync ────────────────────────────────────────────────────────────────
 
   private syncDom() {
+    // Leaving the greeting, however it ends, lets its sound fade out.
+    if (this.greetingShown && !this.greetingActive) this.greeting.leave();
+    this.greetingShown = this.greetingActive;
+    dropPreviewOutsideWardrobe();
     const content = State.mode === "expanded" && !this.greetingActive;
     this.contentEl.style.opacity = content ? "1" : "0";
     this.contentEl.style.pointerEvents = content ? "auto" : "none";

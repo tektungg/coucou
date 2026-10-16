@@ -14,8 +14,10 @@ import {
 import { BODY_RY } from "./geometry";
 import { drawEyes, drawMouth } from "./engineFace";
 import { drawBadge, drawParticles } from "./engineOverlay";
+import { OutfitRig, fillPumpkin } from "./engineOutfit";
 import { drawHandsBehind, drawProps } from "./engineProps";
-import { BASE_BOTTOM, BASE_TOP, mix3, now, rgba, rrPoint } from "./engineShapes";
+import type { Outfit } from "./wardrobe";
+import { BASE_BOTTOM, BASE_TOP, bodyPath, mix3, now, rgba } from "./engineShapes";
 import { BOT_STATES, EMOTE_EYE, type BotStateCfg } from "./engineStates";
 
 export { BOT_STATES, STATE_SOUND } from "./engineStates";
@@ -48,7 +50,8 @@ interface Tween {
 
 type PropKey =
   | "yaw" | "pitch" | "roll" | "tilt" | "open" | "sx" | "sy"
-  | "oy" | "ox" | "tint" | "morph" | "hands" | "blush" | "es" | "badgeS";
+  | "oy" | "ox" | "tint" | "morph" | "hands" | "blush" | "es" | "badgeS"
+  | "outfitPresence";
 
 interface Particle {
   type: "heart" | "star" | "spark" | "sweat" | "z" | "note";
@@ -76,6 +79,11 @@ export class BotEngine {
   yaw = 0; pitch = 0; roll = 0; tilt = 0; open = 1;
   sx = 1; sy = 1; oy = 0; ox = 0;
   tint = 0; morph = 0; hands = 0; blush = 0; es = 1; badgeS = 0;
+
+  /** The outfit's presence, 0 = gone, 1 = on: tweened like the rest (engineOutfit.ts). */
+  outfitPresence = 0;
+  /** What Mochi wears (the main Mochi only, minis never wear one). */
+  readonly rig = new OutfitRig();
 
   // Targets
   tgYaw = 0; tgPitch = 0; tgTilt = 0; tgSy = 1; tgSx = 1; tgEs = 1;
@@ -206,6 +214,7 @@ export class BotEngine {
   }
 
   squash() {
+    this.rig.kick(0, 0.6);
     this.anim("sy", [[0.78, 70, Ease.out], [1.1, 130, Ease.out], [1, 170, Ease.inOut]]);
     this.anim("sx", [[1.16, 70, Ease.out], [0.95, 130, Ease.out], [1, 170, Ease.inOut]]);
   }
@@ -231,6 +240,7 @@ export class BotEngine {
     this.slapTimes.push(t);
     Sound.play("slap");
     this.squash();
+    this.rig.kick(Math.random() < 0.5 ? 0.7 : -0.7, -1.2);
     if (this.slapTimes.length >= 3) {
       this.slapTimes = [];
       this.onDizzy?.();
@@ -252,6 +262,7 @@ export class BotEngine {
     const tok = ++this.greetToken;
     this.waveStart = t + 0.45;
     this.waveUntil = t + 1.55;
+    this.rig.kick(0.2, 0);
 
     this.eyeOverride = "happy";
     this.eyeOverrideUntil = t + 2.0;
@@ -379,24 +390,38 @@ export class BotEngine {
     this.morph = 0;
   }
 
+  /** Dresses Mochi; animated, the old outfit leaves and the new one drops in. */
+  setOutfit(next: Outfit, animated = true) {
+    this.rig.set(this, next, animated);
+  }
+
+  /** Stops a tween where it is, and frees its property for the springs. */
+  stopTween(prop: PropKey) {
+    this.tweens.delete(prop);
+    this.locks.delete(prop);
+  }
+
   /** True while anything is still moving — lets the island stop its RAF loop. */
   get busy(): boolean {
-    return (
-      this.tweens.size > 0 ||
-      this.particles.length > 0 ||
-      this.cfg.bounces || this.cfg.scans || this.cfg.breathes || this.cfg.zz || this.cfg.sweat ||
-      this.isMini || this.act != null || this.actAmt > 0.001 ||
-      Math.abs(this.tgYaw - this.yaw) > 0.002 ||
-      Math.abs(this.tgPitch - this.pitch) > 0.002 ||
-      Math.abs(this.tgTilt - this.tilt) > 0.002 ||
-      Math.abs(this.tgSy - this.sy) > 0.002 ||
-      Math.abs(this.tgSx - this.sx) > 0.002 ||
-      Math.abs(this.tgEs - this.es) > 0.002 ||
-      this.slotH > 0.001 || Math.abs(this.slotHVel) > 0.001 ||
-      Math.abs(this.col[0] - this.colT[0]) > 0.003 ||
-      Math.abs(this.col[1] - this.colT[1]) > 0.003 ||
-      Math.abs(this.col[2] - this.colT[2]) > 0.003
-    );
+    return this.animating || this.chasing || this.rig.busy(this);
+  }
+
+  /** A tween, a particle, a looping state, a mini bot or an act keeps him moving. */
+  private get animating(): boolean {
+    const cfg = this.cfg;
+    const loops = cfg.bounces || cfg.scans || cfg.breathes || cfg.zz || cfg.sweat;
+    return this.tweens.size > 0 || this.particles.length > 0 || loops ||
+      this.isMini || this.act != null || this.actAmt > 0.001;
+  }
+
+  /** Something still easing toward its target: the pose, the mouth slot, the colour. */
+  private get chasing(): boolean {
+    const off = (a: number, b: number, eps: number) => Math.abs(a - b) > eps;
+    const pose = [[this.tgYaw, this.yaw], [this.tgPitch, this.pitch], [this.tgTilt, this.tilt],
+      [this.tgSy, this.sy], [this.tgSx, this.sx], [this.tgEs, this.es]];
+    const colour = [0, 1, 2].some((i) => off(this.col[i], this.colT[i], 0.003));
+    const slot = this.slotH > 0.001 || Math.abs(this.slotHVel) > 0.001;
+    return pose.some(([t, v]) => off(t, v, 0.002)) || slot || colour;
   }
 
   // ── Tweens ──────────────────────────────────────────────────────────────────
@@ -412,8 +437,30 @@ export class BotEngine {
 
   update(dt: number) {
     const n = now();
-    const nowMs = performance.now();
+    this.stepTweens(performance.now());
+    const t = n - this.t0;
+    this.aimLook(n, t);
+    this.tgTilt = this.cfg.tilt;
+    if (n > this.waveStart && n < this.waveUntil) {
+      const wt = n - this.waveStart;
+      this.tgTilt = -0.06 + Math.sin(2 * Math.PI * 1.2 * wt) * 0.07;
+    }
+    const kGen = 1 - Math.pow(0.0008, dt);
+    this.aimBody(t, kGen);
+    if (this.isMini && n > this.miniNextBehavior) this.doMiniBehaviorLoop();
+    this.followTargets(dt, kGen);
+    this.col = mix3(this.col, this.colT, 1 - Math.pow(0.002, dt));
+    this.blinkAndAmbient(n);
+    this.updateAct(dt, t);
+    for (const p of this.particles) p.age += dt;
+    this.particles = this.particles.filter((p) => p.age < p.life);
+    this.stepMouth(dt);
+    this.rig.step(this, dt);
+    this.lastTime = n;
+  }
 
+  /** Every running tween one frame further; finished ones call back. */
+  private stepTweens(nowMs: number) {
     for (const tw of [...this.tweens.values()]) {
       const k = tw.keys[tw.index];
       const p = Math.min(1, Math.max(0, (nowMs - tw.startMs) / k[1]));
@@ -429,11 +476,12 @@ export class BotEngine {
         }
       }
     }
+  }
 
-    const t = n - this.t0;
+  /** Where the head turns: the pointer, the state's own look, a scan, a mini's wander. */
+  private aimLook(n: number, t: number) {
     let ty = this.lookX * 0.62;
     let tp = this.lookY * 0.5;
-
     if (this.cfg.look) {
       ty = ty * 0.35 + this.cfg.look[0] * 0.55;
       tp = tp * 0.3 + this.cfg.look[1] * 0.5;
@@ -444,36 +492,36 @@ export class BotEngine {
     }
     if (this.state === "sleeping") { ty = 0; tp = -0.14; }
     if (this.state === "dizzy") { ty = Math.sin(t * 9) * 0.25; }
-
     // Mini bots never follow the mouse — they wander.
-    if (this.isMini && !this.cfg.look && !this.cfg.scans && this.state !== "sleeping" && this.state !== "dizzy") {
-      if (n > this.miniLookNextTime) {
-        this.miniLookTarget = {
-          x: -0.88 + Math.random() * 1.76,
-          y: -0.55 + Math.random() * 1.0,
-        };
-        this.miniLookNextTime = n + 0.5 + Math.random() * 1.5;
-      }
-      ty = this.miniLookTarget.x * 0.62;
-      tp = this.miniLookTarget.y * 0.5;
-    }
-
+    if (this.wanders) [ty, tp] = this.miniWander(n);
     const floor = this.shown ? actPitchFloor(this.shown.name) : null;
     if (floor !== null && tp < floor) tp = lerp(tp, floor, this.actAmt);
-
     this.tgYaw = ty;
     this.tgPitch = tp;
-    this.tgTilt = this.cfg.tilt;
+  }
 
-    if (n > this.waveStart && n < this.waveUntil) {
-      const wt = n - this.waveStart;
-      this.tgTilt = -0.06 + Math.sin(2 * Math.PI * 1.2 * wt) * 0.07;
+  /** A mini bot left to itself: no state that sets where it looks. */
+  private get wanders(): boolean {
+    const held = this.cfg.look || this.cfg.scans || this.state === "sleeping" || this.state === "dizzy";
+    return this.isMini && !held;
+  }
+
+  /** A mini bot's next look, picked every half second to two seconds. */
+  private miniWander(n: number): [number, number] {
+    if (n > this.miniLookNextTime) {
+      this.miniLookTarget = {
+        x: -0.88 + Math.random() * 1.76,
+        y: -0.55 + Math.random() * 1.0,
+      };
+      this.miniLookNextTime = n + 0.5 + Math.random() * 1.5;
     }
+    return [this.miniLookTarget.x * 0.62, this.miniLookTarget.y * 0.5];
+  }
 
+  /** The bounce and the breathing the body follows. */
+  private aimBody(t: number, kGen: number) {
     const bounce = this.cfg.bounces ? -Math.abs(Math.sin(t * 5.2)) * 0.07 : 0;
-    const kGen = 1 - Math.pow(0.0008, dt);
     if (!this.locks.has("oy")) this.oy += (bounce - this.oy) * kGen;
-
     if (this.cfg.breathes) {
       const amp = this.isMini ? 0.07 : 0.035;
       this.tgSy = 1 + Math.sin(t * 1.8) * amp;
@@ -485,9 +533,10 @@ export class BotEngine {
       this.tgSy = 1;
       this.tgSx = 1;
     }
+  }
 
-    if (this.isMini && n > this.miniNextBehavior) this.doMiniBehaviorLoop();
-
+  /** Each animated value eases toward its target, unless a tween holds it. */
+  private followTargets(dt: number, kGen: number) {
     const kLook = 1 - Math.pow(0.0025, dt);
     if (!this.locks.has("yaw")) this.yaw += (this.tgYaw - this.yaw) * kLook;
     if (!this.locks.has("pitch")) this.pitch += (this.tgPitch - this.pitch) * kLook;
@@ -495,41 +544,38 @@ export class BotEngine {
     if (!this.locks.has("sy")) this.sy += (this.tgSy - this.sy) * kGen;
     if (!this.locks.has("sx")) this.sx += (this.tgSx - this.sx) * kGen;
     if (!this.locks.has("es")) this.es += (this.tgEs - this.es) * kGen;
+  }
 
-    this.col = mix3(this.col, this.colT, 1 - Math.pow(0.002, dt));
-
-    if (n > this.nextBlink) {
-      if (this.state !== "sleeping" && this.state !== "dizzy") {
-        this.blink();
-        if (Math.random() < 0.22) setTimeout(() => this.blink(), 230);
-      }
-      this.nextBlink = n + 2.2 + Math.random() * 3.2;
-    }
-
+  /** Blinks now and then, ends a timed eye, and lets the state's z's and sweat out. */
+  private blinkAndAmbient(n: number) {
+    if (n > this.nextBlink) this.blinkNow(n);
     if (this.eyeOverride && n > this.eyeOverrideUntil) {
       this.eyeOverride = this.permanentEye;
       if (this.permanentEye) this.eyeOverrideUntil = Number.POSITIVE_INFINITY;
     }
-
     if (n - this.lastAmbient > 1.3) {
       this.lastAmbient = n;
       if (this.cfg.zz) this.emit("z", 1);
       if (!this.isMini && this.cfg.sweat && Math.random() < 0.5) this.emit("sweat", 1);
     }
+  }
 
-    this.updateAct(dt, t);
+  /** A blink (sometimes two), unless asleep or dizzy, and when the next one comes. */
+  private blinkNow(n: number) {
+    if (this.state !== "sleeping" && this.state !== "dizzy") {
+      this.blink();
+      if (Math.random() < 0.22) setTimeout(() => this.blink(), 230);
+    }
+    this.nextBlink = n + 2.2 + Math.random() * 3.2;
+  }
 
-    for (const p of this.particles) p.age += dt;
-    this.particles = this.particles.filter((p) => p.age < p.life);
-
-    // Mouth slot spring — ω₀ = 2π/0.25, ζ = 0.6
+  /** Mouth slot spring: ω₀ = 2π/0.25, ζ = 0.6. */
+  private stepMouth(dt: number) {
     const omega = (2 * Math.PI) / 0.25;
     const zeta = 0.6;
     const acc = omega * omega * (this.slotHTarget - this.slotH) - 2 * zeta * omega * this.slotHVel;
     this.slotHVel += acc * dt;
     this.slotH = Math.max(0, this.slotH + this.slotHVel * dt);
-
-    this.lastTime = n;
   }
 
   private updateAct(dt: number, t: number) {
@@ -637,35 +683,21 @@ export class BotEngine {
     const sx = this.sx * this.dSx;
     const sy = this.sy * this.dSy;
 
+    // With an outfit on, a roll turns the whole character, hat included, as
+    // one piece instead of rolling the eyes over the body (BotCanvasView, macOS).
+    x.save();
+    if (this.rig.rigidRoll(this) && Math.abs(this.roll) > 0.001) {
+      x.translate(cx, cy);
+      x.rotate(this.roll);
+      x.translate(-cx, -cy);
+    }
     drawHandsBehind(this, x, { R, rx, ry, cx, cy, tilt, sx, sy });
-
     x.save();
     x.translate(cx, cy);
     if (tilt !== 0) x.rotate(tilt);
     x.scale(sx, sy);
-
-    const body = this.bodyPath(rx, ry, R);
-    this.drawBody(x, body, R, rx, ry);
-
-    const blushVal = Math.max(this.blush, this.tint * 0.5) * (1 - this.morph);
-    if (blushVal > 0.01) {
-      x.save();
-      x.clip(body);
-      const yOffset = Math.sin(this.yaw + this.dYaw) * rx * 0.8;
-      x.fillStyle = `rgba(255,120,150,${0.5 * blushVal})`;
-      for (const sd of [-1, 1]) {
-        x.beginPath();
-        x.ellipse(sd * rx * 0.55 + yOffset, ry * 0.2, R * 0.17, R * 0.1, 0, 0, Math.PI * 2);
-        x.fill();
-      }
-      x.restore();
-    }
-
-    drawEyes(this, x, body, { R, rx, ry });
-    if (this.morph > 0.05) drawMouth(this, x, body, R);
-    const propAmt = this.actAmt * Math.max(0, 1 - this.morph * 2);
-    if (this.shown && propAmt > 0.01) drawProps(this, x, { R, rx, ry }, this.shown, propAmt);
-
+    this.drawCharacter(x, { R, rx, ry });
+    x.restore();
     x.restore();
 
     // The badge sits where the props go (headband, hat, box); the act says it instead.
@@ -675,47 +707,62 @@ export class BotEngine {
     drawParticles(this, x, { R, cx, cy });
   }
 
-  private bodyPath(rx: number, ry: number, R: number): Path2D {
-    const n = 72;
-    const expN = 2.0 / 2.7;
-    const tw = R * 1.0;
-    const th = R * 0.94;
-    const tr = R * 0.42;
-    const p = new Path2D();
-    const m = this.morph;
-    for (let i = 0; i <= n; i++) {
-      const a = (i / n) * Math.PI * 2;
-      const ca = Math.cos(a);
-      const sa = Math.sin(a);
-      const px0 = rx * (ca >= 0 ? Math.pow(ca, expN) : -Math.pow(-ca, expN));
-      const py0 = ry * (sa >= 0 ? Math.pow(sa, expN) : -Math.pow(-sa, expN));
-      let px = px0;
-      let py = py0;
-      if (m >= 0.005) {
-        const rr = rrPoint(ca, sa, tw, th, tr);
-        px = lerp(px0, rr.x, m);
-        py = lerp(py0, rr.y, m);
-      }
-      if (i === 0) p.moveTo(px, py);
-      else p.lineTo(px, py);
+  /** In body space: the outfit's back, the body, blush, eyes, mouth, props, the outfit's front. */
+  private drawCharacter(x: CanvasRenderingContext2D, dims: { R: number; rx: number; ry: number }) {
+    const { R, rx, ry } = dims;
+    const head = this.rig.head(this, R);
+    this.rig.drawBehind(x, this, head);
+    const body = bodyPath(rx, ry, R, this.morph);
+    this.drawBody(x, body, R, rx, ry);
+    this.drawBlush(x, body, dims);
+    drawEyes(this, x, body, dims);
+    if (this.morph > 0.05) drawMouth(this, x, body, R);
+    const propAmt = this.actAmt * Math.max(0, 1 - this.morph * 2);
+    if (this.shown && propAmt > 0.01) drawProps(this, x, dims, this.shown, propAmt);
+    this.rig.drawFront(x, this, head);
+  }
+
+  private drawBlush(x: CanvasRenderingContext2D, body: Path2D, { R, rx, ry }: { R: number; rx: number; ry: number }) {
+    const blushVal = Math.max(this.blush, this.tint * 0.5) * (1 - this.morph);
+    if (blushVal <= 0.01) return;
+    x.save();
+    x.clip(body);
+    const yOffset = Math.sin(this.yaw + this.dYaw) * rx * 0.8;
+    x.fillStyle = `rgba(255,120,150,${0.5 * blushVal})`;
+    for (const sd of [-1, 1]) {
+      x.beginPath();
+      x.ellipse(sd * rx * 0.55 + yOffset, ry * 0.2, R * 0.17, R * 0.1, 0, 0, Math.PI * 2);
+      x.fill();
     }
-    p.closePath();
-    return p;
+    x.restore();
   }
 
   private drawBody(x: CanvasRenderingContext2D, body: Path2D, R: number, rx: number, ry: number) {
+    const pumpkin = this.rig.pumpkinAlpha(this);
     if (this.bodyColor) {
       // Mini bots: flat solid fill — no gradient, no reflection, no highlight
       x.fillStyle = rgba(this.bodyColor, 1);
       x.fill(body);
-      return;
+      if (pumpkin <= 0.001) return;
+    } else {
+      const g = x.createLinearGradient(rx * 0.7, -ry * 0.85, -rx * 0.8, ry * 0.9);
+      g.addColorStop(0, rgba(BASE_TOP));
+      g.addColorStop(1, rgba(BASE_BOTTOM));
+      x.fillStyle = g;
+      x.fill(body);
     }
-    const g = x.createLinearGradient(rx * 0.7, -ry * 0.85, -rx * 0.8, ry * 0.9);
-    g.addColorStop(0, rgba(BASE_TOP));
-    g.addColorStop(1, rgba(BASE_BOTTOM));
-    x.fillStyle = g;
-    x.fill(body);
+    x.save();
+    if (pumpkin > 0.001) {
+      fillPumpkin(x, body, [rx, ry], pumpkin);
+      // A flat-coloured body only gets the shading while it is a pumpkin.
+      x.globalAlpha = this.bodyColor ? pumpkin : 1;
+    }
+    this.shadeBody(x, body, R, [rx, ry]);
+    x.restore();
+  }
 
+  /** The state's tint from below, the edge shadow and the highlight. */
+  private shadeBody(x: CanvasRenderingContext2D, body: Path2D, R: number, [rx, ry]: [number, number]) {
     const effectiveTint = this.tint * (1 - this.morph);
     if (effectiveTint > 0.01) {
       const tg = x.createLinearGradient(0, ry, 0, -ry);
@@ -738,6 +785,4 @@ export class BotEngine {
     x.fillStyle = hl;
     x.fill(body);
   }
-
-
 }

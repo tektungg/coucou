@@ -11,6 +11,8 @@ import type { IslandViewName } from "../core/layout";
 import { buildPrompt } from "./chat";
 import { buildChoose, buildUpload, buildUploading } from "./upload";
 import { buildRecap } from "./recap";
+import { buildWardrobe } from "./wardrobe";
+import type { Outfit, OutfitSelection } from "../mochi/wardrobe";
 import { buildAnswers, type AskAnswer, type AskItem } from "../island/askQuestion";
 import { buildOverview } from "./overview";
 import { agentWho, btn, card, stack } from "./parts";
@@ -40,6 +42,10 @@ export interface ViewActions {
   setAutoClose(seconds: number): void;
   openSettingsWindow(): void;
   blip(): void;
+  /** The wardrobe: keep this outfit (saved to the preferences). */
+  chooseOutfit(selection: OutfitSelection): void;
+  /** The wardrobe: try an outfit on while hovered; null puts back the chosen one. */
+  previewOutfit(outfit: Outfit | null): void;
 }
 
 export interface ViewHost {
@@ -585,6 +591,7 @@ export function buildViews(
   map.set("uploading", buildUploading());
   map.set("choose", buildChoose(actions));
   map.set("recap", buildRecap(actions));
+  map.set("wardrobe", buildWardrobe(actions));
   // Not in the Windows v1: sending a file by email, window attach + web result.
   map.set("mail", buildPlaceholder("Sending by email isn't in this version.", ""));
   map.set("searching", buildPlaceholder("Claude is searching…", ""));
